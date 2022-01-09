@@ -1,1 +1,1 @@
-from hsgp import HSGP
+from pymc_experimental.gp.latent_approx import HSGP, ProjectedProcess
