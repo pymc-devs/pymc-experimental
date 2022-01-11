@@ -14,7 +14,13 @@ from pymc.gp.util import (
 )
 
 
+class LatentApprox(pm.gp.Latent):
+    ## TODO: use strings to select approximation, like pm.gp.MarginalApprox?
+    pass
+
+
 class ProjectedProcess(pm.gp.Latent):
+    ## AKA: DTC
     def __init__(self, n_inducing, *, mean_func=pm.gp.mean.Zero(), cov_func=pm.gp.cov.Constant(0.0)):
         self.n_inducing = n_inducing
         super().__init__(mean_func=mean_func, cov_func=cov_func)
@@ -61,7 +67,7 @@ class ProjectedProcess(pm.gp.Latent):
 
 
 class HSGP(pm.gp.Latent):
-    ## inputs, M, c
+    ## inputs: M, c
 
     def __init__(self, n_basis, c=3/2, *, mean_func=pm.gp.mean.Zero(), cov_func=pm.gp.cov.Constant(0.0)):
         ## TODO: specify either c or L
@@ -93,14 +99,14 @@ class HSGP(pm.gp.Latent):
     def _build_prior(self, name, X, **kwargs):
         n_obs = pm.gp.util.infer_size(X, kwargs.get("n_obs"))
 
-        # standardize input
+        # standardize input scale
         X = at.as_tensor_variable(X)
         Xmu = at.mean(X, axis=0)
         Xsd = at.std(X, axis=0)
         Xz = (X - Xmu) / Xsd
 
         # define L using Xz and c
-        La = at.abs(at.min(Xz)).eval()
+        La = at.abs(at.min(Xz))#.eval()?
         Lb = at.max(Xz)
         L = self.c * at.max([La, Lb])
 
@@ -157,4 +163,52 @@ class Matern12(pm.gp.cov.Matern12):
         return 2.0 * lam * (1.0 / (lam**2 + omega**2))
 
 
-
+class KarhunenLoeveExpansion(pm.gp.Latent):
+    def __init__(self, variance_limit=None, n_eigs=None, *, mean_func=pm.gp.mean.Zero(), cov_func=pm.gp.cov.Constant(0.0)):
+        self.variance_limit = variance_limit
+        self.n_eigs = n_eigs
+        super().__init__(mean_func=mean_func, cov_func=cov_func)
+        
+    def _build_prior(self, name, X, jitter=1e-6, **kwargs):
+        mu = self.mean_func(X)
+        Kxx = pm.gp.util.stabilize(self.cov_func(X), jitter)
+        vals, vecs = at.linalg.eigh(Kxx)
+        ## NOTE: REMOVED PRECISION CUTOFF
+        if self.variance_limit is None:
+            n_eigs = self.n_eigs
+        else:
+            if self.variance_limit == 1:
+                n_eigs = len(vals)
+            else:
+                n_eigs = ((vals[::-1].cumsum() / vals.sum()) > self.variance_limit).nonzero()[0][0]
+        U = vecs[:, -n_eigs:]
+        s = vals[-n_eigs:]
+        basis = U * at.sqrt(s)
+        
+        coefs_raw = pm.Normal(f"_gp_{name}_coefs", mu=0, sigma=1, size=n_eigs)
+        #weight = pm.HalfNormal(f"_gp_{name}_sd")
+        #coefs = weight * coefs_raw # dont understand this prior, why weight * coeffs_raw?
+        f = basis @ coefs_raw
+        return f, U, s, n_eigs
+    
+    def prior(self, name, X, jitter=1e-6, **kwargs):
+        f, U, s, n_eigs = self._build_prior(name, X, jitter, **kwargs)
+        self.U, self.s, self.n_eigs = U, s, n_eigs
+        self.X = X
+        self.f = f
+        return pm.Deterministic(name, f)
+    
+    def _build_conditional(self, Xnew, X, f, U, s, jitter):
+        Kxs = self.cov_func(X, Xnew)
+        Kss = self.cov_func(Xnew)
+        Kxxpinv = U @ at.diag(1.0 / s) @ U.T 
+        mus = Kxs.T @ Kxxpinv @ f
+        K = Kss - Kxs.T @ Kxxpinv @ Kxs
+        L = pm.gp.util.cholesky(pm.gp.util.stabilize(K, jitter))
+        return mus, L
+    
+    def conditional(self, name, Xnew, jitter=1e-6, **kwargs):             
+        X, f = self.X, self.f
+        U, s = self.U, self.s
+        mu, L = self._build_conditional(Xnew, X, f, U, s, jitter)
+        return pm.MvNormal(name, mu=mu, chol=L, **kwargs)
