@@ -61,9 +61,9 @@ class ProjectedProcess(pm.gp.Latent):
         Lss = cholesky(stabilize(Kss - Qss, jitter))    
         return mu, Lss
     
-    def conditional(self, name, Xnew, jitter, **kwargs):
+    def conditional(self, name, Xnew, jitter=1e-6, **kwargs):
         mu, chol = self._build_conditional(name, Xnew, self.Xu, self.L, self.Kuuiu, jitter, **kwargs)
-        return pm.MvNormal("fnew", mu=mu, chol=chol)
+        return pm.MvNormal(name, mu=mu, chol=chol)
 
 
 class HSGP(pm.gp.Latent):
