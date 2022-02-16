@@ -17,7 +17,9 @@
 Experimental probability distributions for stochastic nodes in PyMC.
 """
 
-from pymc-experimental.distributions.genextreme import GenExtreme
+from pymc_experimental.distributions.continuous import (
+    GenExtreme,
+)
 
 __all__ = [
     "GenExtreme",

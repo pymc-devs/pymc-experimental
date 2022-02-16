@@ -11,23 +11,21 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-import functools
-import itertools
 
-from typing import Callable, List, Optional
+# general imports
 
-import aesara
-import numpy as np
-import numpy.random as nr
-import numpy.testing as npt
-import pytest
-import scipy.stats as st
+# test support imports from pymc
+from pymc.tests.test_distributions_random import (
+    BaseTestDistribution,
+    seeded_scipy_distribution_builder,
+)
 
-from numpy.testing import assert_almost_equal, assert_array_almost_equal
+# the distributions to be tested
+import pymc_experimental as pmx
 
 
 class TestGenExtreme(BaseTestDistribution):
-    pymc_dist = pm.GenExtreme
+    pymc_dist = pmx.GenExtreme
     pymc_dist_params = {"mu": 0, "sigma": 1, "xi": -0.1}
     expected_rv_op_params = {"mu": 0, "sigma": 1, "xi": -0.1}
     # Notice, using different parametrization of xi sign to scipy
