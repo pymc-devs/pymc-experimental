@@ -9,3 +9,7 @@ if not logging.root.handlers:
     if len(_log.handlers) == 0:
         handler = logging.StreamHandler()
         _log.addHandler(handler)
+
+
+from pymc_experimental.distributions import *
+from pymc_experimental.tests import test

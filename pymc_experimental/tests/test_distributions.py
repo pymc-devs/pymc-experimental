@@ -11,51 +11,44 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-import functools
-import itertools
-import sys
 
-import aesara
-import aesara.tensor as at
-import numpy as np
-import numpy.random as nr
+# general imports
+import scipy.stats.distributions as ssd
 
-import pytest
-import scipy.stats
-import scipy.stats.distributions as sp
+# test support imports from pymc
+from pymc.test.test_distributions import (
+    R,
+    Rplus,
+    Domain,
+    TestMatchesScipy,
+)
 
-from aesara.compile.mode import Mode
-from aesara.graph.basic import ancestors
-from aesara.tensor.random.op import RandomVariable
-from aesara.tensor.var import TensorVariable
-from numpy import array, inf, log
-from numpy.testing import assert_allclose, assert_almost_equal, assert_equal
-from scipy import integrate
-from scipy.special import erf, logit
-
-import pymc as pm
-
-from pymc.aesaraf import floatX, intX
-from pymc-experimental.distributions import (
+# the distributions to be tested
+from pymc_experimental.distributions import (
     GenExtreme,
 )
-from pymc.distributions.shape_utils import to_tuple
-from pymc.math import kronecker
-from pymc.model import Deterministic, Model, Point, Potential
-from pymc.tests.helpers import select_by_precision
-from pymc.vartypes import continuous_types
 
-def test_genextreme(self):
-    self.check_logp(
-        GenExtreme,
-        R,
-        {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
-        lambda value, mu, sigma, xi: sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma),
-    )
-    self.check_logcdf(
-        GenExtreme,
-        R,
-        {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
-        lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma),
-    )
-        
+
+class TestMatchesScipyX(TestMatchesScipy):
+    """
+    Wrapper class so that tests of experimental additions can be dropped into
+    PyMC directly on adoption.
+    """
+
+    def test_genextreme(self):
+        self.check_logp(
+            GenExtreme,
+            R,
+            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
+            lambda value, mu, sigma, xi: ssd.genextreme.logpdf(
+                value, c=-xi, loc=mu, scale=sigma
+            ),
+        )
+        self.check_logcdf(
+            GenExtreme,
+            R,
+            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
+            lambda value, mu, sigma, xi: ssd.genextreme.logcdf(
+                value, c=-xi, loc=mu, scale=sigma
+            ),
+        )
