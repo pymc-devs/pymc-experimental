@@ -34,9 +34,16 @@ class Jump(pm.step_methods.arraystep.BlockedStep):
     # ]
 
     @classmethod
-    def get_vars_from_src_dest(cls, src, dest):
-        """Return list of pymc RVs that this jump will affect (including the delta label vars)"""
-        raise (NotImplementedError())
+    def get_vars_from_src_dest(cls, delta_parameters, configurations_to_subspaces, src, dest):
+        "get the pymc RVs this jump will affect"
+
+        # Get deltas being changed
+        vars = {d for i,d in enumerate(delta_parameters) if src[i] != dest[i]}
+
+        # Get the new ks to be set (only the destination subspace matters)
+        vars = vars.union(set(configurations_to_subspaces[dest]))
+
+        return list(vars)
 
     def get_deltas_updater(self):
         """Return method operating on PointType to update the label parameters"""
@@ -78,20 +85,22 @@ class Jump(pm.step_methods.arraystep.BlockedStep):
     def get_value_var_from_rv(self, rv):
         return rv.tag.value_var
 
-    def __new__(cls, src, dest, *args, **kwargs):
+    def __new__(cls, delta_parameters, configurations_to_subspaces, src, dest, *args, **kwargs):
 
         # These have to be appended here because BlockedStep does some stuff with it in __new__
-        kwargs["vars"] = cls.get_vars_from_src_dest(src, dest)
+        kwargs["vars"] = cls.get_vars_from_src_dest(delta_parameters, configurations_to_subspaces, src, dest)
 
         return super().__new__(cls, *args, **kwargs)
 
-    def __init__(self, src, dest, p_src_dest, p_dest_src, *args, **kwargs):
+    def __init__(self, delta_parameters, configurations_to_subspaces, src, dest, p_src_dest, p_dest_src, *args, **kwargs):
         """
         Creates a very simple Jump
         between src and dest configurations with p_src_dest, p_dest_src being the probabilities that this was selected to begin with
         """
         self.src = src
         self.dest = dest
+        self.delta_parameters = delta_parameters
+        self.configurations_to_subspaces = configurations_to_subspaces
 
         # Precompute the prior bias in having selected this move type
         self.p_src_dest = p_src_dest
@@ -101,7 +110,7 @@ class Jump(pm.step_methods.arraystep.BlockedStep):
         self.model = pm.modelcontext(None)
 
         # Generate the dlogp function
-        self.rvs = self.get_vars_from_src_dest(src, dest)
+        self.rvs = self.get_vars_from_src_dest(delta_parameters, configurations_to_subspaces, src, dest)
         self.vars = pm.inputvars(
             [self.model.rvs_to_values.get(var, var) for var in self.rvs]
         )
