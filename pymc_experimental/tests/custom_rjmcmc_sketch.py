@@ -13,10 +13,7 @@ from pymc.aesaraf import compile_pymc
 import dill as pickle
 import arviz as az
 
-
-# Since pymc4 seems to be using Aesara (their own version of thano) instead of the old theano
-# import aesara_theano_fallback.tensor as tt
-import aesara_theano_fallback.tensor as tt
+import aesara.tensor as tt
 
 
 def get_analytical_solution_for_matrix(deltas, ks, initial_values):
