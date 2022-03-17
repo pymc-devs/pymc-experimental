@@ -16,7 +16,7 @@ import aesara.tensor as at
 import numpy as np
 
 from aeppl.logprob import _logprob
-from aesara.tensor.random.op import RandomVariable, default_shape_from_params
+from aesara.tensor.random.op import RandomVariable, default_supp_shape_from_params
 from pandas import DataFrame, Series
 
 from pymc.distributions.distribution import NoDistribution, _get_moment
@@ -37,7 +37,7 @@ class BARTRV(RandomVariable):
     all_trees = None
 
     def _shape_from_params(self, dist_params, rep_param_idx=1, param_shapes=None):
-        return default_shape_from_params(self.ndim_supp, dist_params, rep_param_idx, param_shapes)
+        return default_supp_shape_from_params(self.ndim_supp, dist_params, rep_param_idx, param_shapes)
 
     @classmethod
     def rng_fn(cls, rng=np.random.default_rng(), *args, **kwargs):
