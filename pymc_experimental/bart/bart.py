@@ -39,6 +39,11 @@ class BARTRV(RandomVariable):
     def _shape_from_params(self, dist_params, rep_param_idx=1, param_shapes=None):
         return default_supp_shape_from_params(self.ndim_supp, dist_params, rep_param_idx, param_shapes)
 
+
+    def _infer_shape(cls, size, dist_params, param_shapes=None):
+        dist_shape = (cls.X.shape[0],)
+        return dist_shape
+
     @classmethod
     def rng_fn(cls, rng=np.random.default_rng(), *args, **kwargs):
         return np.full_like(cls.Y, cls.Y.mean())
