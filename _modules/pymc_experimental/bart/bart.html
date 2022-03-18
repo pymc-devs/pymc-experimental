@@ -1,0 +1,330 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pymc_experimental.bart.bart &#8212; pymc_experimental 0.0.1 documentation</title>
+    
+  <link href="../../../_static/css/theme.css" rel="stylesheet">
+  <link href="../../../_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="../../../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/css/blank.css" />
+    
+  <link rel="preload" as="script" href="../../../_static/js/index.be7d3bbb2ef33a8344ce.js">
+
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+    <nav class="navbar navbar-light navbar-expand-lg bg-light fixed-top bd-navbar" id="navbar-main"><div class="container-xl">
+
+  <div id="navbar-start">
+    
+    
+<a class="navbar-brand" href="../../../index.html">
+<p class="title">pymc_experimental</p>
+</a>
+
+    
+  </div>
+
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-collapsible" aria-controls="navbar-collapsible" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  
+  <div id="navbar-collapsible" class="col-lg-9 collapse navbar-collapse">
+    <div id="navbar-center" class="mr-auto">
+      
+      <div class="navbar-center-item">
+        <ul id="navbar-main-elements" class="navbar-nav">
+    <li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../../../api_reference.html">
+  API Reference
+ </a>
+</li>
+
+    
+</ul>
+      </div>
+      
+    </div>
+
+    <div id="navbar-end">
+      
+      <div class="navbar-end-item">
+        <ul id="navbar-icon-links" class="navbar-nav" aria-label="Icon Links">
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/pymc_experimental/pymc_experimental" rel="noopener" target="_blank" title="GitHub">
+            <span><i class="fab fa-github-square"></i></span>
+            <label class="sr-only">GitHub</label>
+          </a>
+        </li>
+      </ul>
+      </div>
+      
+    </div>
+  </div>
+</div>
+    </nav>
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+            
+            <!-- Only show if we have sidebars configured, else just a small margin  -->
+            <div class="col-12 col-md-3 bd-sidebar">
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+            </div>
+            
+          
+
+          
+          <div class="d-none d-xl-block col-xl-2 bd-toc">
+            
+          </div>
+          
+
+          
+          
+            
+          
+          <main class="col-12 col-md-9 col-xl-7 py-md-5 pl-md-5 pr-md-4 bd-content" role="main">
+              
+              <div>
+                
+  <h1>Source code for pymc_experimental.bart.bart</h1><div class="highlight"><pre>
+<span></span><span class="c1">#   Copyright 2020 The PyMC Developers</span>
+<span class="c1">#</span>
+<span class="c1">#   Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1">#   you may not use this file except in compliance with the License.</span>
+<span class="c1">#   You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#       http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1">#   Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1">#   distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1">#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1">#   See the License for the specific language governing permissions and</span>
+<span class="c1">#   limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">aesara.tensor</span> <span class="k">as</span> <span class="nn">at</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">aeppl.logprob</span> <span class="kn">import</span> <span class="n">_logprob</span>
+<span class="kn">from</span> <span class="nn">aesara.tensor.random.op</span> <span class="kn">import</span> <span class="n">RandomVariable</span><span class="p">,</span> <span class="n">default_supp_shape_from_params</span>
+<span class="kn">from</span> <span class="nn">pandas</span> <span class="kn">import</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">Series</span>
+
+<span class="kn">from</span> <span class="nn">pymc.distributions.distribution</span> <span class="kn">import</span> <span class="n">NoDistribution</span><span class="p">,</span> <span class="n">_get_moment</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;BART&quot;</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">BARTRV</span><span class="p">(</span><span class="n">RandomVariable</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Base class for BART.&quot;&quot;&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;BART&quot;</span>
+    <span class="n">ndim_supp</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">ndims_params</span> <span class="o">=</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="s2">&quot;floatX&quot;</span>
+    <span class="n">_print_name</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;BART&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">operatorname</span><span class="si">{BART}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">all_trees</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_shape_from_params</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dist_params</span><span class="p">,</span> <span class="n">rep_param_idx</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">param_shapes</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">default_supp_shape_from_params</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ndim_supp</span><span class="p">,</span> <span class="n">dist_params</span><span class="p">,</span> <span class="n">rep_param_idx</span><span class="p">,</span> <span class="n">param_shapes</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_infer_shape</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="n">dist_params</span><span class="p">,</span> <span class="n">param_shapes</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">dist_shape</span> <span class="o">=</span> <span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],)</span>
+        <span class="k">return</span> <span class="n">dist_shape</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">rng_fn</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(),</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">Y</span><span class="p">,</span> <span class="bp">cls</span><span class="o">.</span><span class="n">Y</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+
+
+<span class="n">bart</span> <span class="o">=</span> <span class="n">BARTRV</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="BART"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.BART">[docs]</a><span class="k">class</span> <span class="nc">BART</span><span class="p">(</span><span class="n">NoDistribution</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Bayesian Additive Regression Tree distribution.</span>
+
+<span class="sd">    Distribution representing a sum over trees</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    X : array-like</span>
+<span class="sd">        The covariate matrix.</span>
+<span class="sd">    Y : array-like</span>
+<span class="sd">        The response vector.</span>
+<span class="sd">    m : int</span>
+<span class="sd">        Number of trees</span>
+<span class="sd">    alpha : float</span>
+<span class="sd">        Control the prior probability over the depth of the trees. Even when it can takes values in</span>
+<span class="sd">        the interval (0, 1), it is recommended to be in the interval (0, 0.5].</span>
+<span class="sd">    k : float</span>
+<span class="sd">        Scale parameter for the values of the leaf nodes. Defaults to 2. Recomended to be between 1</span>
+<span class="sd">        and 3.</span>
+<span class="sd">    split_prior : array-like</span>
+<span class="sd">        Each element of split_prior should be in the [0, 1] interval and the elements should sum to</span>
+<span class="sd">        1. Otherwise they will be normalized.</span>
+<span class="sd">        Defaults to None, i.e. all covariates have the same prior probability to be selected.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">,</span>
+        <span class="n">X</span><span class="p">,</span>
+        <span class="n">Y</span><span class="p">,</span>
+        <span class="n">m</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+        <span class="n">alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span>
+        <span class="n">k</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">split_prior</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+
+        <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">preprocess_XY</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
+
+        <span class="n">bart_op</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;BART_</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">BARTRV</span><span class="p">,),</span>
+            <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;BART&quot;</span><span class="p">,</span>
+                <span class="n">inplace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">initval</span><span class="o">=</span><span class="n">Y</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span>
+                <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span>
+                <span class="n">Y</span><span class="o">=</span><span class="n">Y</span><span class="p">,</span>
+                <span class="n">m</span><span class="o">=</span><span class="n">m</span><span class="p">,</span>
+                <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span>
+                <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span>
+                <span class="n">split_prior</span><span class="o">=</span><span class="n">split_prior</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)()</span>
+
+        <span class="n">NoDistribution</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">BARTRV</span><span class="p">)</span>
+
+        <span class="nd">@_get_moment</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">BARTRV</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">get_moment</span><span class="p">(</span><span class="n">rv</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="o">*</span><span class="n">rv_inputs</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">get_moment</span><span class="p">(</span><span class="n">rv</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="o">*</span><span class="n">rv_inputs</span><span class="p">)</span>
+
+        <span class="bp">cls</span><span class="o">.</span><span class="n">rv_op</span> <span class="o">=</span> <span class="n">bart_op</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="o">*</span><span class="n">params</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+<div class="viewcode-block" id="BART.dist"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.BART.dist">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">dist</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="n">params</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">dist</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="BART.logp"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.BART.logp">[docs]</a>    <span class="k">def</span> <span class="nf">logp</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="n">inputs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Calculate log probability.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        x: numeric, TensorVariable</span>
+<span class="sd">            Value for which log-probability is calculated.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        TensorVariable</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">at</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">get_moment</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">rv</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="o">*</span><span class="n">rv_inputs</span><span class="p">):</span>
+        <span class="n">mean</span> <span class="o">=</span> <span class="n">at</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">rv</span><span class="o">.</span><span class="n">Y</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">mean</span></div>
+
+
+<span class="k">def</span> <span class="nf">preprocess_XY</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">Y</span><span class="p">,</span> <span class="p">(</span><span class="n">Series</span><span class="p">,</span> <span class="n">DataFrame</span><span class="p">)):</span>
+        <span class="n">Y</span> <span class="o">=</span> <span class="n">Y</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="p">(</span><span class="n">Series</span><span class="p">,</span> <span class="n">DataFrame</span><span class="p">)):</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="c1"># X = np.random.normal(X, X.std(0)/100)</span>
+    <span class="n">Y</span> <span class="o">=</span> <span class="n">Y</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span>
+
+
+<span class="nd">@_logprob</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">BARTRV</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">logp</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">value_var</span><span class="p">,</span> <span class="o">*</span><span class="n">dist_params</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">_dist_params</span> <span class="o">=</span> <span class="n">dist_params</span><span class="p">[</span><span class="mi">3</span><span class="p">:]</span>
+    <span class="n">value_var</span> <span class="o">=</span> <span class="n">value_var</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">BART</span><span class="o">.</span><span class="n">logp</span><span class="p">(</span><span class="n">value_var</span><span class="p">,</span> <span class="o">*</span><span class="n">_dist_params</span><span class="p">)</span>
+</pre></div>
+
+              </div>
+              
+              
+              <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+</div>
+              
+          </main>
+          
+
+      </div>
+    </div>
+  
+  <script src="../../../_static/js/index.be7d3bbb2ef33a8344ce.js"></script>
+<footer class="footer mt-5 mt-md-0">
+  <div class="container">
+    
+    <div class="footer-item">
+      <p class="copyright">
+    &copy; Copyright 2022, pymc-devs.<br>
+</p>
+    </div>
+    
+    <div class="footer-item">
+      <p class="sphinx-version">
+Created using <a href="http://sphinx-doc.org/">Sphinx</a> 4.3.2.<br>
+</p>
+    </div>
+    
+  </div>
+</footer>
+  </body>
+</html>

@@ -1,0 +1,701 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pymc_experimental.bart.pgbart &#8212; pymc_experimental 0.0.1 documentation</title>
+    
+  <link href="../../../_static/css/theme.css" rel="stylesheet">
+  <link href="../../../_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="../../../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/css/blank.css" />
+    
+  <link rel="preload" as="script" href="../../../_static/js/index.be7d3bbb2ef33a8344ce.js">
+
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+    <nav class="navbar navbar-light navbar-expand-lg bg-light fixed-top bd-navbar" id="navbar-main"><div class="container-xl">
+
+  <div id="navbar-start">
+    
+    
+<a class="navbar-brand" href="../../../index.html">
+<p class="title">pymc_experimental</p>
+</a>
+
+    
+  </div>
+
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-collapsible" aria-controls="navbar-collapsible" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  
+  <div id="navbar-collapsible" class="col-lg-9 collapse navbar-collapse">
+    <div id="navbar-center" class="mr-auto">
+      
+      <div class="navbar-center-item">
+        <ul id="navbar-main-elements" class="navbar-nav">
+    <li class="toctree-l1 nav-item">
+ <a class="reference internal nav-link" href="../../../api_reference.html">
+  API Reference
+ </a>
+</li>
+
+    
+</ul>
+      </div>
+      
+    </div>
+
+    <div id="navbar-end">
+      
+      <div class="navbar-end-item">
+        <ul id="navbar-icon-links" class="navbar-nav" aria-label="Icon Links">
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/pymc_experimental/pymc_experimental" rel="noopener" target="_blank" title="GitHub">
+            <span><i class="fab fa-github-square"></i></span>
+            <label class="sr-only">GitHub</label>
+          </a>
+        </li>
+      </ul>
+      </div>
+      
+    </div>
+  </div>
+</div>
+    </nav>
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+            
+            <!-- Only show if we have sidebars configured, else just a small margin  -->
+            <div class="col-12 col-md-3 bd-sidebar">
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+            </div>
+            
+          
+
+          
+          <div class="d-none d-xl-block col-xl-2 bd-toc">
+            
+          </div>
+          
+
+          
+          
+            
+          
+          <main class="col-12 col-md-9 col-xl-7 py-md-5 pl-md-5 pr-md-4 bd-content" role="main">
+              
+              <div>
+                
+  <h1>Source code for pymc_experimental.bart.pgbart</h1><div class="highlight"><pre>
+<span></span><span class="c1">#   Copyright 2020 The PyMC Developers</span>
+<span class="c1">#</span>
+<span class="c1">#   Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1">#   you may not use this file except in compliance with the License.</span>
+<span class="c1">#   You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#       http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1">#   Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1">#   distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1">#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1">#   See the License for the specific language governing permissions and</span>
+<span class="c1">#   limitations under the License.</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span>
+
+<span class="kn">import</span> <span class="nn">aesara</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+
+<span class="kn">from</span> <span class="nn">aesara</span> <span class="kn">import</span> <span class="n">function</span> <span class="k">as</span> <span class="n">aesara_function</span>
+
+<span class="kn">from</span> <span class="nn">pymc.aesaraf</span> <span class="kn">import</span> <span class="n">inputvars</span><span class="p">,</span> <span class="n">join_nonshared_inputs</span><span class="p">,</span> <span class="n">make_shared_replacements</span>
+<span class="kn">from</span> <span class="nn">pymc_experimental.bart.bart</span> <span class="kn">import</span> <span class="n">BARTRV</span>
+<span class="kn">from</span> <span class="nn">pymc_experimental.bart.tree</span> <span class="kn">import</span> <span class="n">LeafNode</span><span class="p">,</span> <span class="n">SplitNode</span><span class="p">,</span> <span class="n">Tree</span>
+<span class="kn">from</span> <span class="nn">pymc.model</span> <span class="kn">import</span> <span class="n">modelcontext</span>
+<span class="kn">from</span> <span class="nn">pymc.step_methods.arraystep</span> <span class="kn">import</span> <span class="n">ArrayStepShared</span><span class="p">,</span> <span class="n">Competence</span>
+
+<span class="n">_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;pymc&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="PGBART"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.PGBART">[docs]</a><span class="k">class</span> <span class="nc">PGBART</span><span class="p">(</span><span class="n">ArrayStepShared</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Particle Gibss BART sampling step.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    vars: list</span>
+<span class="sd">        List of value variables for sampler</span>
+<span class="sd">    num_particles : int</span>
+<span class="sd">        Number of particles for the conditional SMC sampler. Defaults to 40</span>
+<span class="sd">    max_stages : int</span>
+<span class="sd">        Maximum number of iterations of the conditional SMC sampler. Defaults to 100.</span>
+<span class="sd">    batch : int or tuple</span>
+<span class="sd">        Number of trees fitted per step. Defaults to  &quot;auto&quot;, which is the 10% of the `m` trees</span>
+<span class="sd">        during tuning and after tuning. If a tuple is passed the first element is the batch size</span>
+<span class="sd">        during tuning and the second the batch size after tuning.</span>
+<span class="sd">    model: PyMC Model</span>
+<span class="sd">        Optional model for sampling step. Defaults to None (taken from context).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;pgbart&quot;</span>
+    <span class="n">default_blocked</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">generates_stats</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">stats_dtypes</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;variable_inclusion&quot;</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span> <span class="s2">&quot;bart_trees&quot;</span><span class="p">:</span> <span class="nb">object</span><span class="p">}]</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">vars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">num_particles</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">max_stages</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">batch</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">modelcontext</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+        <span class="n">initial_values</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">compute_initial_point</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">vars</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">vars</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">value_vars</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">vars</span> <span class="o">=</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">rvs_to_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="n">var</span><span class="p">)</span> <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">]</span>
+            <span class="nb">vars</span> <span class="o">=</span> <span class="n">inputvars</span><span class="p">(</span><span class="nb">vars</span><span class="p">)</span>
+        <span class="n">value_bart</span> <span class="o">=</span> <span class="nb">vars</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bart</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">values_to_rvs</span><span class="p">[</span><span class="n">value_bart</span><span class="p">]</span><span class="o">.</span><span class="n">owner</span><span class="o">.</span><span class="n">op</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">X</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bart</span><span class="o">.</span><span class="n">X</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bart</span><span class="o">.</span><span class="n">Y</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">missing_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bart</span><span class="o">.</span><span class="n">m</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bart</span><span class="o">.</span><span class="n">alpha</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bart</span><span class="o">.</span><span class="n">k</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha_vec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bart</span><span class="o">.</span><span class="n">split_prior</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha_vec</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">alpha_vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">init_mean</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Y</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="c1"># if data is binary</span>
+        <span class="n">Y_unique</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Y</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">Y_unique</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">Y_unique</span> <span class="o">==</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">mu_std</span> <span class="o">=</span> <span class="mi">6</span> <span class="o">/</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="o">**</span><span class="mf">0.5</span><span class="p">)</span>
+        <span class="c1"># maybe we need to check for count data</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">mu_std</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">Y</span><span class="o">.</span><span class="n">std</span><span class="p">())</span> <span class="o">/</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">k</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="o">**</span><span class="mf">0.5</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_observations</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_variates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">available_predictors</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_variates</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_mean</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">aesara</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">floatX</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">a_tree</span> <span class="o">=</span> <span class="n">Tree</span><span class="o">.</span><span class="n">init_tree</span><span class="p">(</span>
+            <span class="n">leaf_node_value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">init_mean</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+            <span class="n">idx_data_points</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_observations</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;int32&quot;</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mean</span> <span class="o">=</span> <span class="n">fast_mean</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">normal</span> <span class="o">=</span> <span class="n">NormalSampler</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prior_prob_leaf_node</span> <span class="o">=</span> <span class="n">compute_prior_probability</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ssv</span> <span class="o">=</span> <span class="n">SampleSplittingVariable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha_vec</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">tune</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">if</span> <span class="n">batch</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+            <span class="n">batch</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m</span> <span class="o">*</span> <span class="mf">0.1</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">batch</span> <span class="o">=</span> <span class="p">(</span><span class="n">batch</span><span class="p">,</span> <span class="n">batch</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">batch</span><span class="p">,</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">list</span><span class="p">)):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">batch</span> <span class="o">=</span> <span class="n">batch</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">batch</span> <span class="o">=</span> <span class="p">(</span><span class="n">batch</span><span class="p">,</span> <span class="n">batch</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_num_particles</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">num_particles</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indices</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">num_particles</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">len_indices</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_stages</span> <span class="o">=</span> <span class="n">max_stages</span>
+
+        <span class="n">shared</span> <span class="o">=</span> <span class="n">make_shared_replacements</span><span class="p">(</span><span class="n">initial_values</span><span class="p">,</span> <span class="nb">vars</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">likelihood_logp</span> <span class="o">=</span> <span class="n">logp</span><span class="p">(</span><span class="n">initial_values</span><span class="p">,</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">datalogpt</span><span class="p">],</span> <span class="nb">vars</span><span class="p">,</span> <span class="n">shared</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">all_particles</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">a_tree</span><span class="o">.</span><span class="n">leaf_node_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_mean</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">m</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="n">ParticleTree</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a_tree</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">all_particles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">all_trees</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">p</span><span class="o">.</span><span class="n">tree</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_particles</span><span class="p">])</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="nb">vars</span><span class="p">,</span> <span class="n">shared</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">astep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_</span><span class="p">):</span>
+        <span class="n">variable_inclusion</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_variates</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;int&quot;</span><span class="p">)</span>
+
+        <span class="n">tree_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="p">),</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">batch</span><span class="p">[</span><span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">tune</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">tree_id</span> <span class="ow">in</span> <span class="n">tree_ids</span><span class="p">:</span>
+            <span class="c1"># Generate an initial set of SMC particles</span>
+            <span class="c1"># at the end of the algorithm we return one of these particles as the new tree</span>
+            <span class="n">particles</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_particles</span><span class="p">(</span><span class="n">tree_id</span><span class="p">)</span>
+            <span class="c1"># Compute the sum of trees without the old tree, that we are attempting to replace</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees_noi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees</span> <span class="o">-</span> <span class="n">particles</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tree</span><span class="o">.</span><span class="n">predict_output</span><span class="p">()</span>
+            <span class="c1"># Resample leaf values for particle 1 which is a copy of the old tree</span>
+            <span class="n">particles</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">sample_leafs</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">mean</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">normal</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">mu_std</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="c1"># The old tree and the one with new leafs do not grow so we update the weights only once</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">update_weight</span><span class="p">(</span><span class="n">particles</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">old</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">update_weight</span><span class="p">(</span><span class="n">particles</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">old</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">max_stages</span><span class="p">):</span>
+                <span class="c1"># Sample each particle (try to grow each tree), except for the first two</span>
+                <span class="n">stop_growing</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">particles</span><span class="p">[</span><span class="mi">2</span><span class="p">:]:</span>
+                    <span class="n">tree_grew</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">sample_tree</span><span class="p">(</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">ssv</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">available_predictors</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">prior_prob_leaf_node</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">missing_data</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">mean</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">normal</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">mu_std</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">tree_grew</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">update_weight</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">expansion_nodes</span><span class="p">:</span>
+                        <span class="n">stop_growing</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="k">if</span> <span class="n">stop_growing</span><span class="p">:</span>
+                    <span class="k">break</span>
+                <span class="c1"># Normalize weights</span>
+                <span class="n">W_t</span><span class="p">,</span> <span class="n">normalized_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">particles</span><span class="p">[</span><span class="mi">2</span><span class="p">:])</span>
+
+                <span class="c1"># Resample all but first two particles</span>
+                <span class="n">new_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">len_indices</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">normalized_weights</span>
+                <span class="p">)</span>
+                <span class="n">particles</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span> <span class="o">=</span> <span class="n">particles</span><span class="p">[</span><span class="n">new_indices</span><span class="p">]</span>
+
+                <span class="c1"># Set the new weights</span>
+                <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">particles</span><span class="p">[</span><span class="mi">2</span><span class="p">:]:</span>
+                    <span class="n">p</span><span class="o">.</span><span class="n">log_weight</span> <span class="o">=</span> <span class="n">W_t</span>
+
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">particles</span><span class="p">[</span><span class="mi">2</span><span class="p">:]:</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">log_weight</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">old_likelihood_logp</span>
+
+            <span class="n">_</span><span class="p">,</span> <span class="n">normalized_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">particles</span><span class="p">)</span>
+            <span class="c1"># Get the new tree and update</span>
+            <span class="n">new_particle</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">particles</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">normalized_weights</span><span class="p">)</span>
+            <span class="n">new_tree</span> <span class="o">=</span> <span class="n">new_particle</span><span class="o">.</span><span class="n">tree</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">all_trees</span><span class="p">[</span><span class="n">tree_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_tree</span>
+            <span class="n">new_particle</span><span class="o">.</span><span class="n">log_weight</span> <span class="o">=</span> <span class="n">new_particle</span><span class="o">.</span><span class="n">old_likelihood_logp</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_num_particles</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">all_particles</span><span class="p">[</span><span class="n">tree_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_particle</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees_noi</span> <span class="o">+</span> <span class="n">new_tree</span><span class="o">.</span><span class="n">predict_output</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tune</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ssv</span> <span class="o">=</span> <span class="n">SampleSplittingVariable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha_vec</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">new_particle</span><span class="o">.</span><span class="n">used_variates</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">alpha_vec</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">new_particle</span><span class="o">.</span><span class="n">used_variates</span><span class="p">:</span>
+                    <span class="n">variable_inclusion</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">stats</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;variable_inclusion&quot;</span><span class="p">:</span> <span class="n">variable_inclusion</span><span class="p">,</span> <span class="s2">&quot;bart_trees&quot;</span><span class="p">:</span> <span class="n">copy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">all_trees</span><span class="p">)}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sum_trees</span><span class="p">,</span> <span class="p">[</span><span class="n">stats</span><span class="p">]</span>
+
+<div class="viewcode-block" id="PGBART.normalize"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.PGBART.normalize">[docs]</a>    <span class="k">def</span> <span class="nf">normalize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">particles</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Use logsumexp trick to get W_t and softmax to get normalized_weights.&quot;&quot;&quot;</span>
+        <span class="n">log_w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">p</span><span class="o">.</span><span class="n">log_weight</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">particles</span><span class="p">])</span>
+        <span class="n">log_w_max</span> <span class="o">=</span> <span class="n">log_w</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="n">log_w_</span> <span class="o">=</span> <span class="n">log_w</span> <span class="o">-</span> <span class="n">log_w_max</span>
+        <span class="n">w_</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">log_w_</span><span class="p">)</span>
+        <span class="n">w_sum</span> <span class="o">=</span> <span class="n">w_</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="n">W_t</span> <span class="o">=</span> <span class="n">log_w_max</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">w_sum</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_num_particles</span>
+        <span class="n">normalized_weights</span> <span class="o">=</span> <span class="n">w_</span> <span class="o">/</span> <span class="n">w_sum</span>
+        <span class="c1"># stabilize weights to avoid assigning exactly zero probability to a particle</span>
+        <span class="n">normalized_weights</span> <span class="o">+=</span> <span class="mf">1e-12</span>
+
+        <span class="k">return</span> <span class="n">W_t</span><span class="p">,</span> <span class="n">normalized_weights</span></div>
+
+<div class="viewcode-block" id="PGBART.init_particles"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.PGBART.init_particles">[docs]</a>    <span class="k">def</span> <span class="nf">init_particles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tree_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Initialize particles.&quot;&quot;&quot;</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_particles</span><span class="p">[</span><span class="n">tree_id</span><span class="p">]</span>
+        <span class="n">particles</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">]</span>
+        <span class="n">particles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">copy</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">:</span>
+            <span class="n">particles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ParticleTree</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a_tree</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">particles</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="PGBART.update_weight"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.PGBART.update_weight">[docs]</a>    <span class="k">def</span> <span class="nf">update_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">particle</span><span class="p">,</span> <span class="n">old</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update the weight of a particle.</span>
+
+<span class="sd">        Since the prior is used as the proposal,the weights are updated additively as the ratio of</span>
+<span class="sd">        the new and old log-likelihoods.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">new_likelihood</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">likelihood_logp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sum_trees_noi</span> <span class="o">+</span> <span class="n">particle</span><span class="o">.</span><span class="n">tree</span><span class="o">.</span><span class="n">predict_output</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">old</span><span class="p">:</span>
+            <span class="n">particle</span><span class="o">.</span><span class="n">log_weight</span> <span class="o">=</span> <span class="n">new_likelihood</span>
+            <span class="n">particle</span><span class="o">.</span><span class="n">old_likelihood_logp</span> <span class="o">=</span> <span class="n">new_likelihood</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">particle</span><span class="o">.</span><span class="n">log_weight</span> <span class="o">+=</span> <span class="n">new_likelihood</span> <span class="o">-</span> <span class="n">particle</span><span class="o">.</span><span class="n">old_likelihood_logp</span>
+            <span class="n">particle</span><span class="o">.</span><span class="n">old_likelihood_logp</span> <span class="o">=</span> <span class="n">new_likelihood</span></div>
+
+<div class="viewcode-block" id="PGBART.competence"><a class="viewcode-back" href="../../../api_reference.html#pymc_experimental.bart.PGBART.competence">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">competence</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="n">has_grad</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;PGBART is only suitable for BART distributions.&quot;&quot;&quot;</span>
+        <span class="n">dist</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">var</span><span class="o">.</span><span class="n">owner</span><span class="p">,</span> <span class="s2">&quot;op&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">BARTRV</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">Competence</span><span class="o">.</span><span class="n">IDEAL</span>
+        <span class="k">return</span> <span class="n">Competence</span><span class="o">.</span><span class="n">INCOMPATIBLE</span></div></div>
+
+
+<span class="k">class</span> <span class="nc">ParticleTree</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Particle tree.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tree</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tree</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>  <span class="c1"># keeps the tree that we care at the moment</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">expansion_nodes</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_weight</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_likelihood_logp</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">used_variates</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">sample_tree</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">ssv</span><span class="p">,</span>
+        <span class="n">available_predictors</span><span class="p">,</span>
+        <span class="n">prior_prob_leaf_node</span><span class="p">,</span>
+        <span class="n">X</span><span class="p">,</span>
+        <span class="n">missing_data</span><span class="p">,</span>
+        <span class="n">sum_trees</span><span class="p">,</span>
+        <span class="n">mean</span><span class="p">,</span>
+        <span class="n">m</span><span class="p">,</span>
+        <span class="n">normal</span><span class="p">,</span>
+        <span class="n">mu_std</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">tree_grew</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">expansion_nodes</span><span class="p">:</span>
+            <span class="n">index_leaf_node</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">expansion_nodes</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="c1"># Probability that this node will remain a leaf node</span>
+            <span class="n">prob_leaf</span> <span class="o">=</span> <span class="n">prior_prob_leaf_node</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">tree</span><span class="p">[</span><span class="n">index_leaf_node</span><span class="p">]</span><span class="o">.</span><span class="n">depth</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">prob_leaf</span> <span class="o">&lt;</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">():</span>
+                <span class="n">index_selected_predictor</span> <span class="o">=</span> <span class="n">grow_tree</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">tree</span><span class="p">,</span>
+                    <span class="n">index_leaf_node</span><span class="p">,</span>
+                    <span class="n">ssv</span><span class="p">,</span>
+                    <span class="n">available_predictors</span><span class="p">,</span>
+                    <span class="n">X</span><span class="p">,</span>
+                    <span class="n">missing_data</span><span class="p">,</span>
+                    <span class="n">sum_trees</span><span class="p">,</span>
+                    <span class="n">mean</span><span class="p">,</span>
+                    <span class="n">m</span><span class="p">,</span>
+                    <span class="n">normal</span><span class="p">,</span>
+                    <span class="n">mu_std</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">index_selected_predictor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">new_indexes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tree</span><span class="o">.</span><span class="n">idx_leaf_nodes</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">expansion_nodes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">new_indexes</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">used_variates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">index_selected_predictor</span><span class="p">)</span>
+                    <span class="n">tree_grew</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="k">return</span> <span class="n">tree_grew</span>
+
+    <span class="k">def</span> <span class="nf">sample_leafs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sum_trees</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">mean</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">mu_std</span><span class="p">):</span>
+
+        <span class="n">sample_leaf_values</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tree</span><span class="p">,</span> <span class="n">sum_trees</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">mean</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">mu_std</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SampleSplittingVariable</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alpha_vec</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sample splitting variables proportional to `alpha_vec`.</span>
+
+<span class="sd">        This is equivalent to compute the posterior mean of a Dirichlet-Multinomial model.</span>
+<span class="sd">        This enforce sparsity.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enu</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">enumerate</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">alpha_vec</span> <span class="o">/</span> <span class="n">alpha_vec</span><span class="o">.</span><span class="n">sum</span><span class="p">())))</span>
+
+    <span class="k">def</span> <span class="nf">rvs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">enu</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">r</span> <span class="o">&lt;=</span> <span class="n">v</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">i</span>
+
+
+<span class="k">def</span> <span class="nf">compute_prior_probability</span><span class="p">(</span><span class="n">alpha</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate the probability of the node being a LeafNode (1 - p(being SplitNode)).</span>
+
+<span class="sd">    Taken from equation 19 in [Rockova2018].</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    alpha : float</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    list with probabilities for leaf nodes</span>
+
+<span class="sd">    References</span>
+<span class="sd">    ----------</span>
+<span class="sd">    .. [Rockova2018] Veronika Rockova, Enakshi Saha (2018). On the theory of BART.</span>
+<span class="sd">    arXiv, `link &lt;https://arxiv.org/abs/1810.00787&gt;`__</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">prior_leaf_prob</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">depth</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">while</span> <span class="n">prior_leaf_prob</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">prior_leaf_prob</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">alpha</span><span class="o">**</span><span class="n">depth</span><span class="p">)</span>
+        <span class="n">depth</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">prior_leaf_prob</span>
+
+
+<span class="k">def</span> <span class="nf">grow_tree</span><span class="p">(</span>
+    <span class="n">tree</span><span class="p">,</span>
+    <span class="n">index_leaf_node</span><span class="p">,</span>
+    <span class="n">ssv</span><span class="p">,</span>
+    <span class="n">available_predictors</span><span class="p">,</span>
+    <span class="n">X</span><span class="p">,</span>
+    <span class="n">missing_data</span><span class="p">,</span>
+    <span class="n">sum_trees</span><span class="p">,</span>
+    <span class="n">mean</span><span class="p">,</span>
+    <span class="n">m</span><span class="p">,</span>
+    <span class="n">normal</span><span class="p">,</span>
+    <span class="n">mu_std</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="n">current_node</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">get_node</span><span class="p">(</span><span class="n">index_leaf_node</span><span class="p">)</span>
+    <span class="n">idx_data_points</span> <span class="o">=</span> <span class="n">current_node</span><span class="o">.</span><span class="n">idx_data_points</span>
+
+    <span class="n">index_selected_predictor</span> <span class="o">=</span> <span class="n">ssv</span><span class="o">.</span><span class="n">rvs</span><span class="p">()</span>
+    <span class="n">selected_predictor</span> <span class="o">=</span> <span class="n">available_predictors</span><span class="p">[</span><span class="n">index_selected_predictor</span><span class="p">]</span>
+    <span class="n">available_splitting_values</span> <span class="o">=</span> <span class="n">X</span><span class="p">[</span><span class="n">idx_data_points</span><span class="p">,</span> <span class="n">selected_predictor</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">missing_data</span><span class="p">:</span>
+        <span class="n">idx_data_points</span> <span class="o">=</span> <span class="n">idx_data_points</span><span class="p">[</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">available_splitting_values</span><span class="p">)]</span>
+        <span class="n">available_splitting_values</span> <span class="o">=</span> <span class="n">available_splitting_values</span><span class="p">[</span>
+            <span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">available_splitting_values</span><span class="p">)</span>
+        <span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">available_splitting_values</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">idx_selected_splitting_values</span> <span class="o">=</span> <span class="n">discrete_uniform_sampler</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">available_splitting_values</span><span class="p">))</span>
+        <span class="n">split_value</span> <span class="o">=</span> <span class="n">available_splitting_values</span><span class="p">[</span><span class="n">idx_selected_splitting_values</span><span class="p">]</span>
+
+        <span class="n">new_idx_data_points</span> <span class="o">=</span> <span class="n">get_new_idx_data_points</span><span class="p">(</span>
+            <span class="n">split_value</span><span class="p">,</span> <span class="n">idx_data_points</span><span class="p">,</span> <span class="n">selected_predictor</span><span class="p">,</span> <span class="n">X</span>
+        <span class="p">)</span>
+        <span class="n">current_node_children</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">current_node</span><span class="o">.</span><span class="n">get_idx_left_child</span><span class="p">(),</span>
+            <span class="n">current_node</span><span class="o">.</span><span class="n">get_idx_right_child</span><span class="p">(),</span>
+        <span class="p">)</span>
+
+        <span class="n">new_nodes</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+            <span class="n">idx_data_point</span> <span class="o">=</span> <span class="n">new_idx_data_points</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+            <span class="n">node_value</span> <span class="o">=</span> <span class="n">draw_leaf_value</span><span class="p">(</span>
+                <span class="n">sum_trees</span><span class="p">[</span><span class="n">idx_data_point</span><span class="p">],</span>
+                <span class="n">X</span><span class="p">[</span><span class="n">idx_data_point</span><span class="p">,</span> <span class="n">selected_predictor</span><span class="p">],</span>
+                <span class="n">mean</span><span class="p">,</span>
+                <span class="n">m</span><span class="p">,</span>
+                <span class="n">normal</span><span class="p">,</span>
+                <span class="n">mu_std</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="n">new_node</span> <span class="o">=</span> <span class="n">LeafNode</span><span class="p">(</span>
+                <span class="n">index</span><span class="o">=</span><span class="n">current_node_children</span><span class="p">[</span><span class="n">idx</span><span class="p">],</span>
+                <span class="n">value</span><span class="o">=</span><span class="n">node_value</span><span class="p">,</span>
+                <span class="n">idx_data_points</span><span class="o">=</span><span class="n">idx_data_point</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">new_nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_node</span><span class="p">)</span>
+
+        <span class="n">new_split_node</span> <span class="o">=</span> <span class="n">SplitNode</span><span class="p">(</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">index_leaf_node</span><span class="p">,</span>
+            <span class="n">idx_split_variable</span><span class="o">=</span><span class="n">selected_predictor</span><span class="p">,</span>
+            <span class="n">split_value</span><span class="o">=</span><span class="n">split_value</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># update tree nodes and indexes</span>
+        <span class="n">tree</span><span class="o">.</span><span class="n">delete_node</span><span class="p">(</span><span class="n">index_leaf_node</span><span class="p">)</span>
+        <span class="n">tree</span><span class="o">.</span><span class="n">set_node</span><span class="p">(</span><span class="n">index_leaf_node</span><span class="p">,</span> <span class="n">new_split_node</span><span class="p">)</span>
+        <span class="n">tree</span><span class="o">.</span><span class="n">set_node</span><span class="p">(</span><span class="n">new_nodes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">new_nodes</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">tree</span><span class="o">.</span><span class="n">set_node</span><span class="p">(</span><span class="n">new_nodes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">new_nodes</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">index_selected_predictor</span>
+
+
+<span class="k">def</span> <span class="nf">sample_leaf_values</span><span class="p">(</span><span class="n">tree</span><span class="p">,</span> <span class="n">sum_trees</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">mean</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">mu_std</span><span class="p">):</span>
+
+    <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">tree</span><span class="o">.</span><span class="n">idx_leaf_nodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">leaf</span> <span class="o">=</span> <span class="n">tree</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+            <span class="n">idx_data_points</span> <span class="o">=</span> <span class="n">leaf</span><span class="o">.</span><span class="n">idx_data_points</span>
+            <span class="n">parent_node</span> <span class="o">=</span> <span class="n">tree</span><span class="p">[</span><span class="n">leaf</span><span class="o">.</span><span class="n">get_idx_parent_node</span><span class="p">()]</span>
+            <span class="n">selected_predictor</span> <span class="o">=</span> <span class="n">parent_node</span><span class="o">.</span><span class="n">idx_split_variable</span>
+            <span class="n">node_value</span> <span class="o">=</span> <span class="n">draw_leaf_value</span><span class="p">(</span>
+                <span class="n">sum_trees</span><span class="p">[</span><span class="n">idx_data_points</span><span class="p">],</span>
+                <span class="n">X</span><span class="p">[</span><span class="n">idx_data_points</span><span class="p">,</span> <span class="n">selected_predictor</span><span class="p">],</span>
+                <span class="n">mean</span><span class="p">,</span>
+                <span class="n">m</span><span class="p">,</span>
+                <span class="n">normal</span><span class="p">,</span>
+                <span class="n">mu_std</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">leaf</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">node_value</span>
+
+
+<span class="k">def</span> <span class="nf">get_new_idx_data_points</span><span class="p">(</span><span class="n">split_value</span><span class="p">,</span> <span class="n">idx_data_points</span><span class="p">,</span> <span class="n">selected_predictor</span><span class="p">,</span> <span class="n">X</span><span class="p">):</span>
+
+    <span class="n">left_idx</span> <span class="o">=</span> <span class="n">X</span><span class="p">[</span><span class="n">idx_data_points</span><span class="p">,</span> <span class="n">selected_predictor</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">split_value</span>
+    <span class="n">left_node_idx_data_points</span> <span class="o">=</span> <span class="n">idx_data_points</span><span class="p">[</span><span class="n">left_idx</span><span class="p">]</span>
+    <span class="n">right_node_idx_data_points</span> <span class="o">=</span> <span class="n">idx_data_points</span><span class="p">[</span><span class="o">~</span><span class="n">left_idx</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">left_node_idx_data_points</span><span class="p">,</span> <span class="n">right_node_idx_data_points</span>
+
+
+<span class="k">def</span> <span class="nf">draw_leaf_value</span><span class="p">(</span><span class="n">Y_mu_pred</span><span class="p">,</span> <span class="n">X_mu</span><span class="p">,</span> <span class="n">mean</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">normal</span><span class="p">,</span> <span class="n">mu_std</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Draw Gaussian distributed leaf values.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">Y_mu_pred</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">norm</span> <span class="o">=</span> <span class="n">normal</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">*</span> <span class="n">mu_std</span>
+        <span class="k">if</span> <span class="n">Y_mu_pred</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">mu_mean</span> <span class="o">=</span> <span class="n">Y_mu_pred</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="n">m</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mu_mean</span> <span class="o">=</span> <span class="n">mean</span><span class="p">(</span><span class="n">Y_mu_pred</span><span class="p">)</span> <span class="o">/</span> <span class="n">m</span>
+
+        <span class="n">draw</span> <span class="o">=</span> <span class="n">norm</span> <span class="o">+</span> <span class="n">mu_mean</span>
+        <span class="k">return</span> <span class="n">draw</span>
+
+
+<span class="k">def</span> <span class="nf">fast_mean</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;If available use Numba to speed up the computation of the mean.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">numba</span> <span class="kn">import</span> <span class="n">jit</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span>
+
+    <span class="nd">@jit</span>
+    <span class="k">def</span> <span class="nf">mean</span><span class="p">(</span><span class="n">a</span><span class="p">):</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">suma</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">count</span><span class="p">):</span>
+            <span class="n">suma</span> <span class="o">+=</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">suma</span> <span class="o">/</span> <span class="n">count</span>
+
+    <span class="k">return</span> <span class="n">mean</span>
+
+
+<span class="k">def</span> <span class="nf">discrete_uniform_sampler</span><span class="p">(</span><span class="n">upper_value</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Draw from the uniform distribution with bounds [0, upper_value).</span>
+
+<span class="sd">    This is the same and np.random.randit(upper_value) but faster.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">*</span> <span class="n">upper_value</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">NormalSampler</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Cache samples from a standard normal distribution.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">=</span> <span class="mi">1000</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cache</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">random</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">update</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cache</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">logp</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="n">out_vars</span><span class="p">,</span> <span class="nb">vars</span><span class="p">,</span> <span class="n">shared</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Compile Aesara function of the model and the input and output variables.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    out_vars: List</span>
+<span class="sd">        containing :class:`pymc.Distribution` for the output variables</span>
+<span class="sd">    vars: List</span>
+<span class="sd">        containing :class:`pymc.Distribution` for the input variables</span>
+<span class="sd">    shared: List</span>
+<span class="sd">        containing :class:`aesara.tensor.Tensor` for depended shared data</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">out_list</span><span class="p">,</span> <span class="n">inarray0</span> <span class="o">=</span> <span class="n">join_nonshared_inputs</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="n">out_vars</span><span class="p">,</span> <span class="nb">vars</span><span class="p">,</span> <span class="n">shared</span><span class="p">)</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">aesara_function</span><span class="p">([</span><span class="n">inarray0</span><span class="p">],</span> <span class="n">out_list</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">trust_input</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="n">f</span>
+</pre></div>
+
+              </div>
+              
+              
+              <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+</div>
+              
+          </main>
+          
+
+      </div>
+    </div>
+  
+  <script src="../../../_static/js/index.be7d3bbb2ef33a8344ce.js"></script>
+<footer class="footer mt-5 mt-md-0">
+  <div class="container">
+    
+    <div class="footer-item">
+      <p class="copyright">
+    &copy; Copyright 2022, pymc-devs.<br>
+</p>
+    </div>
+    
+    <div class="footer-item">
+      <p class="sphinx-version">
+Created using <a href="http://sphinx-doc.org/">Sphinx</a> 4.3.2.<br>
+</p>
+    </div>
+    
+  </div>
+</footer>
+  </body>
+</html>

@@ -1,0 +1,417 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API Reference &#8212; pymc_experimental 0.0.1 documentation</title>
+    
+  <link href="_static/css/theme.css" rel="stylesheet">
+  <link href="_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/css/blank.css" />
+    
+  <link rel="preload" as="script" href="_static/js/index.be7d3bbb2ef33a8344ce.js">
+
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="PyMC experimental" href="index.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+    <nav class="navbar navbar-light navbar-expand-lg bg-light fixed-top bd-navbar" id="navbar-main"><div class="container-xl">
+
+  <div id="navbar-start">
+    
+    
+<a class="navbar-brand" href="index.html">
+<p class="title">pymc_experimental</p>
+</a>
+
+    
+  </div>
+
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbar-collapsible" aria-controls="navbar-collapsible" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  
+  <div id="navbar-collapsible" class="col-lg-9 collapse navbar-collapse">
+    <div id="navbar-center" class="mr-auto">
+      
+      <div class="navbar-center-item">
+        <ul id="navbar-main-elements" class="navbar-nav">
+    <li class="toctree-l1 current active nav-item">
+ <a class="current reference internal nav-link" href="#">
+  API Reference
+ </a>
+</li>
+
+    
+</ul>
+      </div>
+      
+    </div>
+
+    <div id="navbar-end">
+      
+      <div class="navbar-end-item">
+        <ul id="navbar-icon-links" class="navbar-nav" aria-label="Icon Links">
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/pymc_experimental/pymc_experimental" rel="noopener" target="_blank" title="GitHub">
+            <span><i class="fab fa-github-square"></i></span>
+            <label class="sr-only">GitHub</label>
+          </a>
+        </li>
+      </ul>
+      </div>
+      
+    </div>
+  </div>
+</div>
+    </nav>
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+            
+            <!-- Only show if we have sidebars configured, else just a small margin  -->
+            <div class="col-12 col-md-3 bd-sidebar">
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+            </div>
+            
+          
+
+          
+          <div class="d-none d-xl-block col-xl-2 bd-toc">
+            
+              
+              <div class="toc-item">
+                
+<div class="tocsection onthispage pt-5 pb-3">
+    <i class="fas fa-list"></i> On this page
+</div>
+
+<nav id="bd-toc-nav">
+    <ul class="visible nav section-nav flex-column">
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#module-pymc_experimental.bart">
+   <code class="xref py py-mod docutils literal notranslate">
+    <span class="pre">
+     pymc_experimental.bart
+    </span>
+   </code>
+  </a>
+ </li>
+</ul>
+
+</nav>
+              </div>
+              
+              <div class="toc-item">
+                
+              </div>
+              
+            
+          </div>
+          
+
+          
+          
+            
+          
+          <main class="col-12 col-md-9 col-xl-7 py-md-5 pl-md-5 pr-md-4 bd-content" role="main">
+              
+              <div>
+                
+  <div class="section" id="api-reference">
+<h1>API Reference<a class="headerlink" href="#api-reference" title="Permalink to this headline">¶</a></h1>
+<p>This reference provides detailed documentation for all modules, classes, and
+methods in the current release of PyMC experimental.</p>
+<div class="toctree-wrapper compound">
+</div>
+<div class="section" id="module-pymc_experimental.bart">
+<span id="pymc-experimental-bart"></span><h2><a class="reference internal" href="#module-pymc_experimental.bart" title="pymc_experimental.bart"><code class="xref py py-mod docutils literal notranslate"><span class="pre">pymc_experimental.bart</span></code></a><a class="headerlink" href="#module-pymc_experimental.bart" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="pymc_experimental.bart.BART">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymc_experimental.bart.</span></span><span class="sig-name descname"><span class="pre">BART</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">X</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.25</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">split_prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/bart.html#BART"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.BART" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bayesian Additive Regression Tree distribution.</p>
+<p>Distribution representing a sum over trees</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>X</strong> (<em>array-like</em>) – The covariate matrix.</p></li>
+<li><p><strong>Y</strong> (<em>array-like</em>) – The response vector.</p></li>
+<li><p><strong>m</strong> (<em>int</em>) – Number of trees</p></li>
+<li><p><strong>alpha</strong> (<em>float</em>) – Control the prior probability over the depth of the trees. Even when it can takes values in
+the interval (0, 1), it is recommended to be in the interval (0, 0.5].</p></li>
+<li><p><strong>k</strong> (<em>float</em>) – Scale parameter for the values of the leaf nodes. Defaults to 2. Recomended to be between 1
+and 3.</p></li>
+<li><p><strong>split_prior</strong> (<em>array-like</em>) – Each element of split_prior should be in the [0, 1] interval and the elements should sum to
+1. Otherwise they will be normalized.
+Defaults to None, i.e. all covariates have the same prior probability to be selected.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymc_experimental.bart.BART.dist">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">dist</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">params</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/bart.html#BART.dist"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.BART.dist" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates a RandomVariable corresponding to the <cite>cls</cite> distribution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dist_params</strong> (<em>array-like</em>) – The inputs to the <cite>RandomVariable</cite> <cite>Op</cite>.</p></li>
+<li><p><strong>shape</strong> (<em>int</em><em>, </em><em>tuple</em><em>, </em><em>Variable</em><em>, </em><em>optional</em>) – <p>A tuple of sizes for each dimension of the new RV.</p>
+<p>An Ellipsis (…) may be inserted in the last position to short-hand refer to
+all the dimensions that the RV would get if no shape/size/dims were passed at all.</p>
+</p></li>
+<li><p><strong>size</strong> (<em>int</em><em>, </em><em>tuple</em><em>, </em><em>Variable</em><em>, </em><em>optional</em>) – For creating the RV like in Aesara/NumPy.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>rv</strong> – The created RV.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>RandomVariable</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymc_experimental.bart.BART.logp">
+<span class="sig-name descname"><span class="pre">logp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">inputs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/bart.html#BART.logp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.BART.logp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Calculate log probability.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>x</strong> (<em>numeric</em><em>, </em><em>TensorVariable</em>) – Value for which log-probability is calculated.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>TensorVariable</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pymc_experimental.bart.PGBART">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymc_experimental.bart.</span></span><span class="sig-name descname"><span class="pre">PGBART</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/pgbart.html#PGBART"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.PGBART" title="Permalink to this definition">¶</a></dt>
+<dd><p>Particle Gibss BART sampling step.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>vars</strong> (<em>list</em>) – List of value variables for sampler</p></li>
+<li><p><strong>num_particles</strong> (<em>int</em>) – Number of particles for the conditional SMC sampler. Defaults to 40</p></li>
+<li><p><strong>max_stages</strong> (<em>int</em>) – Maximum number of iterations of the conditional SMC sampler. Defaults to 100.</p></li>
+<li><p><strong>batch</strong> (<em>int</em><em> or </em><em>tuple</em>) – Number of trees fitted per step. Defaults to  “auto”, which is the 10% of the <cite>m</cite> trees
+during tuning and after tuning. If a tuple is passed the first element is the batch size
+during tuning and the second the batch size after tuning.</p></li>
+<li><p><strong>model</strong> (<em>PyMC Model</em>) – Optional model for sampling step. Defaults to None (taken from context).</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymc_experimental.bart.PGBART.competence">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">competence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">var</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">has_grad</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/pgbart.html#PGBART.competence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.PGBART.competence" title="Permalink to this definition">¶</a></dt>
+<dd><p>PGBART is only suitable for BART distributions.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymc_experimental.bart.PGBART.init_particles">
+<span class="sig-name descname"><span class="pre">init_particles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tree_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span></span></span><a class="reference internal" href="_modules/pymc_experimental/bart/pgbart.html#PGBART.init_particles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.PGBART.init_particles" title="Permalink to this definition">¶</a></dt>
+<dd><p>Initialize particles.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymc_experimental.bart.PGBART.normalize">
+<span class="sig-name descname"><span class="pre">normalize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">particles</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/pgbart.html#PGBART.normalize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.PGBART.normalize" title="Permalink to this definition">¶</a></dt>
+<dd><p>Use logsumexp trick to get W_t and softmax to get normalized_weights.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymc_experimental.bart.PGBART.update_weight">
+<span class="sig-name descname"><span class="pre">update_weight</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">particle</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">old</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/pgbart.html#PGBART.update_weight"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.PGBART.update_weight" title="Permalink to this definition">¶</a></dt>
+<dd><p>Update the weight of a particle.</p>
+<p>Since the prior is used as the proposal,the weights are updated additively as the ratio of
+the new and old log-likelihoods.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pymc_experimental.bart.plot_dependence">
+<span class="sig-prename descclassname"><span class="pre">pymc_experimental.bart.</span></span><span class="sig-name descname"><span class="pre">plot_dependence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idata</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">X</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Y</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kind</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pdp'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xs_interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'linear'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xs_values</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var_idx</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var_discrete</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">instances</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sharey</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rug</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">smooth</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indices</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'long'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'C0'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color_mean</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'C0'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">smooth_kwargs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/utils.html#plot_dependence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.plot_dependence" title="Permalink to this definition">¶</a></dt>
+<dd><p>Partial dependence or individual conditional expectation plot.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>idata</strong> (<em>InferenceData</em>) – InferenceData containing a collection of BART_trees in sample_stats group</p></li>
+<li><p><strong>X</strong> (<em>array-like</em>) – The covariate matrix.</p></li>
+<li><p><strong>Y</strong> (<em>array-like</em>) – The response vector.</p></li>
+<li><p><strong>kind</strong> (<em>str</em>) – Whether to plor a partial dependence plot (“pdp”) or an individual conditional expectation
+plot (“ice”). Defaults to pdp.</p></li>
+<li><p><strong>xs_interval</strong> (<em>str</em>) – Method used to compute the values X used to evaluate the predicted function. “linear”,
+evenly spaced values in the range of X. “quantiles”, the evaluation is done at the specified
+quantiles of X. “insample”, the evaluation is done at the values of X.
+For discrete variables these options are ommited.</p></li>
+<li><p><strong>xs_values</strong> (<em>int</em><em> or </em><em>list</em>) – Values of X used to evaluate the predicted function. If <code class="docutils literal notranslate"><span class="pre">xs_interval=&quot;linear&quot;</span></code> number of
+points in the evenly spaced grid. If <code class="docutils literal notranslate"><span class="pre">xs_interval=&quot;quantiles&quot;``quantile</span> <span class="pre">or</span> <span class="pre">sequence</span> <span class="pre">of</span>
+<span class="pre">quantiles</span> <span class="pre">to</span> <span class="pre">compute,</span> <span class="pre">which</span> <span class="pre">must</span> <span class="pre">be</span> <span class="pre">between</span> <span class="pre">0</span> <span class="pre">and</span> <span class="pre">1</span> <span class="pre">inclusive.</span>
+<span class="pre">Ignored</span> <span class="pre">when</span> <span class="pre">``xs_interval=&quot;insample&quot;</span></code>.</p></li>
+<li><p><strong>var_idx</strong> (<em>list</em>) – List of the indices of the covariate for which to compute the pdp or ice.</p></li>
+<li><p><strong>var_discrete</strong> (<em>list</em>) – List of the indices of the covariate treated as discrete.</p></li>
+<li><p><strong>samples</strong> (<em>int</em>) – Number of posterior samples used in the predictions. Defaults to 50</p></li>
+<li><p><strong>instances</strong> (<em>int</em>) – Number of instances of X to plot. Only relevant if ice <code class="docutils literal notranslate"><span class="pre">kind=&quot;ice&quot;</span></code> plots.</p></li>
+<li><p><strong>random_seed</strong> (<em>int</em>) – Seed used to sample from the posterior. Defaults to None.</p></li>
+<li><p><strong>sharey</strong> (<em>bool</em>) – Controls sharing of properties among y-axes. Defaults to True.</p></li>
+<li><p><strong>rug</strong> (<em>bool</em>) – Whether to include a rugplot. Defaults to True.</p></li>
+<li><p><strong>smooth</strong> (<em>bool</em>) – If True the result will be smoothed by first computing a linear interpolation of the data
+over a regular grid and then applying the Savitzky-Golay filter to the interpolated data.
+Defaults to True.</p></li>
+<li><p><strong>grid</strong> (<em>str</em><em> or </em><em>tuple</em>) – How to arrange the subplots. Defaults to “long”, one subplot below the other.
+Other options are “wide”, one subplot next to eachother or a tuple indicating the number of
+rows and columns.</p></li>
+<li><p><strong>color</strong> (<em>matplotlib valid color</em>) – Color used to plot the pdp or ice. Defaults to “C0”</p></li>
+<li><p><strong>color_mean</strong> (<em>matplotlib valid color</em>) – Color used to plot the mean pdp or ice. Defaults to “C0”,</p></li>
+<li><p><strong>alpha</strong> (<em>float</em>) – Transparency level, should in the interval [0, 1].</p></li>
+<li><p><strong>figsize</strong> (<em>tuple</em>) – Figure size. If None it will be defined automatically.</p></li>
+<li><p><strong>smooth_kwargs</strong> (<em>dict</em>) – Additional keywords modifying the Savitzky-Golay filter.
+See scipy.signal.savgol_filter() for details.</p></li>
+<li><p><strong>ax</strong> (<em>axes</em>) – Matplotlib axes.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><strong>axes</strong></p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>matplotlib axes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pymc_experimental.bart.plot_variable_importance">
+<span class="sig-prename descclassname"><span class="pre">pymc_experimental.bart.</span></span><span class="sig-name descname"><span class="pre">plot_variable_importance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idata</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">labels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/utils.html#plot_variable_importance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.plot_variable_importance" title="Permalink to this definition">¶</a></dt>
+<dd><p>Estimates variable importance from the BART-posterior.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>idata</strong> (<em>InferenceData</em>) – InferenceData containing a collection of BART_trees in sample_stats group</p></li>
+<li><p><strong>labels</strong> (<em>list</em>) – List of the names of the covariates.</p></li>
+<li><p><strong>figsize</strong> (<em>tuple</em>) – Figure size. If None it will be defined automatically.</p></li>
+<li><p><strong>samples</strong> (<em>int</em>) – Number of predictions used to compute correlation for subsets of variables. Defaults to 100</p></li>
+<li><p><strong>random_seed</strong> (<em>int</em>) – random_seed used to sample from the posterior. Defaults to None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>idxs</strong> (<em>indexes of the covariates from higher to lower relative importance</em>)</p></li>
+<li><p><strong>axes</strong> (<em>matplotlib axes</em>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pymc_experimental.bart.predict">
+<span class="sig-prename descclassname"><span class="pre">pymc_experimental.bart.</span></span><span class="sig-name descname"><span class="pre">predict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idata</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">X_new</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">excluded</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymc_experimental/bart/utils.html#predict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymc_experimental.bart.predict" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate samples from the BART-posterior.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>idata</strong> (<em>InferenceData</em>) – InferenceData containing a collection of BART_trees in sample_stats group</p></li>
+<li><p><strong>rng</strong> (<em>NumPy random generator</em>) – </p></li>
+<li><p><strong>X_new</strong> (<em>array-like</em>) – A new covariate matrix. Use it to obtain out-of-sample predictions</p></li>
+<li><p><strong>size</strong> (<em>int</em><em> or </em><em>tuple</em>) – Number of samples.</p></li>
+<li><p><strong>excluded</strong> (<em>list</em>) – indexes of the variables to exclude when computing predictions</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</div>
+
+
+              </div>
+              
+              
+              <!-- Previous / next buttons -->
+<div class='prev-next-area'> 
+    <a class='left-prev' id="prev-link" href="index.html" title="previous page">
+        <i class="fas fa-angle-left"></i>
+        <div class="prev-next-info">
+            <p class="prev-next-subtitle">previous</p>
+            <p class="prev-next-title">PyMC experimental</p>
+        </div>
+    </a>
+</div>
+              
+          </main>
+          
+
+      </div>
+    </div>
+  
+  <script src="_static/js/index.be7d3bbb2ef33a8344ce.js"></script>
+<footer class="footer mt-5 mt-md-0">
+  <div class="container">
+    
+    <div class="footer-item">
+      <p class="copyright">
+    &copy; Copyright 2022, pymc-devs.<br>
+</p>
+    </div>
+    
+    <div class="footer-item">
+      <p class="sphinx-version">
+Created using <a href="http://sphinx-doc.org/">Sphinx</a> 4.3.2.<br>
+</p>
+    </div>
+    
+  </div>
+</footer>
+  </body>
+</html>
