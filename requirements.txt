@@ -1,1 +1,1 @@
-pymc>=4.0.0b4
+git+https://github.com/pymc-devs/pymc.git
