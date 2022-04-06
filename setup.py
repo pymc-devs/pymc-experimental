@@ -82,4 +82,5 @@ if __name__ == "__main__":
         classifiers=classifiers,
         python_requires=">=3.8",
         install_requires=install_reqs,
+        dependency_links=["git+https://github.com/pymc-devs/pymc.git"],
     )
