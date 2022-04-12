@@ -20,3 +20,4 @@ def quantile_histogram(data: ArrayLike, n_quantiles=1000) -> Dict[str, ArrayLike
         count=count,
     )
     return result
+
