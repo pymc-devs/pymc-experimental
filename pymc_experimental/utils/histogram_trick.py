@@ -37,10 +37,10 @@ if dask is not None:
 
     @quantile_histogram.register(dask.dataframe.Series)
     def _(data: dask.dataframe.Series, n_quantiles=1000) -> Dict[str, ArrayLike]:
-        quantiles = data.quantile(np.linspace(0, 1, n_quantiles)).persist()
-        count, _ = dask.array.histogram(data, quantiles.compute())
-        low = quantiles.to_dask_array(lengths=True)[:-1]
-        upper = quantiles.to_dask_array(lengths=True)[1:]
+        quantiles = data.quantile(np.linspace(0, 1, n_quantiles)).to_dask_array(lengths=True)
+        count, _ = dask.array.histogram(data, quantiles)
+        low = quantiles[:-1]
+        upper = quantiles[1:]
         result = dict(
             low=low,
             upper=upper,
