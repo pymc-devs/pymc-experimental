@@ -8,7 +8,7 @@ import pytest
 def test_histogram_init(use_dask):
     data = np.random.randn(10000)
     
-    histogram = pmx.tricks.quantile_histogram(data, n_quantiles=100)
+    histogram = pmx.utils.quantile_histogram(data, n_quantiles=100)
     assert isinstance(histogram, dict)
     assert histogram["mid"].shape == (99, )
     assert histogram["low"].shape == (99, )
