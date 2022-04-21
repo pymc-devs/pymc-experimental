@@ -8,4 +8,4 @@ dependencies:
 - pytest>=3.0
 - python=3.9
 - pip:
-  - "git+git://github.com/pymc-devs/pymc.git@main"
+  - "git+https://github.com/pymc-devs/pymc.git@main"
