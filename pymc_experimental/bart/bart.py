@@ -69,7 +69,7 @@ class BART(NoDistribution):
         Control the prior probability over the depth of the trees. Even when it can takes values in
         the interval (0, 1), it is recommended to be in the interval (0, 0.5].
     k : float
-        Scale parameter for the values of the leaf nodes. Defaults to 2. Recomended to be between 1
+        Scale parameter for the values of the leaf nodes. Defaults to 2. Recommended to be between 1
         and 3.
     split_prior : array-like
         Each element of split_prior should be in the [0, 1] interval and the elements should sum to
