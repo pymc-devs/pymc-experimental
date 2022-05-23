@@ -75,7 +75,6 @@ class PGBART(ArrayStepShared):
         self.missing_data = np.any(np.isnan(self.X))
         self.m = self.bart.m
         self.alpha = self.bart.alpha
-        self.k = self.bart.k
         self.alpha_vec = self.bart.split_prior
         if self.alpha_vec is None:
             self.alpha_vec = np.ones(self.X.shape[1])
@@ -84,10 +83,10 @@ class PGBART(ArrayStepShared):
         # if data is binary
         Y_unique = np.unique(self.Y)
         if Y_unique.size == 2 and np.all(Y_unique == [0, 1]):
-            mu_std = 3 / (self.k * self.m**0.5)
+            mu_std = 3 / self.m**0.5
         # maybe we need to check for count data
         else:
-            mu_std = self.Y.std() / (self.k * self.m**0.5)
+            mu_std = self.Y.std() / self.m**0.5
 
         self.num_observations = self.X.shape[0]
         self.num_variates = self.X.shape[1]
@@ -101,6 +100,7 @@ class PGBART(ArrayStepShared):
         self.mean = fast_mean()
 
         self.normal = NormalSampler(mu_std)
+        self.uniform = UniformSampler(0.33, 0.75)
         self.prior_prob_leaf_node = compute_prior_probability(self.alpha)
         self.ssv = SampleSplittingVariable(self.alpha_vec)
 
@@ -122,7 +122,7 @@ class PGBART(ArrayStepShared):
         shared = make_shared_replacements(initial_values, vars, model)
         self.likelihood_logp = logp(initial_values, [model.datalogpt], vars, shared)
         self.all_particles = []
-        for i in range(self.m):
+        for _ in range(self.m):
             self.a_tree.leaf_node_value = self.init_mean / self.m
             p = ParticleTree(self.a_tree)
             self.all_particles.append(p)
@@ -208,12 +208,12 @@ class PGBART(ArrayStepShared):
         log_w = np.array([p.log_weight for p in particles])
         log_w_max = log_w.max()
         log_w_ = log_w - log_w_max
-        # stabilize weights to avoid assigning exactly zero probability to a particle
-        w_ = np.exp(log_w_) + 1e-12
+        w_ = np.exp(log_w_)
         w_sum = w_.sum()
         w_t = log_w_max + np.log(w_sum) - self.log_num_particles
         normalized_weights = w_ / w_sum
-        # normalized_weights += 1e-12
+        # stabilize weights to avoid assigning exactly zero probability to a particle
+        normalized_weights += 1e-12
 
         return w_t, normalized_weights
 
@@ -233,7 +233,12 @@ class PGBART(ArrayStepShared):
 
         particles = [p0, p1]
         for _ in self.indices:
-            particles.append(ParticleTree(self.a_tree))
+            pt = ParticleTree(self.a_tree)
+            if self.tune:
+                pt.kf = self.uniform.random()
+            else:
+                pt.kf = p0.kf
+            particles.append(pt)
 
         return np.array(particles)
 
@@ -270,6 +275,7 @@ class ParticleTree:
         self.log_weight = 0
         self.old_likelihood_logp = 0
         self.used_variates = []
+        self.kf = 0.75
 
     def sample_tree(
         self,
@@ -301,6 +307,7 @@ class ParticleTree:
                     mean,
                     m,
                     normal,
+                    self.kf,
                 )
                 if index_selected_predictor is not None:
                     new_indexes = self.tree.idx_leaf_nodes[-2:]
@@ -321,6 +328,7 @@ class ParticleTree:
                     mean,
                     m,
                     normal,
+                    self.kf,
                 )
                 leaf.value = node_value
 
@@ -380,6 +388,7 @@ def grow_tree(
     mean,
     m,
     normal,
+    kf,
 ):
     current_node = tree.get_node(index_leaf_node)
     idx_data_points = current_node.idx_data_points
@@ -413,6 +422,7 @@ def grow_tree(
                 mean,
                 m,
                 normal,
+                kf,
             )
 
             new_node = LeafNode(
@@ -446,12 +456,12 @@ def get_new_idx_data_points(split_value, idx_data_points, selected_predictor, X)
     return left_node_idx_data_points, right_node_idx_data_points
 
 
-def draw_leaf_value(Y_mu_pred, mean, m, normal):
+def draw_leaf_value(Y_mu_pred, mean, m, normal, kf):
     """Draw Gaussian distributed leaf values."""
     if Y_mu_pred.size == 0:
         return 0
     else:
-        norm = normal.random()
+        norm = normal.random() * kf
         if Y_mu_pred.size == 1:
             mu_mean = Y_mu_pred.item() / m
         else:
@@ -502,6 +512,24 @@ class NormalSampler:
 
     def update(self):
         self.cache = np.random.normal(loc=0.0, scale=self.scale, size=self.size).tolist()
+
+
+class UniformSampler:
+    """Cache samples from a uniform distribution."""
+
+    def __init__(self, lower_bound, upper_bound):
+        self.size = 1000
+        self.cache = []
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+
+    def random(self):
+        if not self.cache:
+            self.update()
+        return self.cache.pop()
+
+    def update(self):
+        self.cache = np.random.uniform(self.lower_bound, self.upper_bound, size=self.size).tolist()
 
 
 def logp(point, out_vars, vars, shared):
