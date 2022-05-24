@@ -34,7 +34,6 @@ def _(data: ArrayLike, n_quantiles=1000) -> Dict[str, ArrayLike]:
 
 
 if dask is not None:
-
     @quantile_histogram.register(dask.dataframe.Series)
     def _(data: dask.dataframe.Series, n_quantiles=1000) -> Dict[str, ArrayLike]:
         quantiles = data.quantile(np.linspace(0, 1, n_quantiles)).to_dask_array(lengths=True)
