@@ -1,4 +1,3 @@
-import typing
 import numpy as np
 import functools
 from numpy.typing import ArrayLike

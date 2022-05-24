@@ -1,1 +1,1 @@
-from .histogram_trick import *
+from .histogram_utils import *
