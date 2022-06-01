@@ -397,7 +397,7 @@ def grow_tree(
     index_selected_predictor = ssv.rvs()
     selected_predictor = available_predictors[index_selected_predictor]
     available_splitting_values = X[idx_data_points, selected_predictor]
-    split_value = get_split_value(available_splitting_values, missing_data)
+    split_value = get_split_value(available_splitting_values, idx_data_points, missing_data)
 
     if split_value is not None:
 
@@ -451,7 +451,7 @@ def get_new_idx_data_points(split_value, idx_data_points, selected_predictor, X)
     return left_node_idx_data_points, right_node_idx_data_points
 
 
-def get_split_value(available_splitting_values, missing_data):
+def get_split_value(available_splitting_values, idx_data_points, missing_data):
 
     if missing_data:
         idx_data_points = idx_data_points[~np.isnan(available_splitting_values)]
