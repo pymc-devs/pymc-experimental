@@ -2,6 +2,7 @@ import numpy as np
 import functools
 from numpy.typing import ArrayLike
 from typing import Dict
+import pymc as pm
 
 try:
     import dask.dataframe
@@ -9,7 +10,7 @@ except ImportError:
     dask = None
 
 
-__all__ = ["quantile_histogram"]
+__all__ = ["quantile_histogram", "histogram_approximation"]
 
 
 @functools.singledispatch
@@ -33,6 +34,7 @@ def _(data: ArrayLike, n_quantiles=1000) -> Dict[str, ArrayLike]:
 
 
 if dask is not None:
+
     @quantile_histogram.register(dask.dataframe.Series)
     def _(data: dask.dataframe.Series, n_quantiles=1000) -> Dict[str, ArrayLike]:
         quantiles = data.quantile(np.linspace(0, 1, n_quantiles)).to_dask_array(lengths=True)
@@ -46,3 +48,10 @@ if dask is not None:
             count=count,
         )
         return result
+
+
+def histogram_approximation(name, dist, *, observed, n_quantiles=1000):
+    histogram = quantile_histogram(observed, n_quantiles=n_quantiles)
+    if dask is not None:
+        (histogram,) = dask.compute(histogram)
+    return pm.Potential(name, pm.logp(dist, histogram["mid"]) * histogram["count"])
