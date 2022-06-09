@@ -50,6 +50,23 @@ if dask is not None:
         return result
 
 
+@functools.singledispatch
+def discrete_histogram(data: ArrayLike, top_k=None):
+    raise NotImplementedError(f"Not implemented for {type(data)}")
+
+
+@discrete_histogram.register(np.ndarray)
+def _(data: np.ndarray, top_k=None):
+    ...
+
+
+if dask is not None:
+
+    @discrete_histogram.register(dask.dataframe.Series)
+    def _(data: dask.dataframe.Series, top_k=None):
+        ...
+
+
 def histogram_approximation(name, dist, *, observed, n_quantiles=1000):
     histogram = quantile_histogram(observed, n_quantiles=n_quantiles)
     if dask is not None:
