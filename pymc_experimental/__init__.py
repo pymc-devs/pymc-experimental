@@ -12,4 +12,4 @@ if not logging.root.handlers:
 
 
 from pymc_experimental.bart import *
-from pymc_experimental import approximations
+from pymc_experimental import distributions

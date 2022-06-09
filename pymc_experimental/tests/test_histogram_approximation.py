@@ -11,7 +11,7 @@ def test_histogram_init(use_dask):
         dask = pytest.importorskip("dask")
         dask_df = pytest.importorskip("dask.dataframe")
         data = dask_df.from_array(data)
-    histogram = pmx.approximations.quantile_histogram(data, n_quantiles=100)
+    histogram = pmx.distributions.histogram_utils.quantile_histogram(data, n_quantiles=100)
     if use_dask:
         (histogram,) = dask.compute(histogram)
     assert isinstance(histogram, dict)
@@ -32,7 +32,7 @@ def test_histogram_approx_api(use_dask):
     with pm.Model():
         m = pm.Normal("m")
         s = pm.HalfNormal("s")
-        pot = pmx.approximations.histogram_approximation(
+        pot = pmx.distributions.histogram_approximation(
             "histogram_potential", pm.Normal.dist(m, s), observed=data, n_quantiles=1000
         )
         trace = pm.sample()  # very fast
