@@ -5,21 +5,30 @@ import pytest
 
 
 @pytest.mark.parametrize("use_dask", [True, False])
-def test_histogram_init_cont(use_dask):
+@pytest.mark.parametrize("zero_inflation", [True, False])
+def test_histogram_init_cont(use_dask, zero_inflation):
     data = np.random.randn(10000)
+    if zero_inflation:
+        data = abs(data)
+        data[:100] = 0
     if use_dask:
         dask = pytest.importorskip("dask")
         dask_df = pytest.importorskip("dask.dataframe")
         data = dask_df.from_array(data)
-    histogram = pmx.distributions.histogram_utils.quantile_histogram(data, n_quantiles=100)
+    histogram = pmx.distributions.histogram_utils.quantile_histogram(
+        data, n_quantiles=100, zero_inflation=zero_inflation
+    )
     if use_dask:
         (histogram,) = dask.compute(histogram)
     assert isinstance(histogram, dict)
     assert isinstance(histogram["mid"], np.ndarray)
-    assert histogram["mid"].shape == (99,)
-    assert histogram["low"].shape == (99,)
-    assert histogram["upper"].shape == (99,)
-    assert histogram["count"].shape == (99,)
+    size = 99 + zero_inflation
+    assert histogram["mid"].shape == (size,)
+    assert histogram["lower"].shape == (size,)
+    assert histogram["upper"].shape == (size,)
+    assert histogram["count"].shape == (size,)
+    if zero_inflation:
+        histogram["count"][0] == 100
 
 
 @pytest.mark.parametrize("use_dask", [True, False])

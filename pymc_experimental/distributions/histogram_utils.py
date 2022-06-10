@@ -20,15 +20,22 @@ def quantile_histogram(data: ArrayLike, n_quantiles=1000) -> Dict[str, ArrayLike
 
 
 @quantile_histogram.register(np.ndarray)
-def _(data: ArrayLike, n_quantiles=1000) -> Dict[str, ArrayLike]:
+def _(data: ArrayLike, n_quantiles=1000, zero_inflation=False) -> Dict[str, ArrayLike]:
+    if zero_inflation:
+        zeros = (data == 0).sum()
+        data = data[data > 0]
     quantiles = np.quantile(data, np.linspace(0, 1, n_quantiles))
     count, _ = np.histogram(data, quantiles)
-    low = quantiles[:-1]
+    lower = quantiles[:-1]
     upper = quantiles[1:]
+    if zero_inflation:
+        count = np.concatenate([[zeros], count])
+        lower = np.concatenate([[0], lower])
+        upper = np.concatenate([[0], upper])
     result = dict(
-        low=low,
+        lower=lower,
         upper=upper,
-        mid=(low + upper) / 2,
+        mid=(lower + upper) / 2,
         count=count,
     )
     return result
@@ -40,12 +47,12 @@ if dask is not None:
     def _(data: dask.dataframe.Series, n_quantiles=1000) -> Dict[str, ArrayLike]:
         quantiles = dask.array.percentile(data, np.linspace(0, 100, n_quantiles))
         count, _ = dask.array.histogram(data, quantiles)
-        low = quantiles[:-1]
+        lower = quantiles[:-1]
         upper = quantiles[1:]
         result = dict(
-            low=low,
+            lower=lower,
             upper=upper,
-            mid=(low + upper) / 2,
+            mid=(lower + upper) / 2,
             count=count,
         )
         return result
