@@ -23,24 +23,26 @@ def test_histogram_init_cont(use_dask):
 
 
 @pytest.mark.parametrize("use_dask", [True, False])
-@pytest.mark.parametrize("top_k", [None, 90])
-def test_histogram_init_discrete(use_dask, top_k):
+@pytest.mark.parametrize("min_count", [None, 10])
+def test_histogram_init_discrete(use_dask, min_count):
     data = np.random.randint(0, 100, size=10000)
-    n_uniq = len(np.unique(data))
+    u, c = np.unique(data, return_counts=True)
     if use_dask:
         dask = pytest.importorskip("dask")
         dask_df = pytest.importorskip("dask.dataframe")
         data = dask_df.from_array(data)
-    histogram = pmx.distributions.histogram_utils.discrete_histogram(data, top_k=top_k)
+    histogram = pmx.distributions.histogram_utils.discrete_histogram(data, min_count=min_count)
     if use_dask:
         (histogram,) = dask.compute(histogram)
     assert isinstance(histogram, dict)
     assert isinstance(histogram["mid"], np.ndarray)
     assert histogram["mid"].dtype == np.int64
-    if top_k is None:
-        top_k = n_uniq
-    assert histogram["mid"].shape == (top_k,)
-    assert histogram["count"].shape == (top_k,)
+    if min_count is not None:
+        size = int((c >= min_count).sum())
+    else:
+        size = len(u)
+    assert histogram["mid"].shape == (size,)
+    assert histogram["count"].shape == (size,)
 
 
 @pytest.mark.parametrize("use_dask", [True, False])
@@ -69,6 +71,6 @@ def test_histogram_approx_discrete(use_dask):
     with pm.Model():
         s = pm.Exponential("s", 1.0)
         pot = pmx.distributions.histogram_approximation(
-            "histogram_potential", pm.Poisson.dist(s), observed=data, top_k=90
+            "histogram_potential", pm.Poisson.dist(s), observed=data, min_count=10
         )
         trace = pm.sample()  # very fast
