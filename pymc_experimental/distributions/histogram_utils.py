@@ -36,9 +36,9 @@ def _(data: ArrayLike, n_quantiles=1000) -> Dict[str, ArrayLike]:
 
 if dask is not None:
 
-    @quantile_histogram.register(dask.dataframe.Series)
+    @quantile_histogram.register(dask.array.Array)
     def _(data: dask.dataframe.Series, n_quantiles=1000) -> Dict[str, ArrayLike]:
-        quantiles = data.quantile(np.linspace(0, 1, n_quantiles)).to_dask_array(lengths=True)
+        quantiles = dask.array.percentile(data, np.linspace(0, 100, n_quantiles))
         count, _ = dask.array.histogram(data, quantiles)
         low = quantiles[:-1]
         upper = quantiles[1:]
@@ -49,6 +49,10 @@ if dask is not None:
             count=count,
         )
         return result
+
+    @quantile_histogram.register(dask.dataframe.Series)
+    def _(data: dask.dataframe.Series, n_quantiles=1000) -> Dict[str, ArrayLike]:
+        return quantile_histogram(data.to_dask_array(lengths=True), n_quantiles=n_quantiles)
 
 
 @functools.singledispatch
@@ -81,7 +85,7 @@ if dask is not None:
 
 
 def histogram_approximation(name, dist, *, observed: ArrayLike, **h_kwargs):
-    if "int" in str(observed.dtype):
+    if np.issubdtype(observed.dtype, np.integer):
         histogram = discrete_histogram(observed, **h_kwargs)
     else:
         histogram = quantile_histogram(observed, **h_kwargs)
