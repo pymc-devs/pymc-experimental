@@ -76,7 +76,7 @@ def histogram_approximation(name, dist, *, observed: ArrayLike, **h_kwargs):
     dist : aesara.tensor.var.TensorVariable
         The output of pm.Distribution.dist()
     observed : ArrayLike
-        Observed value to construct a histogram. Histogram is computed over 0th axis
+        Observed value to construct a histogram. Histogram is computed over 0th axis. Dask is supported.
 
     Returns
     -------
