@@ -19,7 +19,6 @@ jobs:
       matrix:
         os: [ubuntu-18.04]
         floatx: [float32, float64]
-        test-subset: ["tests", "--doctest-modules pymc_experimental"]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
