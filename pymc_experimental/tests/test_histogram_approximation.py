@@ -22,6 +22,7 @@ def test_histogram_init_cont(use_dask, zero_inflation):
         (histogram,) = dask.compute(histogram)
     assert isinstance(histogram, dict)
     assert isinstance(histogram["mid"], np.ndarray)
+    assert np.issubdtype(histogram["mid"].dtype, np.floating)
     size = 99 + zero_inflation
     assert histogram["mid"].shape == (size,)
     assert histogram["lower"].shape == (size,)
@@ -45,7 +46,7 @@ def test_histogram_init_discrete(use_dask, min_count):
         (histogram,) = dask.compute(histogram)
     assert isinstance(histogram, dict)
     assert isinstance(histogram["mid"], np.ndarray)
-    assert histogram["mid"].dtype == np.int64
+    assert np.issubdtype(histogram["mid"].dtype, np.integer)
     if min_count is not None:
         size = int((c >= min_count).sum())
     else:
