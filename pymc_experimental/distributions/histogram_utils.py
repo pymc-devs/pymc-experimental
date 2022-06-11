@@ -50,12 +50,18 @@ def quantile_histogram(
 
 
 def discrete_histogram(data: ArrayLike, min_count=None) -> Dict[str, ArrayLike]:
-    if dask and isinstance(data, dask.dataframe.Series):
+    if dask and isinstance(data, (dask.dataframe.Series, dask.dataframe.DataFrame)):
         data = data.to_dask_array(lengths=True)
-    mid, count = np.unique(data, return_counts=True)
+    mid, count_uniq = np.unique(data, return_counts=True)
     if min_count is not None:
-        mid = mid[count >= min_count]
-        count = count[count >= min_count]
+        mid = mid[count_uniq >= min_count]
+        count_uniq = count_uniq[count_uniq >= min_count]
+    bins = np.concatenate([mid, [mid.max() + 1]])
+    if dask:
+        mid, bins = dask.compute(mid, bins)
+    count, _ = xhistogram.core.histogram(data, bins=[bins], axis=0)
+    count = count.transpose(count.ndim - 1, *range(count.ndim - 1))
+    mid = mid.reshape(mid.shape + (1,) * (count.ndim - 1))
     return dict(mid=mid, count=count)
 
 
