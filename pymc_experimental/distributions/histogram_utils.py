@@ -21,7 +21,7 @@ def quantile_histogram(
         data = data.to_dask_array(lengths=True)
     if zero_inflation:
         zeros = (data == 0).sum(0)
-        mdata = np.ma.masked_where(data, data > 0)
+        mdata = np.ma.masked_where(data == 0, data)
         qdata = data[data > 0]
     else:
         mdata = data
@@ -31,7 +31,6 @@ def quantile_histogram(
         (quantiles,) = dask.compute(quantiles)
     count, _ = xhistogram.core.histogram(mdata, bins=[quantiles], axis=0)
     count = count.transpose(count.ndim - 1, *range(count.ndim - 1))
-    quantiles = quantiles.reshape(quantiles.shape + (1,) * (count.ndim - 1))
     lower = quantiles[:-1]
     upper = quantiles[1:]
 
@@ -39,6 +38,8 @@ def quantile_histogram(
         count = np.concatenate([zeros[None], count])
         lower = np.concatenate([[0], lower])
         upper = np.concatenate([[0], upper])
+    lower = lower.reshape(lower.shape + (1,) * (count.ndim - 1))
+    upper = upper.reshape(upper.shape + (1,) * (count.ndim - 1))
 
     result = dict(
         lower=lower,
