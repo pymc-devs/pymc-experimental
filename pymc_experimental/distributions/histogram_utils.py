@@ -2,6 +2,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 from typing import Dict
 import pymc as pm
+import xhistogram.core
 
 try:
     import dask.dataframe
@@ -16,19 +17,29 @@ __all__ = ["quantile_histogram", "histogram_approximation"]
 def quantile_histogram(
     data: ArrayLike, n_quantiles=1000, zero_inflation=False
 ) -> Dict[str, ArrayLike]:
-    if dask and isinstance(data, dask.dataframe.Series):
+    if dask and isinstance(data, (dask.dataframe.Series, dask.dataframe.DataFrame)):
         data = data.to_dask_array(lengths=True)
     if zero_inflation:
-        zeros = (data == 0).sum()
-        data = data[data > 0]
-    quantiles = np.percentile(data, np.linspace(0, 100, n_quantiles))
-    count, _ = np.histogram(data, quantiles)
+        zeros = (data == 0).sum(0)
+        mdata = np.ma.masked_where(data, data > 0)
+        qdata = data[data > 0]
+    else:
+        mdata = data
+        qdata = data.flatten()
+    quantiles = np.percentile(qdata, np.linspace(0, 100, n_quantiles))
+    if dask:
+        (quantiles,) = dask.compute(quantiles)
+    count, _ = xhistogram.core.histogram(mdata, bins=[quantiles], axis=0)
+    count = count.transpose(count.ndim - 1, *range(count.ndim - 1))
+    quantiles = quantiles.reshape(quantiles.shape + (1,) * (count.ndim - 1))
     lower = quantiles[:-1]
     upper = quantiles[1:]
+
     if zero_inflation:
-        count = np.concatenate([[zeros], count])
+        count = np.concatenate([zeros[None], count])
         lower = np.concatenate([[0], lower])
         upper = np.concatenate([[0], upper])
+
     result = dict(
         lower=lower,
         upper=upper,
@@ -49,7 +60,7 @@ def discrete_histogram(data: ArrayLike, min_count=None) -> Dict[str, ArrayLike]:
 
 
 def histogram_approximation(name, dist, *, observed: ArrayLike, **h_kwargs):
-    """Approximate a univariate distribution with a histogram potential.
+    """Approximate a distribution with a histogram potential.
 
     Parameters
     ----------
@@ -58,13 +69,15 @@ def histogram_approximation(name, dist, *, observed: ArrayLike, **h_kwargs):
     dist : aesara.tensor.var.TensorVariable
         The output of pm.Distribution.dist()
     observed : ArrayLike
-        observed value to construct a histogram
+        Observed value to construct a histogram. Histogram is computed over 0th axis
 
     Returns
     -------
     aesara.tensor.var.TensorVariable
         Potential
     """
+    if dask and isinstance(observed, (dask.dataframe.Series, dask.dataframe.DataFrame)):
+        observed = observed.to_dask_array(lengths=True)
     if np.issubdtype(observed.dtype, np.integer):
         histogram = discrete_histogram(observed, **h_kwargs)
     else:

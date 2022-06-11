@@ -4,10 +4,11 @@ import numpy as np
 import pytest
 
 
-@pytest.mark.parametrize("use_dask", [True, False])
-@pytest.mark.parametrize("zero_inflation", [True, False])
-def test_histogram_init_cont(use_dask, zero_inflation):
-    data = np.random.randn(10000)
+@pytest.mark.parametrize("use_dask", [True, False], ids="dask={}".format)
+@pytest.mark.parametrize("zero_inflation", [True, False], ids="ZI={}".format)
+@pytest.mark.parametrize("ndims", [1, 2], ids="ndims={}".format)
+def test_histogram_init_cont(use_dask, zero_inflation, ndims):
+    data = np.random.randn(*(10000, *(2,) * (ndims - 1)))
     if zero_inflation:
         data = abs(data)
         data[:100] = 0
@@ -27,9 +28,10 @@ def test_histogram_init_cont(use_dask, zero_inflation):
     assert histogram["mid"].shape == (size,)
     assert histogram["lower"].shape == (size,)
     assert histogram["upper"].shape == (size,)
-    assert histogram["count"].shape == (size,)
+    assert histogram["count"].shape == (size,) + data.shape[1:]
+    assert (histogram["count"].sum(0) == 10000).all()
     if zero_inflation:
-        histogram["count"][0] == 100
+        (histogram["count"][0] == 100).all()
 
 
 @pytest.mark.parametrize("use_dask", [True, False])
@@ -55,9 +57,10 @@ def test_histogram_init_discrete(use_dask, min_count):
     assert histogram["count"].shape == (size,)
 
 
-@pytest.mark.parametrize("use_dask", [True, False])
-def test_histogram_approx_cont(use_dask):
-    data = np.random.randn(10000)
+@pytest.mark.parametrize("use_dask", [True, False], ids="dask={}".format)
+@pytest.mark.parametrize("ndims", [1, 2], ids="ndims={}".format)
+def test_histogram_approx_cont(use_dask, ndims):
+    data = np.random.randn(*(10000, *(2,) * (ndims - 1)))
     if use_dask:
         dask = pytest.importorskip("dask")
         dask_df = pytest.importorskip("dask.dataframe")

@@ -1,1 +1,3 @@
 pymc>=4.0.0b6
+xhistogram
+dask[all]
