@@ -49,6 +49,22 @@ def discrete_histogram(data: ArrayLike, min_count=None) -> Dict[str, ArrayLike]:
 
 
 def histogram_approximation(name, dist, *, observed: ArrayLike, **h_kwargs):
+    """Approximate a univariate distribution with a histogram potential.
+
+    Parameters
+    ----------
+    name : str
+        Name for the Potential
+    dist : aesara.tensor.var.TensorVariable
+        The output of pm.Distribution.dist()
+    observed : ArrayLike
+        observed value to construct a histogram
+
+    Returns
+    -------
+    aesara.tensor.var.TensorVariable
+        Potential
+    """
     if np.issubdtype(observed.dtype, np.integer):
         histogram = discrete_histogram(observed, **h_kwargs)
     else:
