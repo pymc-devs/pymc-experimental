@@ -82,6 +82,40 @@ def histogram_approximation(name, dist, *, observed: ArrayLike, **h_kwargs):
     -------
     aesara.tensor.var.TensorVariable
         Potential
+
+    Examples
+    --------
+    Discrete variables are reduced to unique repetitions (up to min_count)
+    >>> import pymc as pm
+    >>> import pymc_experimental as pmx
+    >>> production = np.random.poisson([1, 2, 5], size=(1000, 3))
+    >>> with pm.Model(coords=dict(plant=range(3))):
+    ...     lam = pm.Exponential("lam", 1.0, dims="plant")
+    ...     pot = pmx.distributions.histogram_approximation(
+    ...         "histogram_potential", pm.Poisson.dist(lam), observed=production, min_count=2
+    ...     )
+
+    Continuous variables are discretized into n_quantiles
+    >>> measurements = np.random.normal([1, 2, 3], [0.1, 0.4, 0.2], size=(10000, 3))
+    >>> with pm.Model(coords=dict(tests=range(3))):
+    ...     m = pm.Normal("m", dims="tests")
+    ...     s = pm.LogNormal("s", dims="tests")
+    ...     pot = pmx.distributions.histogram_approximation(
+    ...         "histogram_potential", pm.Normal.dist(m, s),
+    ...         observed=measurements, n_quantiles=50
+    ...     )
+
+    For special cases like Zero Inflation in Continuous variables there is a flag.
+    The flag adds a separate bin for zeros
+    >>> measurements = abs(measurements)
+    >>> measurements[100:] = 0
+    >>> with pm.Model(coords=dict(tests=range(3))):
+    ...     m = pm.Normal("m", dims="tests")
+    ...     s = pm.LogNormal("s", dims="tests")
+    ...     pot = pmx.distributions.histogram_approximation(
+    ...         "histogram_potential", pm.Normal.dist(m, s),
+    ...         observed=measurements, n_quantiles=50, zero_inflation=True
+    ...     )
     """
     if dask and isinstance(observed, (dask.dataframe.Series, dask.dataframe.DataFrame)):
         observed = observed.to_dask_array(lengths=True)
