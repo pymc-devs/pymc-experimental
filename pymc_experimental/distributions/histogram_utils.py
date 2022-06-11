@@ -15,7 +15,9 @@ __all__ = ["quantile_histogram", "histogram_approximation"]
 
 
 @functools.singledispatch
-def quantile_histogram(data: ArrayLike, n_quantiles=1000) -> Dict[str, ArrayLike]:
+def quantile_histogram(
+    data: ArrayLike, n_quantiles=1000, zero_inflation=False
+) -> Dict[str, ArrayLike]:
     raise NotImplementedError(f"Not implemented for {type(data)}")
 
 
