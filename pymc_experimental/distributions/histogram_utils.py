@@ -11,7 +11,7 @@ except ImportError:
     dask = None
 
 
-__all__ = ["quantile_histogram", "histogram_approximation"]
+__all__ = ["quantile_histogram", "discrete_histogram", "histogram_approximation"]
 
 
 def quantile_histogram(
