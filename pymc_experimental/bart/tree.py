@@ -46,10 +46,10 @@ class Tree:
     num_observations : int, optional
     """
 
-    def __init__(self, num_observations=0):
+    def __init__(self, num_observations=0, shape=1):
         self.tree_structure = {}
         self.idx_leaf_nodes = []
-        self.num_observations = num_observations
+        self.output = np.zeros((num_observations, shape)).astype(aesara.config.floatX).squeeze()
 
     def __getitem__(self, index):
         return self.get_node(index)
@@ -74,7 +74,7 @@ class Tree:
 
     def trim(self):
         a_tree = self.copy()
-        del a_tree.num_observations
+        del a_tree.output
         del a_tree.idx_leaf_nodes
         for k in a_tree.tree_structure.keys():
             current_node = a_tree[k]
@@ -84,12 +84,12 @@ class Tree:
         return a_tree
 
     def _predict(self):
-        output = np.zeros(self.num_observations)
+        output = self.output
         for node_index in self.idx_leaf_nodes:
             leaf_node = self.get_node(node_index)
             output[leaf_node.idx_data_points] = leaf_node.value
 
-        return output.astype(aesara.config.floatX)
+        return output
 
     def predict(self, X, excluded=None):
         """
@@ -137,7 +137,7 @@ class Tree:
         return current_node
 
     @staticmethod
-    def init_tree(leaf_node_value, idx_data_points):
+    def init_tree(leaf_node_value, idx_data_points, shape):
         """
         Initialize tree.
 
@@ -150,7 +150,7 @@ class Tree:
         -------
         tree
         """
-        new_tree = Tree(len(idx_data_points))
+        new_tree = Tree(len(idx_data_points), shape)
         new_tree[0] = LeafNode(index=0, value=leaf_node_value, idx_data_points=idx_data_points)
         return new_tree
 

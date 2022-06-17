@@ -40,12 +40,15 @@ class BARTRV(RandomVariable):
         )
 
     def _infer_shape(cls, size, dist_params, param_shapes=None):
-        dist_shape = (cls.X.shape[0],)
+        if cls.shape > 1:
+            dist_shape = (cls.X.shape[0], cls.shape)
+        else:
+            dist_shape = (cls.X.shape[0],)
         return dist_shape
 
     @classmethod
     def rng_fn(cls, rng=np.random.default_rng(), *args, **kwargs):
-        return np.full_like(cls.Y, cls.Y.mean())
+        return np.full((cls.Y.shape[0], cls.shape), cls.Y.mean()).squeeze()
 
 
 bart = BARTRV()
@@ -72,6 +75,8 @@ class BART(NoDistribution):
         Each element of split_prior should be in the [0, 1] interval and the elements should sum to
         1. Otherwise they will be normalized.
         Defaults to None, i.e. all covariates have the same prior probability to be selected.
+    shape : int
+        If 1 (default) the BART distribution will have shape Y.shape[0]. If larger it will have  shape (Y.shape[0], shape).
     """
 
     def __new__(
@@ -82,6 +87,7 @@ class BART(NoDistribution):
         m=50,
         alpha=0.25,
         split_prior=None,
+        shape=1,
         **kwargs,
     ):
 
@@ -99,6 +105,7 @@ class BART(NoDistribution):
                 m=m,
                 alpha=alpha,
                 split_prior=split_prior,
+                shape=shape,
             ),
         )()
 
@@ -141,7 +148,6 @@ def preprocess_XY(X, Y):
         Y = Y.to_numpy()
     if isinstance(X, (Series, DataFrame)):
         X = X.to_numpy()
-        # X = np.random.normal(X, X.std(0)/100)
     Y = Y.astype(float)
     X = X.astype(float)
     return X, Y

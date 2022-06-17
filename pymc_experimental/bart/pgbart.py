@@ -75,6 +75,7 @@ class PGBART(ArrayStepShared):
         self.missing_data = np.any(np.isnan(self.X))
         self.m = self.bart.m
         self.alpha = self.bart.alpha
+        self.shape = self.bart.shape
         self.alpha_vec = self.bart.split_prior
         if self.alpha_vec is None:
             self.alpha_vec = np.ones(self.X.shape[1])
@@ -92,15 +93,21 @@ class PGBART(ArrayStepShared):
         self.num_variates = self.X.shape[1]
         self.available_predictors = list(range(self.num_variates))
 
-        self.sum_trees = np.full_like(self.Y, self.init_mean).astype(aesara.config.floatX)
+        self.sum_trees = (
+            np.full((self.Y.shape[0], self.shape), self.init_mean)
+            .astype(aesara.config.floatX)
+            .squeeze()
+        )
+
         self.a_tree = Tree.init_tree(
             leaf_node_value=self.init_mean / self.m,
             idx_data_points=np.arange(self.num_observations, dtype="int32"),
+            shape=self.shape,
         )
         self.mean = fast_mean()
 
-        self.normal = NormalSampler(mu_std)
-        self.uniform = UniformSampler(0.33, 0.75)
+        self.normal = NormalSampler(mu_std, self.shape)
+        self.uniform = UniformSampler(0.33, 0.75, self.shape)
         self.prior_prob_leaf_node = compute_prior_probability(self.alpha)
         self.ssv = SampleSplittingVariable(self.alpha_vec)
 
@@ -250,7 +257,9 @@ class PGBART(ArrayStepShared):
         Since the prior is used as the proposal,the weights are updated additively as the ratio of
         the new and old log-likelihoods.
         """
-        new_likelihood = self.likelihood_logp(self.sum_trees_noi + particle.tree._predict())
+        new_likelihood = self.likelihood_logp(
+            (self.sum_trees_noi + particle.tree._predict()).flatten()
+        )
         if old:
             particle.log_weight = new_likelihood
             particle.old_likelihood_logp = new_likelihood
@@ -486,15 +495,25 @@ def fast_mean():
     try:
         from numba import jit
     except ImportError:
-        return np.mean
+        from functools import partial
+
+        return partial(np.mean, axis=0)
 
     @jit
     def mean(a):
-        count = a.shape[0]
-        suma = 0
-        for i in range(count):
-            suma += a[i]
-        return suma / count
+        if a.ndim == 1:
+            count = a.shape[0]
+            suma = 0
+            for i in range(count):
+                suma += a[i]
+            return suma / count
+        elif a.ndim == 2:
+            res = np.zeros(a.shape[1])
+            count = a.shape[0]
+            for j in range(a.shape[1]):
+                for i in range(count):
+                    res[j] += a[i, j]
+            return res / count
 
     return mean
 
@@ -510,36 +529,46 @@ def discrete_uniform_sampler(upper_value):
 class NormalSampler:
     """Cache samples from a standard normal distribution."""
 
-    def __init__(self, scale):
+    def __init__(self, scale, shape):
         self.size = 1000
         self.cache = []
         self.scale = scale
+        self.shape = shape
 
     def random(self):
         if not self.cache:
             self.update()
-        return self.cache.pop()
+        return np.array(self.cache.pop())
 
     def update(self):
-        self.cache = np.random.normal(loc=0.0, scale=self.scale, size=self.size).tolist()
+        self.cache = (
+            np.random.normal(loc=0.0, scale=self.scale, size=(self.size, self.shape))
+            .squeeze()
+            .tolist()
+        )
 
 
 class UniformSampler:
     """Cache samples from a uniform distribution."""
 
-    def __init__(self, lower_bound, upper_bound):
+    def __init__(self, lower_bound, upper_bound, shape):
         self.size = 1000
         self.cache = []
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
+        self.shape = shape
 
     def random(self):
         if not self.cache:
             self.update()
-        return self.cache.pop()
+        return np.array(self.cache.pop())
 
     def update(self):
-        self.cache = np.random.uniform(self.lower_bound, self.upper_bound, size=self.size).tolist()
+        self.cache = (
+            np.random.uniform(self.lower_bound, self.upper_bound, size=(self.size, self.shape))
+            .squeeze()
+            .tolist()
+        )
 
 
 def logp(point, out_vars, vars, shared):
