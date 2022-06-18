@@ -40,15 +40,18 @@ class BARTRV(RandomVariable):
         )
 
     def _infer_shape(cls, size, dist_params, param_shapes=None):
-        if cls.shape > 1:
-            dist_shape = (cls.X.shape[0], cls.shape)
+        if cls.shape is not None:
+            dist_shape = (cls.shape, cls.X.shape[0])
         else:
             dist_shape = (cls.X.shape[0],)
         return dist_shape
 
     @classmethod
     def rng_fn(cls, rng=np.random.default_rng(), *args, **kwargs):
-        return np.full((cls.Y.shape[0], cls.shape), cls.Y.mean()).squeeze()
+        if cls.shape is not None:
+            return np.full((cls.shape, cls.Y.shape[0]), cls.Y.mean())
+        else:
+            return np.full(cls.Y.shape[0], cls.Y.mean())
 
 
 bart = BARTRV()
@@ -76,7 +79,7 @@ class BART(NoDistribution):
         1. Otherwise they will be normalized.
         Defaults to None, i.e. all covariates have the same prior probability to be selected.
     shape : int
-        If 1 (default) the BART distribution will have shape Y.shape[0]. If larger it will have  shape (Y.shape[0], shape).
+        If None (default) the BART distribution will have shape Y.shape[0]. If and integer larger than 1 it will have shape (Y.shape[0], shape).
     """
 
     def __new__(
@@ -87,7 +90,7 @@ class BART(NoDistribution):
         m=50,
         alpha=0.25,
         split_prior=None,
-        shape=1,
+        shape=None,
         **kwargs,
     ):
 

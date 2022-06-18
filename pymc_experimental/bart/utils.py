@@ -41,18 +41,12 @@ def predict(idata, rng, X, size=None, excluded=None):
     idx = rng.randint(len(stacked_trees.trees), size=flatten_size)
     shape = stacked_trees.isel(trees=0).values[0].predict(X[0]).size
 
-    if shape > 1:
-        pred = np.zeros((flatten_size, X.shape[0], shape))
-    else:
-        pred = np.zeros((flatten_size, X.shape[0]))
+    pred = np.zeros((flatten_size, X.shape[0], shape))
 
     for ind, p in enumerate(pred):
         for tree in stacked_trees.isel(trees=idx[ind]).values:
             p += np.array([tree.predict(x, excluded) for x in X])
-    if shape > 1:
-        pred.reshape((*size, -1, shape))
-    else:
-        pred.reshape((*size, -1))
+    pred.reshape((*size, shape, -1))
     return pred
 
 
@@ -246,14 +240,9 @@ def plot_dependence(
             ax.set_axis_off()
             fig.delaxes(ax)
 
-        if shape == 1:
-            nyi = new_Y[x_idx]
-            nxi = new_X_target[x_idx]
-            var = var_idx[x_idx]
-        else:
-            nyi = new_Y[x_idx][y_idx]
-            nxi = new_X_target[x_idx]
-            var = var_idx[x_idx]
+        nyi = new_Y[x_idx][y_idx]
+        nxi = new_X_target[x_idx]
+        var = var_idx[x_idx]
 
         ax.set_xlabel(X_labels[x_idx])
         x_idx += 1
@@ -374,7 +363,7 @@ def plot_variable_importance(idata, X, labels=None, figsize=None, samples=100, r
         predicted_subset = predict(idata, rng, X=X, size=samples, excluded=subset)
         pearson = np.zeros(samples)
         for j in range(samples):
-            pearson[j] = pearsonr(predicted_all[j], predicted_subset[j])[0]
+            pearson[j] = pearsonr(predicted_all[j].flatten(), predicted_subset[j].flatten())[0]
         EV_mean[idx] = np.mean(pearson)
         EV_hdi[idx] = az.hdi(pearson)
 

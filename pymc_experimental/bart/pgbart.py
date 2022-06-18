@@ -76,6 +76,8 @@ class PGBART(ArrayStepShared):
         self.m = self.bart.m
         self.alpha = self.bart.alpha
         self.shape = self.bart.shape
+        if self.shape is None:
+            self.shape = 1
         self.alpha_vec = self.bart.split_prior
         if self.alpha_vec is None:
             self.alpha_vec = np.ones(self.X.shape[1])
@@ -93,10 +95,8 @@ class PGBART(ArrayStepShared):
         self.num_variates = self.X.shape[1]
         self.available_predictors = list(range(self.num_variates))
 
-        self.sum_trees = (
-            np.full((self.Y.shape[0], self.shape), self.init_mean)
-            .astype(aesara.config.floatX)
-            .squeeze()
+        self.sum_trees = np.full((self.shape, self.Y.shape[0]), self.init_mean).astype(
+            aesara.config.floatX
         )
 
         self.a_tree = Tree.init_tree(
@@ -161,6 +161,7 @@ class PGBART(ArrayStepShared):
                         self.mean,
                         self.m,
                         self.normal,
+                        self.shape,
                     )
                     if tree_grew:
                         self.update_weight(p)
@@ -233,6 +234,7 @@ class PGBART(ArrayStepShared):
             self.mean,
             self.m,
             self.normal,
+            self.shape,
         )
 
         # The old tree and the one with new leafs do not grow so we update the weights only once
@@ -298,6 +300,7 @@ class ParticleTree:
         mean,
         m,
         normal,
+        shape,
     ):
         tree_grew = False
         if self.expansion_nodes:
@@ -318,6 +321,7 @@ class ParticleTree:
                     m,
                     normal,
                     self.kf,
+                    shape,
                 )
                 if index_selected_predictor is not None:
                     new_indexes = self.tree.idx_leaf_nodes[-2:]
@@ -327,18 +331,19 @@ class ParticleTree:
 
         return tree_grew
 
-    def sample_leafs(self, sum_trees, mean, m, normal):
+    def sample_leafs(self, sum_trees, mean, m, normal, shape):
 
         for idx in self.tree.idx_leaf_nodes:
             if idx > 0:
                 leaf = self.tree[idx]
                 idx_data_points = leaf.idx_data_points
                 node_value = draw_leaf_value(
-                    sum_trees[idx_data_points],
+                    sum_trees[:, idx_data_points],
                     mean,
                     m,
                     normal,
                     self.kf,
+                    shape,
                 )
                 leaf.value = node_value
 
@@ -399,6 +404,7 @@ def grow_tree(
     m,
     normal,
     kf,
+    shape,
 ):
     current_node = tree.get_node(index_leaf_node)
     idx_data_points = current_node.idx_data_points
@@ -422,11 +428,12 @@ def grow_tree(
         for idx in range(2):
             idx_data_point = new_idx_data_points[idx]
             node_value = draw_leaf_value(
-                sum_trees[idx_data_point],
+                sum_trees[:, idx_data_point],
                 mean,
                 m,
                 normal,
                 kf,
+                shape,
             )
 
             new_node = LeafNode(
@@ -475,14 +482,14 @@ def get_split_value(available_splitting_values, idx_data_points, missing_data):
         return split_value
 
 
-def draw_leaf_value(Y_mu_pred, mean, m, normal, kf):
+def draw_leaf_value(Y_mu_pred, mean, m, normal, kf, shape):
     """Draw Gaussian distributed leaf values."""
     if Y_mu_pred.size == 0:
-        return 0
+        return np.zeros(shape)
     else:
         norm = normal.random() * kf
         if Y_mu_pred.size == 1:
-            mu_mean = Y_mu_pred.item() / m
+            mu_mean = np.full(shape, Y_mu_pred.item() / m)
         else:
             mu_mean = mean(Y_mu_pred) / m
 
@@ -497,7 +504,7 @@ def fast_mean():
     except ImportError:
         from functools import partial
 
-        return partial(np.mean, axis=0)
+        return partial(np.mean, axis=1)
 
     @jit
     def mean(a):
@@ -508,11 +515,11 @@ def fast_mean():
                 suma += a[i]
             return suma / count
         elif a.ndim == 2:
-            res = np.zeros(a.shape[1])
-            count = a.shape[0]
-            for j in range(a.shape[1]):
+            res = np.zeros(a.shape[0])
+            count = a.shape[1]
+            for j in range(a.shape[0]):
                 for i in range(count):
-                    res[j] += a[i, j]
+                    res[j] += a[j, i]
             return res / count
 
     return mean
@@ -538,7 +545,7 @@ class NormalSampler:
     def random(self):
         if not self.cache:
             self.update()
-        return np.array(self.cache.pop())
+        return np.array(self.cache.pop()).T
 
     def update(self):
         self.cache = (
@@ -561,7 +568,7 @@ class UniformSampler:
     def random(self):
         if not self.cache:
             self.update()
-        return np.array(self.cache.pop())
+        return np.array(self.cache.pop()).T
 
     def update(self):
         self.cache = (

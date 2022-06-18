@@ -49,7 +49,10 @@ class Tree:
     def __init__(self, num_observations=0, shape=1):
         self.tree_structure = {}
         self.idx_leaf_nodes = []
-        self.output = np.zeros((num_observations, shape)).astype(aesara.config.floatX).squeeze()
+        self.shape = shape
+        self.output = (
+            np.zeros((num_observations, self.shape)).astype(aesara.config.floatX).squeeze()
+        )
 
     def __getitem__(self, index):
         return self.get_node(index)
@@ -88,8 +91,7 @@ class Tree:
         for node_index in self.idx_leaf_nodes:
             leaf_node = self.get_node(node_index)
             output[leaf_node.idx_data_points] = leaf_node.value
-
-        return output
+        return output.T
 
     def predict(self, X, excluded=None):
         """
@@ -110,7 +112,7 @@ class Tree:
         if excluded is not None:
             parent_node = leaf_node.get_idx_parent_node()
             if self.get_node(parent_node).idx_split_variable in excluded:
-                leaf_value = 0.0
+                leaf_value = np.zeros(self.shape)
         return leaf_value
 
     def _traverse_tree(self, x, node_index=0):
