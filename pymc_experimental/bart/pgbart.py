@@ -538,20 +538,22 @@ class NormalSampler:
 
     def __init__(self, scale, shape):
         self.size = 1000
-        self.cache = []
         self.scale = scale
         self.shape = shape
+        self.update()
+
 
     def random(self):
-        if not self.cache:
+        if self.idx == self.size:
             self.update()
-        return np.array(self.cache.pop()).T
+        pop = self.cache[:, self.idx]
+        self.idx += 1
+        return pop
 
     def update(self):
+        self.idx = 0
         self.cache = (
-            np.random.normal(loc=0.0, scale=self.scale, size=(self.size, self.shape))
-            .squeeze()
-            .tolist()
+            np.random.normal(loc=0.0, scale=self.scale, size=(self.shape, self.size))
         )
 
 
@@ -560,21 +562,22 @@ class UniformSampler:
 
     def __init__(self, lower_bound, upper_bound, shape):
         self.size = 1000
-        self.cache = []
-        self.lower_bound = lower_bound
         self.upper_bound = upper_bound
+        self.lower_bound = lower_bound
         self.shape = shape
+        self.update()
 
     def random(self):
-        if not self.cache:
+        if self.idx == self.size:
             self.update()
-        return np.array(self.cache.pop()).T
+        pop = self.cache[:, self.idx]
+        self.idx += 1
+        return pop
 
     def update(self):
+        self.idx = 0
         self.cache = (
-            np.random.uniform(self.lower_bound, self.upper_bound, size=(self.size, self.shape))
-            .squeeze()
-            .tolist()
+            np.random.uniform(self.lower_bound, self.upper_bound, size=(self.shape, self.size))
         )
 
 
