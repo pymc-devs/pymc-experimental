@@ -75,13 +75,13 @@ class PGBART(ArrayStepShared):
         self.missing_data = np.any(np.isnan(self.X))
         self.m = self.bart.m
         self.alpha = self.bart.alpha
-        self.shape = self.bart.shape
-        if self.shape is None:
+        shape = initial_values[value_bart.name].shape
+        if len(shape) == 1:
             self.shape = 1
-        self.alpha_vec = self.bart.split_prior
-        if self.alpha_vec is None:
-            self.alpha_vec = np.ones(self.X.shape[1])
+        else:
+            self.shape = shape[0]
 
+        self.alpha_vec = self.bart.split_prior
         self.init_mean = self.Y.mean()
         # if data is binary
         Y_unique = np.unique(self.Y)
@@ -127,7 +127,7 @@ class PGBART(ArrayStepShared):
         self.len_indices = len(self.indices)
 
         shared = make_shared_replacements(initial_values, vars, model)
-        self.likelihood_logp = logp(initial_values, [model.datalogpt], vars, shared)
+        self.likelihood_logp = logp(initial_values, [model.datalogp], vars, shared)
         self.all_particles = []
         for _ in range(self.m):
             self.a_tree.leaf_node_value = self.init_mean / self.m
@@ -542,7 +542,6 @@ class NormalSampler:
         self.shape = shape
         self.update()
 
-
     def random(self):
         if self.idx == self.size:
             self.update()
@@ -552,9 +551,7 @@ class NormalSampler:
 
     def update(self):
         self.idx = 0
-        self.cache = (
-            np.random.normal(loc=0.0, scale=self.scale, size=(self.shape, self.size))
-        )
+        self.cache = np.random.normal(loc=0.0, scale=self.scale, size=(self.shape, self.size))
 
 
 class UniformSampler:
@@ -576,8 +573,8 @@ class UniformSampler:
 
     def update(self):
         self.idx = 0
-        self.cache = (
-            np.random.uniform(self.lower_bound, self.upper_bound, size=(self.shape, self.size))
+        self.cache = np.random.uniform(
+            self.lower_bound, self.upper_bound, size=(self.shape, self.size)
         )
 
 

@@ -16,7 +16,7 @@ import aesara.tensor as at
 import numpy as np
 
 from aeppl.logprob import _logprob
-from aesara.tensor.random.op import RandomVariable, default_supp_shape_from_params
+from aesara.tensor.random.op import RandomVariable
 from pandas import DataFrame, Series
 
 from pymc.distributions.distribution import NoDistribution, _moment
@@ -29,27 +29,18 @@ class BARTRV(RandomVariable):
 
     name = "BART"
     ndim_supp = 1
-    ndims_params = [2, 1, 0, 0, 0, 1]
+    ndims_params = [2, 1, 0, 0, 1]
     dtype = "floatX"
     _print_name = ("BART", "\\operatorname{BART}")
     all_trees = None
 
-    def _shape_from_params(self, dist_params, rep_param_idx=1, param_shapes=None):
-        return default_supp_shape_from_params(
-            self.ndim_supp, dist_params, rep_param_idx, param_shapes
-        )
-
-    def _infer_shape(cls, size, dist_params, param_shapes=None):
-        if cls.shape is not None:
-            dist_shape = (cls.shape, cls.X.shape[0])
-        else:
-            dist_shape = (cls.X.shape[0],)
-        return dist_shape
+    def _supp_shape_from_params(self, dist_params, rep_param_idx=1, param_shapes=None):
+        return (self.X.shape[0],)
 
     @classmethod
-    def rng_fn(cls, rng=np.random.default_rng(), *args, **kwargs):
-        if cls.shape is not None:
-            return np.full((cls.shape, cls.Y.shape[0]), cls.Y.mean())
+    def rng_fn(cls, rng, X, Y, m, alpha, split_prior, size):
+        if size is not None:
+            return np.full((size[0], cls.Y.shape[0]), cls.Y.mean())
         else:
             return np.full(cls.Y.shape[0], cls.Y.mean())
 
@@ -78,8 +69,6 @@ class BART(NoDistribution):
         Each element of split_prior should be in the [0, 1] interval and the elements should sum to
         1. Otherwise they will be normalized.
         Defaults to None, i.e. all covariates have the same prior probability to be selected.
-    shape : int
-        If None (default) the BART distribution will have shape Y.shape[0]. If and integer larger than 1 it will have shape (Y.shape[0], shape).
     """
 
     def __new__(
@@ -90,11 +79,13 @@ class BART(NoDistribution):
         m=50,
         alpha=0.25,
         split_prior=None,
-        shape=None,
         **kwargs,
     ):
 
         X, Y = preprocess_XY(X, Y)
+
+        if split_prior is None:
+            split_prior = np.ones(X.shape[1])
 
         bart_op = type(
             f"BART_{name}",
@@ -108,7 +99,6 @@ class BART(NoDistribution):
                 m=m,
                 alpha=alpha,
                 split_prior=split_prior,
-                shape=shape,
             ),
         )()
 
@@ -119,7 +109,7 @@ class BART(NoDistribution):
             return cls.get_moment(rv, size, *rv_inputs)
 
         cls.rv_op = bart_op
-        params = [X, Y, m, alpha]
+        params = [X, Y, m, alpha, split_prior]
         return super().__new__(cls, name, *params, **kwargs)
 
     @classmethod
