@@ -8,7 +8,7 @@ import pytest
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("sparse", [True, False])
 def test_spline_construction(dtype, sparse):
-    np_out = pmx.utils.spline.numpy_bspline_basis_regular(20, 10, 3, dtype=dtype).todense()
+    np_out = pmx.utils.spline.numpy_bspline_basis_regular(20, 10, 3, dtype=dtype)
     assert np_out.shape == (20, 10)
     assert np_out.dtype == dtype
     spline_op = pmx.utils.spline.BSplineBasisRegular(dtype, sparse=sparse)

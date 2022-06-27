@@ -8,11 +8,11 @@ import aesara.sparse
 
 def numpy_bspline_basis_regular(n, k, degree=3, dtype=np.float32):
     k_knots = k + degree + 1
-    knots = np.linspace(0, 1, k_knots - 2 * degree, dtype=dtype)
+    knots = np.linspace(0, 1, k_knots - 2 * degree)
     knots = np.r_[[0] * degree, knots, [1] * degree]
-    basis_funcs = scipy.interpolate.BSpline(knots, np.eye(k, dtype=dtype), k=degree)
-    Bx = basis_funcs(np.linspace(0, 1, n, dtype=dtype))
-    return scipy.sparse.csr_matrix(Bx, dtype=dtype)
+    basis_funcs = scipy.interpolate.BSpline(knots, np.eye(k), k=degree)
+    Bx = basis_funcs(np.linspace(0, 1, n)).astype(dtype)
+    return Bx
 
 
 class BSplineBasisRegular(Op):
@@ -39,8 +39,8 @@ class BSplineBasisRegular(Op):
     def perform(self, node, inputs, output_storage, params=None) -> None:
         n, k, d = inputs
         Bx = numpy_bspline_basis_regular(int(n), int(k), int(d), dtype=self.dtype)
-        if not self.sparse:
-            Bx = Bx.todense()
+        if self.sparse:
+            Bx = scipy.sparse.csr_matrix(Bx, dtype=self.dtype)
         output_storage[0][0] = Bx
 
     def infer_shape(self, fgraph, node, ins_shapes):
