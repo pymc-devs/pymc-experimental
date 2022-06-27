@@ -89,6 +89,11 @@ def bspline_regular_interpolation(x, *, n, degree=3, sparse=True):
     ...         dims="time"
     ...     )
     ...     trace = pm.sample_prior_predictive(1)
+    
+    Notes
+    -----
+    Adopted from `BayesAlpha <https://github.com/quantopian/bayesalpha/blob/676f4f194ad20211fd040d3b0c6e82969aafb87e/bayesalpha/dists.py#L97>`_
+    where it was written by @aseyboldt
     """
     x = at.as_tensor(x)
     basis = bspline_basis_regular(n, x.shape[0], degree, sparse=sparse, dtype=x.dtype)
