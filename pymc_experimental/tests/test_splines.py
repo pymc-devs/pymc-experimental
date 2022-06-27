@@ -28,11 +28,12 @@ def test_spline_construction(dtype, sparse):
 
 @pytest.mark.parametrize("shape", [(100,), (100, 5)])
 @pytest.mark.parametrize("sparse", [True, False])
-def test_interpolation_api(shape, sparse):
+@pytest.mark.parametrize("points", [dict(n=1001), dict(eval_points=np.linspace(0, 1, 1001))])
+def test_interpolation_api(shape, sparse, points):
     x = np.random.randn(*shape)
-    yt = pmx.utils.spline.bspline_interpolation(x, n=1000, sparse=sparse)
+    yt = pmx.utils.spline.bspline_interpolation(x, **points, sparse=sparse)
     y = yt.eval()
-    assert y.shape == (1000, *shape[1:])
+    assert y.shape == (1001, *shape[1:])
 
 
 @pytest.mark.parametrize(
