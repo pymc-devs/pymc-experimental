@@ -27,5 +27,5 @@ methods in the current release of PyMC experimental.
 =============================
 
 .. automodule:: pymc_experimental.utils.spline
-   :members: bspline_regular_interpolation
+   :members: bspline_interpolation
 
