@@ -91,7 +91,7 @@ def bspline_interpolation(x, *, n=None, eval_points=None, degree=3, sparse=True)
     ...     y_knots = gp.prior("y_knots", half_months[:, None], dims="knots_time")
     ...     y = pm.Deterministic(
     ...         "y",
-    ...         bspline_regular_interpolation(y_knots, n=365, degree=3),
+    ...         bspline_interpolation(y_knots, n=365, degree=3),
     ...         dims="time"
     ...     )
     ...     trace = pm.sample_prior_predictive(1)
