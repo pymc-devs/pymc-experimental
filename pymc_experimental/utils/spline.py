@@ -53,6 +53,43 @@ def bspline_basis_regular(n, k, degree=3, dtype=None, sparse=True):
 
 
 def bspline_regular_interpolation(x, *, n, degree=3, sparse=True):
+    """Interpolate sparse grid to dense grid using bsplines.
+
+    Parameters
+    ----------
+    x : Variable
+        Input Variable to interpolate
+    n : int
+        Resolution of interpolation
+    degree : int, optional
+        BSpline degree, by default 3
+    sparse : bool, optional
+        Use sparse operation, by default True
+
+    Returns
+    -------
+    Variable
+        The interpolated variable, interpolation is across 0th axis
+
+    Examples
+    --------
+    >>> import pymc as pm
+    >>> import numpy as np
+    >>> half_months = np.linspace(0, 365, 12*2)
+    >>> with pm.Model(coords=dict(knots_time=half_months, time=np.arange(365))) as model:
+    ...     kernel = pm.gp.cov.ExpQuad(1, ls=365/12)
+    ...     # ready to define gp (a latent process over parameters)
+    ...     gp = pm.gp.gp.Latent(
+    ...         cov_func=kernel
+    ...     )
+    ...     y_knots = gp.prior("y_knots", half_months[:, None], dims="knots_time")
+    ...     y = pm.Deterministic(
+    ...         "y",
+    ...         bspline_regular_interpolation(y_knots, n=365, degree=3),
+    ...         dims="time"
+    ...     )
+    ...     trace = pm.sample_prior_predictive(1)
+    """
     x = at.as_tensor(x)
     basis = bspline_basis_regular(n, x.shape[0], degree, sparse=sparse, dtype=x.dtype)
     if sparse:
