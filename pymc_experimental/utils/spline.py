@@ -6,67 +6,67 @@ import aesara.tensor as at
 import aesara.sparse
 
 
-def numpy_bspline_basis_regular(n, k, degree=3, dtype=np.float32):
+def numpy_bspline_basis(eval_points: np.ndarray, k: int, degree=3):
     k_knots = k + degree + 1
     knots = np.linspace(0, 1, k_knots - 2 * degree)
     knots = np.r_[[0] * degree, knots, [1] * degree]
     basis_funcs = scipy.interpolate.BSpline(knots, np.eye(k), k=degree)
-    Bx = basis_funcs(np.linspace(0, 1, n)).astype(dtype)
+    Bx = basis_funcs(eval_points).astype(eval_points.dtype)
     return Bx
 
 
-class BSplineBasisRegular(Op):
-    __props__ = ("dtype", "sparse")
+class BSplineBasis(Op):
+    __props__ = ("sparse",)
 
-    def __init__(self, dtype, sparse=True) -> None:
+    def __init__(self, sparse=True) -> None:
         super().__init__()
-        dtype = np.dtype(dtype)
-        if not np.issubdtype(dtype, np.floating):
-            raise TypeError("bspline basis should be of float type")
         if not isinstance(sparse, bool):
             raise TypeError("sparse should be True or False")
-        self.dtype = dtype
         self.sparse = sparse
 
     def make_node(self, *inputs) -> Apply:
-        n, k, d = map(at.as_tensor, inputs)
-        if not n.type in at.int_types:
-            raise TypeError("n should be integer")
+        eval_points, k, d = map(at.as_tensor, inputs)
+        if not eval_points.ndim == 1 and np.issubdtype(eval_points.dtype, np.floating):
+            raise TypeError("eval_points should be a vector of floats")
         if not k.type in at.int_types:
             raise TypeError("k should be integer")
         if not d.type in at.int_types:
-            raise TypeError("d should be integer")
+            raise TypeError("degree should be integer")
         if self.sparse:
-            out_type = aesara.sparse.SparseTensorType("csr", self.dtype)()
+            out_type = aesara.sparse.SparseTensorType("csr", eval_points.dtype)()
         else:
-            out_type = aesara.tensor.matrix(dtype=self.dtype)
-        return Apply(self, [n, k, d], [out_type])
+            out_type = aesara.tensor.matrix(dtype=eval_points.dtype)
+        return Apply(self, [eval_points, k, d], [out_type])
 
     def perform(self, node, inputs, output_storage, params=None) -> None:
-        n, k, d = inputs
-        Bx = numpy_bspline_basis_regular(int(n), int(k), int(d), dtype=self.dtype)
+        eval_points, k, d = inputs
+        Bx = numpy_bspline_basis(eval_points, int(k), int(d))
         if self.sparse:
-            Bx = scipy.sparse.csr_matrix(Bx, dtype=self.dtype)
+            Bx = scipy.sparse.csr_matrix(Bx, dtype=eval_points.dtype)
         output_storage[0][0] = Bx
 
     def infer_shape(self, fgraph, node, ins_shapes):
-        return [(node.inputs[0], node.inputs[1])]
+        return [(node.inputs[0].shape[0], node.inputs[1])]
 
 
-def bspline_basis_regular(n, k, degree=3, dtype=None, sparse=True):
+def bspline_basis(n, k, degree=3, dtype=None, sparse=True):
     dtype = dtype or aesara.config.floatX
-    return BSplineBasisRegular(dtype=dtype, sparse=sparse)(n, k, degree)
+    eval_points = np.linspace(0, 1, n, dtype=dtype)
+    return BSplineBasis(sparse=sparse)(eval_points, k, degree)
 
 
-def bspline_regular_interpolation(x, *, n, degree=3, sparse=True):
+def bspline_interpolation(x, *, n=None, eval_points=None, degree=3, sparse=True):
     """Interpolate sparse grid to dense grid using bsplines.
 
     Parameters
     ----------
     x : Variable
-        Input Variable to interpolate
-    n : int
+        Input Variable to interpolate.
+        0th coordinate assumed to be mapped regularly on [0, 1] interval
+    n : int (optional)
         Resolution of interpolation
+    eval_points : vector (optional)
+        Custom eval points in [0, 1] interval (or scaled properly using min/max scaling)
     degree : int, optional
         BSpline degree, by default 3
     sparse : bool, optional
@@ -102,7 +102,13 @@ def bspline_regular_interpolation(x, *, n, degree=3, sparse=True):
     where it was written by @aseyboldt
     """
     x = at.as_tensor(x)
-    basis = bspline_basis_regular(n, x.shape[0], degree, sparse=sparse, dtype=x.dtype)
+    if n is not None and eval_points is not None:
+        raise ValueError("Please provide one of n or eval_points")
+    elif n is not None:
+        eval_points = np.linspace(0, 1, n, dtype=x.dtype)
+    elif eval_points is None:
+        raise ValueError("Please provide one of n or eval_points")
+    basis = BSplineBasis(sparse=sparse)(eval_points, x.shape[0], degree)
     if sparse:
         return aesara.sparse.dot(basis, x)
     else:

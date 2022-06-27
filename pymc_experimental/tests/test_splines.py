@@ -8,11 +8,12 @@ import pytest
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("sparse", [True, False])
 def test_spline_construction(dtype, sparse):
-    np_out = pmx.utils.spline.numpy_bspline_basis_regular(20, 10, 3, dtype=dtype)
+    x = np.linspace(0, 1, 20, dtype=dtype)
+    np_out = pmx.utils.spline.numpy_bspline_basis(x, 10, 3)
     assert np_out.shape == (20, 10)
     assert np_out.dtype == dtype
-    spline_op = pmx.utils.spline.BSplineBasisRegular(dtype, sparse=sparse)
-    out = spline_op(at.constant(20), at.constant(10), at.constant(3))
+    spline_op = pmx.utils.spline.BSplineBasis(sparse=sparse)
+    out = spline_op(x, at.constant(10), at.constant(3))
     if not sparse:
         assert isinstance(out.type, at.TensorType)
     else:
@@ -29,7 +30,7 @@ def test_spline_construction(dtype, sparse):
 @pytest.mark.parametrize("sparse", [True, False])
 def test_interpolation_api(shape, sparse):
     x = np.random.randn(*shape)
-    yt = pmx.utils.spline.bspline_regular_interpolation(x, n=1000, sparse=sparse)
+    yt = pmx.utils.spline.bspline_interpolation(x, n=1000, sparse=sparse)
     y = yt.eval()
     assert y.shape == (1000, *shape[1:])
 
@@ -37,14 +38,22 @@ def test_interpolation_api(shape, sparse):
 @pytest.mark.parametrize(
     "params",
     [
-        (dict(dtype=int), (), "bspline basis should be of float type"),
-        (dict(sparse="foo", dtype=float), (), "sparse should be True or False"),
-        (dict(dtype=float), (100, 30, 0.5), "d should be integer"),
-        (dict(dtype=float), (100, 30.5, 1), "k should be integer"),
-        (dict(dtype=float), (100.5, 30.5, 1), "n should be integer"),
+        (dict(sparse="foo", n=100, degree=1), TypeError, "sparse should be True or False"),
+        (dict(n=100, degree=0.5), TypeError, "degree should be integer"),
+        (
+            dict(n=100, eval_points=np.linspace(0, 1), degree=1),
+            ValueError,
+            "Please provide one of n or eval_points",
+        ),
+        (
+            dict(degree=1),
+            ValueError,
+            "Please provide one of n or eval_points",
+        ),
     ],
 )
 def test_bad_calls(params):
-    kw1, arg2, err = params
-    with pytest.raises(TypeError, match=err):
-        pmx.utils.spline.BSplineBasisRegular(**kw1)(*arg2)
+    kw, E, err = params
+    x = np.random.randn(10)
+    with pytest.raises(E, match=err):
+        pmx.utils.spline.bspline_interpolation(x, **kw)
