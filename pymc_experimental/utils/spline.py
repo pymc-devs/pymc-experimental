@@ -21,15 +21,21 @@ class BSplineBasisRegular(Op):
     def __init__(self, dtype, sparse=True) -> None:
         super().__init__()
         dtype = np.dtype(dtype)
-        assert np.issubdtype(dtype, np.floating)
+        if not np.issubdtype(dtype, np.floating):
+            raise TypeError("bspline basis should be of float type")
+        if not isinstance(sparse, bool):
+            raise TypeError("sparse should be True or False")
         self.dtype = dtype
         self.sparse = sparse
 
     def make_node(self, *inputs) -> Apply:
         n, k, d = map(at.as_tensor, inputs)
-        assert k.type in at.int_types, "k should be integer"
-        assert n.type in at.int_types, "n should be integer"
-        assert d.type in at.int_types, "d should be integer"
+        if not n.type in at.int_types:
+            raise TypeError("n should be integer")
+        if not k.type in at.int_types:
+            raise TypeError("k should be integer")
+        if not d.type in at.int_types:
+            raise TypeError("d should be integer")
         if self.sparse:
             out_type = aesara.sparse.SparseTensorType("csr", self.dtype)()
         else:

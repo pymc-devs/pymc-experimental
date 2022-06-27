@@ -32,3 +32,19 @@ def test_interpolation_api(shape, sparse):
     yt = pmx.utils.spline.bspline_regular_interpolation(x, n=1000, sparse=sparse)
     y = yt.eval()
     assert y.shape == (1000, *shape[1:])
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        (dict(dtype=int), (), "bspline basis should be of float type"),
+        (dict(sparse="foo", dtype=float), (), "sparse should be True or False"),
+        (dict(dtype=float), (100, 30, 0.5), "d should be integer"),
+        (dict(dtype=float), (100, 30.5, 1), "k should be integer"),
+        (dict(dtype=float), (100.5, 30.5, 1), "n should be integer"),
+    ],
+)
+def test_bad_calls(params):
+    kw1, arg2, err = params
+    with pytest.raises(TypeError, match=err):
+        pmx.utils.spline.BSplineBasisRegular(**kw1)(*arg2)
