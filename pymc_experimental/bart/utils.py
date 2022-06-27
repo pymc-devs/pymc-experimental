@@ -309,7 +309,9 @@ def plot_dependence(
     return axes
 
 
-def plot_variable_importance(idata, X, labels=None, figsize=None, samples=100, random_seed=None):
+def plot_variable_importance(
+    idata, X, labels=None, sorted=True, figsize=None, samples=100, random_seed=None
+):
     """
     Estimates variable importance from the BART-posterior.
 
@@ -319,9 +321,11 @@ def plot_variable_importance(idata, X, labels=None, figsize=None, samples=100, r
         InferenceData containing a collection of BART_trees in sample_stats group
     X : array-like
         The covariate matrix.
-    labels: list
+    labels : list
         List of the names of the covariates. If X is a DataFrame the names of the covariables will
         be taken from it and this argument will be ignored.
+    sorted : bool
+        Whether to sort the variables according to their variable importance. Defaults to True.
     figsize : tuple
         Figure size. If None it will be defined automatically.
     samples : int
@@ -342,16 +346,20 @@ def plot_variable_importance(idata, X, labels=None, figsize=None, samples=100, r
 
     VI = idata.sample_stats["variable_inclusion"].mean(("chain", "draw")).values
     if labels is None:
-        labels = range(len(VI))
+        labels = np.arange(len(VI))
 
     ticks = np.arange(len(VI), dtype=int)
     idxs = np.argsort(VI)
     subsets = [idxs[:-i] for i in range(1, len(idxs))]
     subsets.append(None)
 
-    axes[0].plot(VI / VI.sum(), "o-")
+    if sorted:
+        indices = idxs[::-1]
+    else:
+        indices = np.arange(len(VI))
+    axes[0].plot((VI / VI.sum())[indices], "o-")
     axes[0].set_xticks(ticks)
-    axes[0].set_xticklabels(labels)
+    axes[0].set_xticklabels(labels[indices])
     axes[0].set_xlabel("variable index")
     axes[0].set_ylabel("relative importance")
 
@@ -371,7 +379,7 @@ def plot_variable_importance(idata, X, labels=None, figsize=None, samples=100, r
 
     axes[1].set_xticks(ticks)
     axes[1].set_xticklabels(ticks + 1)
-    axes[1].set_xlabel("number of components")
+    axes[1].set_xlabel("number of variables")
     axes[1].set_ylabel("correlation")
     axes[1].set_ylim(0, 1)
 
