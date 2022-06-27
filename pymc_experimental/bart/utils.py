@@ -341,12 +341,14 @@ def plot_variable_importance(
     _, axes = plt.subplots(2, 1, figsize=figsize)
 
     if hasattr(X, "columns") and hasattr(X, "values"):
-        labels = list(X.columns)
+        labels = X.columns
         X = X.values
 
     VI = idata.sample_stats["variable_inclusion"].mean(("chain", "draw")).values
     if labels is None:
         labels = np.arange(len(VI))
+    else:
+        labels = np.array(labels)
 
     ticks = np.arange(len(VI), dtype=int)
     idxs = np.argsort(VI)
