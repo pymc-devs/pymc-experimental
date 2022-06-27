@@ -38,7 +38,7 @@ class BSplineBasisRegular(Op):
 
     def perform(self, node, inputs, output_storage, params=None) -> None:
         n, k, d = inputs
-        Bx = numpy_bspline_basis_regular(n, k, d, dtype=self.dtype)
+        Bx = numpy_bspline_basis_regular(int(n), int(k), int(d), dtype=self.dtype)
         if not self.sparse:
             Bx = Bx.todense()
         output_storage[0][0] = Bx
