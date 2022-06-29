@@ -28,17 +28,17 @@ def test_parsing_arguments(case):
 
 @pytest.fixture
 def coords():
-    return dict(test=range(3))
+    return dict(test=range(3), simplex=range(4))
 
 
 @pytest.fixture
 def param_cfg():
     return dict(
         a=pmx.utils.prior.arg_to_param_cfg("a"),
-        b=pmx.utils.prior.arg_to_param_cfg(
-            "b", dict(transform=transforms.sum_to_1, dims=("test",))
+        b=pmx.utils.prior.arg_to_param_cfg("b", dict(transform=transforms.log, dims=("test",))),
+        c=pmx.utils.prior.arg_to_param_cfg(
+            "c", dict(transform=transforms.simplex, dims=("simplex",))
         ),
-        c=pmx.utils.prior.arg_to_param_cfg("c", dict(transform=transforms.log, dims=("test",))),
     )
 
 
@@ -55,6 +55,7 @@ def idata(param_cfg, coords):
             var = cfg["transform"].backward(orig).eval()
         else:
             var = orig
+        assert not np.isnan(var).any()
         vars[k] = var
     return az.convert_to_inference_data(vars, coords=coords)
 
