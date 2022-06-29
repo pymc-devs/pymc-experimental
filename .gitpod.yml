@@ -3,23 +3,21 @@ tasks:
     init: |
       mkdir -p .vscode
       mkdir -p ~/.local/bin/
-      echo '{"python.pythonPath": "/home/gitpod/micromamba/envs/env/bin/python"}' > .vscode/settings.json
+      echo '{"python.defaultInterpreterPath": "/home/gitpod/micromamba/envs/env/bin/python"}' > .vscode/settings.json
       curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C ~/.local/ bin/micromamba
       ~/.local/bin/micromamba shell init -s bash -p ~/micromamba
       source ~/.bashrc
-      micromamba create -n env pip -c conda-forge
+      micromamba create -yn env pip -c conda-forge
       micromamba activate env
-      micromamba install pymc -c conda-forge
-      pip install pytest pytest-mock
+      micromamba install -y pymc xhistogram -c conda-forge
+      pip install -r requirements-dev.txt
     command: |
       micromamba activate env
       pip install -e .
-
 vscode:
   extensions:
     - eamodio.gitlens
     - ms-python.python
-    - ms-python.vscode-pylance
 
 github:
   prebuilds:
@@ -39,5 +37,3 @@ github:
     addBadge: false
     # add a label once the prebuild is ready to pull requests (defaults to false)
     addLabel: false
-
-
