@@ -27,13 +27,36 @@ def test_parsing_arguments(case):
 
 
 @pytest.fixture
-def idata():
-    a = np.random.randn(4, 1000, 3)
-    b = np.exp(np.random.randn(4, 1000, 5))
-    return az.convert_to_inference_data(dict(a=a, b=b))
+def coords():
+    return dict(test=range(3))
 
 
-def test_idata_for_tests(idata):
-    assert set(idata.posterior.keys()) == {"a", "b"}
+@pytest.fixture
+def param_cfg():
+    return dict(
+        a=pmx.utils.prior.arg_to_param_cfg("a"),
+        b=pmx.utils.prior.arg_to_param_cfg("b", dict(transform=transforms.log, dims=("test",))),
+    )
+
+
+@pytest.fixture
+def idata(param_cfg, coords):
+    vars = dict()
+    for k, cfg in param_cfg.items():
+        if cfg["dims"] is not None:
+            extra_dims = [len(coords[d]) for d in cfg["dims"]]
+        else:
+            extra_dims = []
+        orig = np.random.randn(4, 100, *extra_dims)
+        if cfg["transform"] is not None:
+            var = cfg["transform"].backward(orig).eval()
+        else:
+            var = orig
+        vars[k] = var
+    return az.convert_to_inference_data(vars, coords=coords)
+
+
+def test_idata_for_tests(idata, param_cfg):
+    assert set(idata.posterior.keys()) == set(param_cfg)
     assert len(idata.posterior.coords["chain"]) == 4
-    assert len(idata.posterior.coords["draw"]) == 1000
+    assert len(idata.posterior.coords["draw"]) == 100

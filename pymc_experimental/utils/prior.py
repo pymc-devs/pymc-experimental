@@ -9,7 +9,7 @@ class ParamCfg(TypedDict):
 
 
 def arg_to_param_cfg(
-    key, value: Optional[Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]]
+    key, value: Optional[Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]] = None
 ):
     if value is None:
         cfg = ParamCfg(name=key, transform=None, dims=None)
