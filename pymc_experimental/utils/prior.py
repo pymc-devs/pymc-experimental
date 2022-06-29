@@ -1,21 +1,27 @@
-from typing import TypedDict, Optional, Union
+from typing import TypedDict, Optional, Union, Tuple
 import aeppl.transforms
 
 
 class ParamCfg(TypedDict):
     name: str
     transform: Optional[aeppl.transforms.RVTransform]
+    dims: Optional[Union[str, Tuple[str]]]
 
 
-def arg_to_param_cfg(key, value: Optional[Union[ParamCfg, aeppl.transforms.RVTransform, str]]):
+def arg_to_param_cfg(
+    key, value: Optional[Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]]
+):
     if value is None:
-        cfg = ParamCfg(name=key, transform=None)
+        cfg = ParamCfg(name=key, transform=None, dims=None)
+    elif isinstance(value, Tuple):
+        cfg = ParamCfg(name=key, transform=None, dims=value)
     elif isinstance(value, str):
-        cfg = ParamCfg(name=value, transform=None)
+        cfg = ParamCfg(name=value, transform=None, dims=None)
     elif isinstance(value, aeppl.transforms.RVTransform):
-        cfg = ParamCfg(name=key, transform=value)
+        cfg = ParamCfg(name=key, transform=value, dims=None)
     else:
         cfg = value.copy()
         cfg.setdefault("name", key)
         cfg.setdefault("transform", None)
+        cfg.setdefault("dims", None)
     return cfg
