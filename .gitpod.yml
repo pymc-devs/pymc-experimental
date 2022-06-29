@@ -7,7 +7,7 @@ tasks:
       curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C ~/.local/ bin/micromamba
       ~/.local/bin/micromamba shell init -s bash -p ~/micromamba
       source ~/.bashrc
-      micromamba create -f conda-envs/environment-test-py39.yml
+      micromamba create -yf conda-envs/environment-test-py39.yml
       pip install -r requirements-dev.txt
     command: |
       micromamba activate pymc-test-py39
