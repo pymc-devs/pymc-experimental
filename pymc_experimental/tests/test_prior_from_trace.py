@@ -35,7 +35,10 @@ def coords():
 def param_cfg():
     return dict(
         a=pmx.utils.prior.arg_to_param_cfg("a"),
-        b=pmx.utils.prior.arg_to_param_cfg("b", dict(transform=transforms.log, dims=("test",))),
+        b=pmx.utils.prior.arg_to_param_cfg(
+            "b", dict(transform=transforms.sum_to_1, dims=("test",))
+        ),
+        c=pmx.utils.prior.arg_to_param_cfg("c", dict(transform=transforms.log, dims=("test",))),
     )
 
 
