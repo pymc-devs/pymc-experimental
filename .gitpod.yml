@@ -5,15 +5,16 @@ tasks:
     init: |
       mkdir -p .vscode
       mkdir -p ~/.local/bin/
-      echo '{"python.pythonPath": "/opt/conda/bin/python"}' > .vscode/settings.json
+      echo '{"python.pythonPath": "/home/gitpod/micromamba/envs/env/bin/python"}' > .vscode/settings.json
       curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C ~/.local/ bin/micromamba
-    command: |
       ~/.local/bin/micromamba shell init -s bash -p ~/micromamba
       source ~/.bashrc
       micromamba create -n env pip -c conda-forge
       micromamba activate env
       micromamba install pymc -c conda-forge
       pip install pytest pytest-mock -e .
+    command: |
+      micromamba activate env
 
 vscode:
   extensions:
