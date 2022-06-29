@@ -1,7 +1,8 @@
 import pymc_experimental as pmx
-import pymc as pm
 from pymc.distributions import transforms
 import pytest
+import arviz as az
+import numpy as np
 
 
 @pytest.mark.parametrize(
@@ -23,3 +24,16 @@ def test_parsing_arguments(case):
     inp, out = case
     test = pmx.utils.prior.arg_to_param_cfg(*inp)
     assert test == out
+
+
+@pytest.fixture
+def idata():
+    a = np.random.randn(4, 1000, 3)
+    b = np.exp(np.random.randn(4, 1000, 5))
+    return az.convert_to_inference_data(dict(a=a, b=b))
+
+
+def test_idata_for_tests(idata):
+    assert set(idata.posterior.keys()) == {"a", "b"}
+    assert len(idata.posterior.coords["chain"]) == 4
+    assert len(idata.posterior.coords["draw"]) == 1000
