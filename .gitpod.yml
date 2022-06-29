@@ -7,12 +7,10 @@ tasks:
       curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C ~/.local/ bin/micromamba
       ~/.local/bin/micromamba shell init -s bash -p ~/micromamba
       source ~/.bashrc
-      micromamba create -yn env pip -c conda-forge
-      micromamba activate env
-      micromamba install -y pymc xhistogram -c conda-forge
+      micromamba env create -f conda-envs/environment-test-py39.yml
       pip install -r requirements-dev.txt
     command: |
-      micromamba activate env
+      micromamba activate pymc-test-py39
       pip install -e .
 vscode:
   extensions:
