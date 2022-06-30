@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional, Union, Tuple
+from typing import TypedDict, Optional, Union, Tuple, Sequence, Dict
 import aeppl.transforms
 
 
@@ -8,7 +8,7 @@ class ParamCfg(TypedDict):
     dims: Optional[Union[str, Tuple[str]]]
 
 
-def arg_to_param_cfg(
+def _arg_to_param_cfg(
     key, value: Optional[Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]] = None
 ):
     if value is None:
@@ -25,3 +25,14 @@ def arg_to_param_cfg(
         cfg.setdefault("transform", None)
         cfg.setdefault("dims", None)
     return cfg
+
+
+def _parse_args(
+    var_names: Sequence[str], **kwargs: Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]
+) -> Dict[str, ParamCfg]:
+    results = dict()
+    for var in var_names:
+        results[var] = _arg_to_param_cfg(var)
+    for key, val in kwargs.items():
+        results[key] = _arg_to_param_cfg(key, val)
+    return results

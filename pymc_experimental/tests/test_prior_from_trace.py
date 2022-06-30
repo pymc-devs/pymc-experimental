@@ -22,7 +22,7 @@ import numpy as np
 )
 def test_parsing_arguments(case):
     inp, out = case
-    test = pmx.utils.prior.arg_to_param_cfg(*inp)
+    test = pmx.utils.prior._arg_to_param_cfg(*inp)
     assert test == out
 
 
@@ -34,9 +34,9 @@ def coords():
 @pytest.fixture
 def param_cfg():
     return dict(
-        a=pmx.utils.prior.arg_to_param_cfg("a"),
-        b=pmx.utils.prior.arg_to_param_cfg("b", dict(transform=transforms.log, dims=("test",))),
-        c=pmx.utils.prior.arg_to_param_cfg(
+        a=pmx.utils.prior._arg_to_param_cfg("a"),
+        b=pmx.utils.prior._arg_to_param_cfg("b", dict(transform=transforms.log, dims=("test",))),
+        c=pmx.utils.prior._arg_to_param_cfg(
             "c", dict(transform=transforms.simplex, dims=("simplex",))
         ),
     )
@@ -64,3 +64,22 @@ def test_idata_for_tests(idata, param_cfg):
     assert set(idata.posterior.keys()) == set(param_cfg)
     assert len(idata.posterior.coords["chain"]) == 4
     assert len(idata.posterior.coords["draw"]) == 100
+
+
+def test_args_compose():
+    cfg = pmx.utils.prior._parse_args(
+        var_names=["a"],
+        b=("test",),
+        c=transforms.log,
+        d="e",
+        f=dict(dims="test"),
+        g=dict(name="h", dims="test", transform=transforms.log),
+    )
+    assert cfg == dict(
+        a=dict(name="a", dims=None, transform=None),
+        b=dict(name="b", dims=("test",), transform=None),
+        c=dict(name="c", dims=None, transform=transforms.log),
+        d=dict(name="e", dims=None, transform=None),
+        f=dict(name="f", dims="test", transform=None),
+        g=dict(name="h", dims="test", transform=transforms.log),
+    )
