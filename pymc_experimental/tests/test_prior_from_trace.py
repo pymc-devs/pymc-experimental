@@ -34,7 +34,7 @@ def coords():
 @pytest.fixture
 def param_cfg():
     return dict(
-        a=pmx.utils.prior._arg_to_param_cfg("a"),
+        a=pmx.utils.prior._arg_to_param_cfg("d"),
         b=pmx.utils.prior._arg_to_param_cfg("b", dict(transform=transforms.log, dims=("test",))),
         c=pmx.utils.prior._arg_to_param_cfg(
             "c", dict(transform=transforms.simplex, dims=("simplex",))
@@ -43,7 +43,7 @@ def param_cfg():
 
 
 @pytest.fixture
-def idata(param_cfg, coords):
+def transformed_data(param_cfg, coords):
     vars = dict()
     for k, cfg in param_cfg.items():
         if cfg["dims"] is not None:
@@ -51,13 +51,22 @@ def idata(param_cfg, coords):
         else:
             extra_dims = []
         orig = np.random.randn(4, 100, *extra_dims)
+        vars[k] = orig
+    return vars
+
+
+@pytest.fixture
+def idata(transformed_data, param_cfg):
+    vars = dict()
+    for k, orig in transformed_data.items():
+        cfg = param_cfg[k]
         if cfg["transform"] is not None:
             var = cfg["transform"].backward(orig).eval()
         else:
             var = orig
         assert not np.isnan(var).any()
         vars[k] = var
-    return az.convert_to_inference_data(vars, coords=coords)
+    return az.convert_to_inference_data(vars)
 
 
 def test_idata_for_tests(idata, param_cfg):
@@ -83,3 +92,11 @@ def test_args_compose():
         f=dict(name="f", dims="test", transform=None),
         g=dict(name="h", dims="test", transform=transforms.log),
     )
+
+
+def test_transform_idata(transformed_data, idata, param_cfg):
+    flat_info = pmx.utils.prior._flatten(idata, **param_cfg)
+    expected_shape = 0
+    for v in transformed_data.values():
+        expected_shape += int(np.prod(v.shape[2:]))
+    assert flat_info["data"].shape[1] == expected_shape
