@@ -3,6 +3,7 @@ from pymc.distributions import transforms
 import pytest
 import arviz as az
 import numpy as np
+import pymc as pm
 
 
 @pytest.mark.parametrize(
@@ -101,6 +102,8 @@ def test_transform_idata(transformed_data, idata, param_cfg):
         expected_shape += int(np.prod(v.shape[2:]))
     assert flat_info["data"].shape[1] == expected_shape
     assert len(flat_info["info"]) == len(param_cfg)
+    assert "sinfo" in param_cfg["info"][0]
+    assert "vinfo" in param_cfg["info"][0]
 
 
 @pytest.fixture
@@ -112,3 +115,10 @@ def test_mean_chol(flat_info):
     mean, chol = pmx.utils.prior._mean_chol(flat_info["data"])
     assert mean.shape == (flat_info["data"].shape[1],)
     assert chol.shape == (flat_info["data"].shape[1],) * 2
+
+
+def test_mvn_prior_from_flat_info(flat_info, coords, param_cfg):
+    with pm.Model(coords=coords) as model:
+        priors = pmx.utils.prior._mvn_prior_from_flat_info("trace_prior_", flat_info)
+    names = [p["name"] for p in param_cfg.values()]
+    assert set(model.named_vars) == {"trace_prior_", *names}

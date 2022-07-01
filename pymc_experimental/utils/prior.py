@@ -1,6 +1,7 @@
 from typing import TypedDict, Optional, Union, Tuple, Sequence, Dict, List
 import aeppl.transforms
 import arviz
+import pymc as pm
 import numpy as np
 
 
@@ -12,7 +13,8 @@ class ParamCfg(TypedDict):
 
 class ShapeInfo(TypedDict):
     # shape might not match slice due to a transform
-    shape: Tuple[int]
+    shape_u: Tuple[int]  # untransformed shape
+    shape_t: Tuple[int]  # transformed shape
     slice: slice
 
 
@@ -74,15 +76,19 @@ def _flatten(idata: arviz.InferenceData, **kwargs: ParamCfg) -> FlatInfo:
         )
         # omitting __sample__
         # we need shape in the untransformed space
-        shape = data.shape[1:]
+        shape_u = data.shape[1:]
         if cfg["transform"] is not None:
             # some transforms need original shape
             data = cfg["transform"].forward(data).eval()
+            shape_t = data.shape[1:]
+        else:
+            shape_t = shape_u
         # now we can get rid of shape
         data = data.reshape(data.shape[0], -1)
         end = begin + data.shape[1]
         vars.append(data)
-        info.append(dict(shape=shape, slice=slice(begin, end)))
+        sinfo = dict(shape_t=shape_t, shape_u=shape_u, slice=slice(begin, end))
+        info.append(dict(sinfo=sinfo, vinfo=cfg))
         begin = end
     return dict(data=np.concatenate(vars, axis=-1), info=info)
 
@@ -92,3 +98,20 @@ def _mean_chol(flat_array: np.ndarray):
     cov = np.cov(flat_array, rowvar=False)
     chol = np.linalg.cholesky(cov)
     return mean, chol
+
+
+def _mvn_prior_from_flat_info(name, flat_info: FlatInfo):
+    mean, chol = _mean_chol(flat_info["data"])
+    base_dist = pm.Normal(name, np.zeros_like(mean))
+    interim = mean + chol @ base_dist
+    result = dict()
+    for var_info in flat_info["info"]:
+        sinfo = var_info["sinfo"]
+        vinfo = var_info["vinfo"]
+        var = interim[sinfo["slice"]].reshape(sinfo["shape_t"])
+        if vinfo["transform"] is not None:
+            var = vinfo["transform"].backward(var)
+        var = var.reshape(sinfo["shape_u"])
+        var = pm.Deterministic(vinfo["name"], var, dims=vinfo["dims"])
+        result[vinfo["name"]] = var
+    return result
