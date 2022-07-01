@@ -85,3 +85,10 @@ def _flatten(idata: arviz.InferenceData, **kwargs: ParamCfg) -> FlatInfo:
         info.append(dict(shape=shape, slice=slice(begin, end)))
         begin = end
     return dict(data=np.concatenate(vars, axis=-1), info=info)
+
+
+def _mean_chol(flat_array: np.ndarray):
+    mean = flat_array.mean(0)
+    cov = np.cov(flat_array, rowvar=False)
+    chol = np.linalg.cholesky(cov)
+    return mean, chol

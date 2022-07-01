@@ -101,3 +101,14 @@ def test_transform_idata(transformed_data, idata, param_cfg):
         expected_shape += int(np.prod(v.shape[2:]))
     assert flat_info["data"].shape[1] == expected_shape
     assert len(flat_info["info"]) == len(param_cfg)
+
+
+@pytest.fixture
+def flat_info(idata, param_cfg):
+    return pmx.utils.prior._flatten(idata, **param_cfg)
+
+
+def test_mean_chol(flat_info):
+    mean, chol = pmx.utils.prior._mean_chol(flat_info["data"])
+    assert mean.shape == (flat_info["data"].shape[1],)
+    assert chol.shape == (flat_info["data"].shape[1],) * 2
