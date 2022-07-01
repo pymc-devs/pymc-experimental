@@ -119,12 +119,59 @@ def _mvn_prior_from_flat_info(name, flat_info: FlatInfo):
 
 
 def prior_from_idata(
-    idata,
+    idata: arviz.InferenceData,
     name="trace_prior_",
     *,
     var_names: Sequence[str],
     **kwargs: Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]
 ) -> Dict[str, at.TensorVariable]:
+    """
+    Create a prior from posterior.
+
+    Parameters
+    ----------
+    idata: arviz.InferenceData
+        Inference data with posterior group
+    var_names: Sequence[str]
+        names of variables to take as is from the posterior
+    kwargs: Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]
+        names of variables with additional configuration, see more in Examples
+
+    Examples
+    --------
+    >>> import pymc as pm
+    >>> import pymc.distributions.transforms as transforms
+    >>> import numpy as np
+    >>> with pm.Model(coords=dict(test=range(4), options=range(3))) as model1:
+    ...     a = pm.Normal("a")
+    ...     b = pm.Normal("b", dims="test")
+    ...     c = pm.HalfNormal("c")
+    ...     d = pm.Normal("d")
+    ...     e = pm.Normal("e")
+    ...     f = pm.Dirichlet("f", np.ones(3), dims="options")
+    ...     trace = pm.sample(progressbar=False)
+
+    You can reuse the posterior in the new model.
+
+    >>> with pm.Model(coords=dict(test=range(4), options=range(3))) as model2:
+    ...     priors = prior_from_idata(
+    ...         trace,                  # the old trace (posterior)
+    ...         var_names=["a", "d"],   # take variables as is
+    ...
+    ...         e="new_e",              # assign new name "new_e" for a variable
+    ...                                 # similar to dict(name="new_e")
+    ...
+    ...         b=("test", ),           # set a coord to "test"
+    ...                                 # similar to dict(dims=("test", ))
+    ...
+    ...         c=transforms.log,       # apply log transform to a positive variable
+    ...                                 # similar to dict(transform=transforms.log)
+    ...
+    ...                                 # set a name, assign a coord and apply simplex transform
+    ...         f=dict(name="new_f", dims="options", transform=transforms.simplex)
+    ...     )
+    ...     trace1 = pm.sample_prior_predictive(100)
+    """
     param_cfg = _parse_args(var_names=var_names, **kwargs)
     flat_info = _flatten(idata, **param_cfg)
     return _mvn_prior_from_flat_info(name, flat_info)
