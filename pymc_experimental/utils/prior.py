@@ -2,6 +2,7 @@ from typing import TypedDict, Optional, Union, Tuple, Sequence, Dict, List
 import aeppl.transforms
 import arviz
 import pymc as pm
+import aesara.tensor as at
 import numpy as np
 
 
@@ -117,7 +118,13 @@ def _mvn_prior_from_flat_info(name, flat_info: FlatInfo):
     return result
 
 
-def prior_from_idata(idata, name="trace_prior_", *, var_names: Sequence[str] = (), **kwargs):
+def prior_from_idata(
+    idata,
+    name="trace_prior_",
+    *,
+    var_names: Sequence[str],
+    **kwargs: Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]
+) -> Dict[str, at.TensorVariable]:
     param_cfg = _parse_args(var_names=var_names, **kwargs)
     flat_info = _flatten(idata, **param_cfg)
     return _mvn_prior_from_flat_info(name, flat_info)
