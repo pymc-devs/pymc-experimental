@@ -34,7 +34,7 @@ def coords():
 
 @pytest.fixture
 def user_param_cfg():
-    return (), dict(
+    return ("t", ), dict(
         a="d",
         b=dict(transform=transforms.log, dims=("test",)),
         c=dict(transform=transforms.simplex, dims=("simplex",)),
