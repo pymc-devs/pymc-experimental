@@ -33,14 +33,17 @@ def coords():
 
 
 @pytest.fixture
-def param_cfg():
-    return dict(
-        a=pmx.utils.prior._arg_to_param_cfg("d"),
-        b=pmx.utils.prior._arg_to_param_cfg("b", dict(transform=transforms.log, dims=("test",))),
-        c=pmx.utils.prior._arg_to_param_cfg(
-            "c", dict(transform=transforms.simplex, dims=("simplex",))
-        ),
+def user_param_cfg():
+    return (), dict(
+        a="d",
+        b=dict(transform=transforms.log, dims=("test",)),
+        c=dict(transform=transforms.simplex, dims=("simplex",)),
     )
+
+
+@pytest.fixture
+def param_cfg(user_param_cfg):
+    return pmx.utils.prior._parse_args(user_param_cfg[0], **user_param_cfg[1])
 
 
 @pytest.fixture
@@ -49,6 +52,9 @@ def transformed_data(param_cfg, coords):
     for k, cfg in param_cfg.items():
         if cfg["dims"] is not None:
             extra_dims = [len(coords[d]) for d in cfg["dims"]]
+            if cfg["transform"] is not None:
+                t = np.random.randn(*extra_dims)
+                extra_dims = tuple(cfg["transform"].forward(t).shape.eval())
         else:
             extra_dims = []
         orig = np.random.randn(4, 100, *extra_dims)
@@ -120,5 +126,16 @@ def test_mean_chol(flat_info):
 def test_mvn_prior_from_flat_info(flat_info, coords, param_cfg):
     with pm.Model(coords=coords) as model:
         priors = pmx.utils.prior._mvn_prior_from_flat_info("trace_prior_", flat_info)
+        test_prior = pm.sample_prior_predictive(1)
+    names = [p["name"] for p in param_cfg.values()]
+    assert set(model.named_vars) == {"trace_prior_", *names}
+
+
+def test_prior_from_idata(idata, user_param_cfg, coords):
+    with pm.Model(coords=coords) as model:
+        priors = pmx.utils.prior.prior_from_idata(
+            idata, var_names=user_param_cfg[0], **user_param_cfg[1]
+        )
+        test_prior = pm.sample_prior_predictive(1)
     names = [p["name"] for p in param_cfg.values()]
     assert set(model.named_vars) == {"trace_prior_", *names}
