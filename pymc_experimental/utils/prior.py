@@ -62,13 +62,24 @@ def _flatten(idata: arviz.InferenceData, **kwargs: ParamCfg) -> FlatInfo:
     info = list()
     begin = 0
     for key, cfg in kwargs.items():
-        data = posterior[key].values
-        # omitting chain, draw
-        shape = data.shape[2:]
+        data = (
+            posterior[key]
+            # combine all draws from all chains
+            .stack(__sample__=["chain", "draw"])
+            # move sample dim to the first position
+            # no matter where it was before
+            .transpose("__sample__", ...)
+            # we need numpy data for all the rest functionality
+            .values
+        )
+        # omitting __sample__
+        # we need shape in the untransformed space
+        shape = data.shape[1:]
         if cfg["transform"] is not None:
+            # some transforms need original shape
             data = cfg["transform"].forward(data).eval()
-        data = data.reshape(*data.shape[:2], -1)
-        data = data.reshape(-1, data.shape[2])
+        # now we can get rid of shape
+        data = data.reshape(data.shape[0], -1)
         end = begin + data.shape[1]
         vars.append(data)
         info.append(dict(shape=shape, slice=slice(begin, end)))

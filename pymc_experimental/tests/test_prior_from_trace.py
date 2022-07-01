@@ -100,3 +100,4 @@ def test_transform_idata(transformed_data, idata, param_cfg):
     for v in transformed_data.values():
         expected_shape += int(np.prod(v.shape[2:]))
     assert flat_info["data"].shape[1] == expected_shape
+    assert len(flat_info["info"]) == len(param_cfg)
