@@ -73,4 +73,4 @@ def _flatten(idata: arviz.InferenceData, **kwargs: ParamCfg) -> FlatInfo:
         vars.append(data)
         info.append(dict(shape=shape, slice=slice(begin, end)))
         begin = end
-    return dict(data=np.concatenate(vars, axis=-1), infp=info)
+    return dict(data=np.concatenate(vars, axis=-1), info=info)
