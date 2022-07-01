@@ -108,8 +108,8 @@ def test_transform_idata(transformed_data, idata, param_cfg):
         expected_shape += int(np.prod(v.shape[2:]))
     assert flat_info["data"].shape[1] == expected_shape
     assert len(flat_info["info"]) == len(param_cfg)
-    assert "sinfo" in param_cfg["info"][0]
-    assert "vinfo" in param_cfg["info"][0]
+    assert "sinfo" in flat_info["info"][0]
+    assert "vinfo" in flat_info["info"][0]
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ def test_mvn_prior_from_flat_info(flat_info, coords, param_cfg):
     assert set(model.named_vars) == {"trace_prior_", *names}
 
 
-def test_prior_from_idata(idata, user_param_cfg, coords):
+def test_prior_from_idata(idata, user_param_cfg, coords, param_cfg):
     with pm.Model(coords=coords) as model:
         priors = pmx.utils.prior.prior_from_idata(
             idata, var_names=user_param_cfg[0], **user_param_cfg[1]
