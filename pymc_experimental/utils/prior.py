@@ -14,8 +14,7 @@ class ParamCfg(TypedDict):
 
 class ShapeInfo(TypedDict):
     # shape might not match slice due to a transform
-    shape_u: Tuple[int]  # untransformed shape
-    shape_t: Tuple[int]  # transformed shape
+    shape: Tuple[int]  # transformed shape
     slice: slice
 
 
@@ -77,18 +76,15 @@ def _flatten(idata: arviz.InferenceData, **kwargs: ParamCfg) -> FlatInfo:
         )
         # omitting __sample__
         # we need shape in the untransformed space
-        shape_u = data.shape[1:]
         if cfg["transform"] is not None:
             # some transforms need original shape
             data = cfg["transform"].forward(data).eval()
-            shape_t = data.shape[1:]
-        else:
-            shape_t = shape_u
+        shape = data.shape[1:]
         # now we can get rid of shape
         data = data.reshape(data.shape[0], -1)
         end = begin + data.shape[1]
         vars.append(data)
-        sinfo = dict(shape_t=shape_t, shape_u=shape_u, slice=slice(begin, end))
+        sinfo = dict(shape=shape, slice=slice(begin, end))
         info.append(dict(sinfo=sinfo, vinfo=cfg))
         begin = end
     return dict(data=np.concatenate(vars, axis=-1), info=info)
@@ -109,10 +105,9 @@ def _mvn_prior_from_flat_info(name, flat_info: FlatInfo):
     for var_info in flat_info["info"]:
         sinfo = var_info["sinfo"]
         vinfo = var_info["vinfo"]
-        var = interim[sinfo["slice"]].reshape(sinfo["shape_t"])
+        var = interim[sinfo["slice"]].reshape(sinfo["shape"])
         if vinfo["transform"] is not None:
             var = vinfo["transform"].backward(var)
-        var = var.reshape(sinfo["shape_u"])
         var = pm.Deterministic(vinfo["name"], var, dims=vinfo["dims"])
         result[vinfo["name"]] = var
     return result
