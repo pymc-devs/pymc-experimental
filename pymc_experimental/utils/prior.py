@@ -156,7 +156,7 @@ def prior_from_idata(
     ...         e="new_e",              # assign new name "new_e" for a variable
     ...                                 # similar to dict(name="new_e")
     ...
-    ...         b=("test", ),           # set a coord to "test"
+    ...         b=("test", ),           # set a dim to "test"
     ...                                 # similar to dict(dims=("test", ))
     ...
     ...         c=transforms.log,       # apply log transform to a positive variable
