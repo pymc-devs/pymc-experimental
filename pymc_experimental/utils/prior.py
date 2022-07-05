@@ -162,7 +162,7 @@ def prior_from_idata(
     ...         c=transforms.log,       # apply log transform to a positive variable
     ...                                 # similar to dict(transform=transforms.log)
     ...
-    ...                                 # set a name, assign a coord and apply simplex transform
+    ...                                 # set a name, assign a dim and apply simplex transform
     ...         f=dict(name="new_f", dims="options", transform=transforms.simplex)
     ...     )
     ...     trace1 = pm.sample_prior_predictive(100)
