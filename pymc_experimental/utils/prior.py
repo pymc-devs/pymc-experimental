@@ -128,7 +128,7 @@ def prior_from_idata(
     posteriors and will fail when complicated interactions happen.
 
     Moreover, if a retrieved variable is constrained, you
-    should specify the transform for the variable, e.g.
+    should specify a transform for the variable, e.g.
     ``pymc.distributions.transforms.log`` for standard
     deviation posterior.
 
