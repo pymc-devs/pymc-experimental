@@ -121,7 +121,16 @@ def prior_from_idata(
     **kwargs: Union[ParamCfg, aeppl.transforms.RVTransform, str, Tuple]
 ) -> Dict[str, at.TensorVariable]:
     """
-    Create a prior from posterior.
+    Create a prior from posterior using MvNormal approximation.
+
+    The approximation uses MvNormal distribution.
+    Keep in mind that this function will only work well for unimodal
+    posteriors and will fail when complicated interactions happen.
+
+    Moreover, if a retrieved variable is constrained, you
+    should specify the transform for the variable, e.g.
+    ``pymc.distributions.transforms.log`` for standard
+    deviation posterior.
 
     Parameters
     ----------
