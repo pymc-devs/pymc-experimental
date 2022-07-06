@@ -16,7 +16,7 @@
 import scipy.stats.distributions as ssd
 
 # test support imports from pymc
-from pymc.test.test_distributions import (
+from pymc.tests.test_distributions import (
     R,
     Rplus,
     Domain,
@@ -40,15 +40,11 @@ class TestMatchesScipyX(TestMatchesScipy):
             GenExtreme,
             R,
             {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
-            lambda value, mu, sigma, xi: ssd.genextreme.logpdf(
-                value, c=-xi, loc=mu, scale=sigma
-            ),
+            lambda value, mu, sigma, xi: ssd.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma),
         )
         self.check_logcdf(
             GenExtreme,
             R,
             {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
-            lambda value, mu, sigma, xi: ssd.genextreme.logcdf(
-                value, c=-xi, loc=mu, scale=sigma
-            ),
+            lambda value, mu, sigma, xi: ssd.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma),
         )
