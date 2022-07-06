@@ -12,18 +12,14 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-# coding: utf-8
-"""
-Experimental probability distributions for stochastic nodes in PyMC.
-"""
 
-from pymc_experimental.distributions.continuous import (
-    GenExtreme,
-)
+from pymc_experimental.bart.bart import BART
+from pymc_experimental.bart.pgbart import PGBART
+from pymc_experimental.bart.utils import plot_dependence, plot_variable_importance, predict
 
-__all__ = [
-    "GenExtreme",
-]
+__all__ = ["BART", "PGBART"]
 
-from .histogram_utils import histogram_approximation
-from . import histogram_utils
+
+import pymc as pm
+
+pm.STEP_METHODS = list(pm.STEP_METHODS) + [PGBART]

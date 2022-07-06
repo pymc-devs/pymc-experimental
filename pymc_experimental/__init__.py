@@ -11,5 +11,8 @@ if not logging.root.handlers:
         _log.addHandler(handler)
 
 
-from pymc_experimental.distributions import *
 from pymc_experimental.tests import test
+from pymc_experimental.bart import *
+from pymc_experimental import distributions
+from pymc_experimental import gp
+from pymc_experimental import utils

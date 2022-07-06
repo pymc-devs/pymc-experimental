@@ -12,18 +12,12 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-# coding: utf-8
+#!/usr/bin/env python
 """
-Experimental probability distributions for stochastic nodes in PyMC.
+A setup.py script to use setuptools, which gives egg goodness, etc.
 """
 
-from pymc_experimental.distributions.continuous import (
-    GenExtreme,
-)
+from setuptools import setup
 
-__all__ = [
-    "GenExtreme",
-]
-
-from .histogram_utils import histogram_approximation
-from . import histogram_utils
+with open("setup.py") as s:
+    exec(s.read())
