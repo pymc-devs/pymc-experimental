@@ -14,4 +14,5 @@ if not logging.root.handlers:
 from pymc_experimental.bart import *
 from pymc_experimental import distributions
 from pymc_experimental import gp
+from pymc_experimental import step_methods
 from pymc_experimental import utils
