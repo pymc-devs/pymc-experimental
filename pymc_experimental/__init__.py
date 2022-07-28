@@ -13,3 +13,6 @@ if not logging.root.handlers:
 
 from pymc_experimental import distributions, gp, utils
 from pymc_experimental.bart import *
+from pymc_experimental.distributions import (
+	GeneralizedGamma
+)
