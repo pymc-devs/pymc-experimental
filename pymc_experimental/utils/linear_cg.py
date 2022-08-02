@@ -1,8 +1,6 @@
 from collections import namedtuple
 import numpy as np
 
-pp = lambda x: np.array2string(x, precision=4, floatmode="fixed")
-pp2 = lambda x: np.array2string(x, precision=2, floatmode="fixed")
 Setting = namedtuple("setting", "on")
 
 
@@ -18,9 +16,6 @@ class settings:
 
     terminate_cg_by_size = Setting(on=terminate_cg_by_size_on)
     _use_eval_tolerance = Setting(on=_use_eval_tolerance_on)
-
-
-print(f"SETTING : {settings.terminate_cg_by_size.on()}")
 
 
 def masked_fill(vector, mask, fill_value):
