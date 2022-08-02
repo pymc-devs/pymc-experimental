@@ -6,7 +6,7 @@ from gpytorch.utils.permutation import apply_permutation
 pp = lambda x: np.array2string(x, precision=4, floatmode="fixed")
 
 
-def pivoted_cholesky_np_gpt(mat: np.matrix, error_tol=1e-6, max_iter=np.Infinity):
+def pivoted_cholesky(mat: np.matrix, error_tol=1e-6, max_iter=np.Infinity):
     """
     mat: numpy matrix of N x N
 
