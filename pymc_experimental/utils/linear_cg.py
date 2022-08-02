@@ -53,7 +53,7 @@ def linear_cg_updates(
     )
 
 
-def linear_cg_np(
+def linear_cg(
     mat: np.matrix,
     rhs,
     n_tridiag=0,
@@ -93,7 +93,6 @@ def linear_cg_np(
 
     num_rows = rhs.size
     n_iter = min(max_iter, num_rows) if settings.terminate_cg_by_size.on() else max_iter
-    print(n_iter)
     n_tridiag_iter = min(max_tridiag_iter, num_rows)
 
     # norm of rhs for convergence tests
