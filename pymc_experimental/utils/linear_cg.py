@@ -10,10 +10,10 @@ class settings:
     eval_cg_tolerance = 0.01
     cg_tolerance = 1
 
-    def terminate_cg_by_size_on(self):
+    def terminate_cg_by_size_on():
         return False
 
-    def _use_eval_tolerance_on(self):
+    def _use_eval_tolerance_on():
         return False
 
     terminate_cg_by_size = Setting(on=terminate_cg_by_size_on)
