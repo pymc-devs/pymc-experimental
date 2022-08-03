@@ -110,7 +110,7 @@ def linear_cg(
 
     result = np.copy(initial_guess)
 
-    if np.allclose(residual, residual):
+    if not np.allclose(residual, residual):
         raise RuntimeError("NaNs encountered when trying to perform matrix-vector multiplication")
 
     # sometimes we are lucky and preconditioner solves the system right away
