@@ -1,2 +1,4 @@
 pymc>=4.0.1
 xhistogram
+gpytorch
+pytorch
