@@ -89,10 +89,10 @@ class GeneralizedGamma(PositiveContinuous):
 
     def logp(
         value,
-        alpha: Union[float, np.ndarray, TensorVariable],
-        p: Union[float, np.ndarray, TensorVariable],
-        lambd: Union[float, np.ndarray, TensorVariable],
-    ) -> RandomVariable:
+        alpha: TensorVariable,
+        p: TensorVariable,
+        lambd: TensorVariable,
+    ) -> TensorVariable:
         """
         Calculate log-probability of Generalized Gamma distribution at specified value.
         Parameters
