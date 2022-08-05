@@ -115,7 +115,7 @@ class GeneralizedGamma(PositiveContinuous):
             - at.log(lambd)
             + (alpha - 1) * at.log(value / lambd)
             - (value / lambd) ** p
-            - at.math.gammaln(alpha / p)
+            - at.gammaln(alpha / p)
         )
 
         bounded_logp_expression = at.switch(
