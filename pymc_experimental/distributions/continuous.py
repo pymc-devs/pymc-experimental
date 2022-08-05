@@ -134,10 +134,10 @@ class GeneralizedGamma(PositiveContinuous):
 
     def logcdf(
         value,
-        alpha: Union[float, np.ndarray, TensorVariable],
-        p: Union[float, np.ndarray, TensorVariable],
-        lambd: Union[float, np.ndarray, TensorVariable],
-    ) -> RandomVariable:
+        alpha: TensorVariable,
+        p: TensorVariable,
+        lambd: TensorVariable,
+    ) -> TensorVariable:
         """
         Compute the log of the cumulative distribution function for GeneralizedGamma
         distribution at the specified value.
