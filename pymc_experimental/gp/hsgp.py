@@ -121,14 +121,8 @@ class HSGP(pm.gp.gp.Base):
             raise RuntimeError("Must construct the prior first by calling `.prior.") 
 
     def prior(self, name, X, **kwargs):
-        eigvals, phi, psd, f, beta = self._build_prior(name, X, **kwargs)
-        
-        self.eigvals = eigvals
-        self.phi = phi
-        self.psd = psd
-        
-        self.f, self.beta = f, beta
-        return f
+        self.eigvals, self.phi, self.psd, self.f, self.beta = self._build_prior(name, X, **kwargs)
+        return self.f
     
     def _build_conditional(self, name, Xnew):
         eigvals, phi = self._construct_basis(Xnew)
@@ -137,6 +131,5 @@ class HSGP(pm.gp.gp.Base):
         return self.mean_func(Xnew) + at.squeeze(at.dot(phi * self.beta, psd))
        
     def conditional(self, name, Xnew):
-        # TODO, error if Xnew outside bounds given by L
         fnew = self._build_conditional(name, Xnew)
         return pm.Deterministic(name, fnew)
