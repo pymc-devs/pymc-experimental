@@ -15,10 +15,20 @@ class ExpQuad(pm.gp.cov.ExpQuad):
         D = len(self.active_dims)
         ls = at.ones(D) * ls
         c = at.power(at.sqrt(2.0 * np.pi), D) * at.prod(ls)
-        return c * at.exp(-0.5 * at.dot(omega, ls)) 
+        return c * at.exp(-0.5 * at.dot(omega, ls))
     
 
-class HSGP(pm.gp.Latent):
+class Matern52(pm.gp.cov.Matern52):
+    def psd(self, omega, ls):
+        D = len(self.active_dims)
+        ls = at.ones(D) * ls
+        D52 = (D + 5) / 2
+        num = at.power(2, D) * at.power(np.pi, D / 2) * at.gamma(D52) * at.power(5, 5 / 2)
+        den = 0.75 * at.sqrt(np.pi) * at.power(ls, 5)
+        return (num / den) * at.power(5.0 + at.dot(omega, ls), D52)
+    
+
+class HSGP(pm.gp.Base):
     def __init__(self, M, c=3/2, L=None, *, mean_func=pm.gp.mean.Zero(), cov_func=pm.gp.cov.Constant(0.0)):
         self.M = M
         self.c = c
@@ -27,9 +37,6 @@ class HSGP(pm.gp.Latent):
         super().__init__(mean_func=mean_func, cov_func=cov_func)
         
     def _evaluate_spd(self, cov_func, omega, L, M, Xsd):
-        #L = at.as_tensor_variable(L)
-        #omega = np.pi * at.arange(1, M + 1)[:, None] * at.ones_like(L) / (2.0 * L)
-        #self.omega = omega
         cov, scale = cov_func.factor_list
         return scale * cov.psd(omega, cov.ls / Xsd)
         
@@ -41,7 +48,7 @@ class HSGP(pm.gp.Latent):
     
     @staticmethod
     def _construct_basis(X, L, D, M): 
-        
+        #         
         S = np.meshgrid(*[np.arange(1, 1 + M) for _ in range(D)])
         S = np.vstack([s.flatten() for s in S]).T
         eigvals = at.square((np.pi * S) / (2 * L))
