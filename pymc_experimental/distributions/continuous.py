@@ -16,13 +16,18 @@ from pymc.distributions.dist_math import check_parameters
 class GeneralizedGamma(PositiveContinuous):
     r"""
     Generalized Gamma log-likelihood.
+    
     The pdf of this distribution is
+    
     .. math::
+       
        f(x \mid \alpha, p, \lambda) =
         \frac{ p\lambda^{-1} (x/\lambda)^{\alpha - 1} e^{-(x/\lambda)^p}}
         {\Gamma(\alpha/p)}
+    
     .. plot::
         :context: close-figs
+        
         import matplotlib.pyplot as plt
         import numpy as np
         import scipy.stats as st
@@ -39,11 +44,13 @@ class GeneralizedGamma(PositiveContinuous):
         plt.ylabel('f(x)', fontsize=12)
         plt.legend(loc=1)
         plt.show()
+
     ========  ==========================================
     Support   :math:`x \in [0, \infty)`
     Mean      :math:`\lambda \frac{\Gamma((\alpha+1)/p)}{\Gamma(\alpha/p)}`
     Variance  :math:`\lambda^2 \left( \frac{\Gamma((\alpha+2)/p)}{\Gamma(\alpha/p)} - \left(\frac{\Gamma((\alpha+1)/p)}{\Gamma(\alpha/p)}\right)^2 \right)`
     ========  ==========================================
+    
     Parameters
     ----------
     alpha : tensor_like of float, optional
@@ -55,8 +62,10 @@ class GeneralizedGamma(PositiveContinuous):
     lambd : tensor_like of float, optional
         Scale parameter :math:`\lambda` (lambd > 0).
         Defaults to 1.
+    
     Examples
     --------
+    
     .. code-block:: python
         with pm.Model():
             x = pm.GeneralizedGamma('x', alpha=1, p=2, lambd=5)
