@@ -1,21 +1,7 @@
-from collections import namedtuple
 import numpy as np
 
-Setting = namedtuple("setting", "on")
-
-
-class settings:
-    eval_cg_tolerance = 0.01
-    cg_tolerance = 1
-
-    def terminate_cg_by_size_on():
-        return False
-
-    def _use_eval_tolerance_on():
-        return False
-
-    terminate_cg_by_size = Setting(on=terminate_cg_by_size_on)
-    _use_eval_tolerance = Setting(on=_use_eval_tolerance_on)
+EVAL_CG_TOLERANCE = 0.01
+CG_TOLERANCE = 1
 
 
 def masked_fill(vector, mask, fill_value):
@@ -64,6 +50,8 @@ def linear_cg(
     max_tridiag_iter=20,
     initial_guess=None,
     preconditioner=None,
+    terminate_cg_by_size=False,
+    use_eval_tolerange=False,
 ):
 
     if initial_guess is None:
@@ -76,10 +64,10 @@ def linear_cg(
         precond = True
 
     if tolerance is None:
-        if settings._use_eval_tolerance.on():
-            tolerance = settings.eval_cg_tolerance
+        if use_eval_tolerance:
+            tolerance = EVAL_CG_TOLERANCE
         else:
-            tolerance = settings.cg_tolerance
+            tolerance = CG_TOLERANCE
 
     # If we are running m CG iterations, we obviously can't get more than m Lanczos coefficients
     if max_tridiag_iter > max_iter:
@@ -92,7 +80,7 @@ def linear_cg(
         rhs = rhs[:, np.newaxis]
 
     num_rows = rhs.size
-    n_iter = min(max_iter, num_rows) if settings.terminate_cg_by_size.on() else max_iter
+    n_iter = min(max_iter, num_rows) if terminate_cg_by_size else max_iter
     n_tridiag_iter = min(max_tridiag_iter, num_rows)
 
     # norm of rhs for convergence tests
