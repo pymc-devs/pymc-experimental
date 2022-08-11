@@ -166,7 +166,16 @@ def linear_cg(
             precond_residual = preconditioner(residual)
 
             # Everything inside _jit_linear_cg_updates
-            linear_cg_retvals = linear_cg_updates(
+            (
+                result,
+                alpha,
+                residual_inner_prod,
+                eps,
+                beta,
+                residual,
+                precond_residual,
+                curr_conjugate_vec,
+            ) = linear_cg_updates(
                 result,
                 alpha,
                 residual_inner_prod,
@@ -177,16 +186,6 @@ def linear_cg(
                 curr_conjugate_vec,
             )
 
-            (
-                result,
-                alpha,
-                residual_inner_prod,
-                eps,
-                beta,
-                residual,
-                precond_residual,
-                curr_conjugate_vec,
-            ) = linear_cg_retvals
         else:
             # everything inside _jit_linear_cg_updates_no_precond
             alpha = curr_conjugate_vec.T @ mvms
@@ -201,16 +200,6 @@ def linear_cg(
             residual = residual - alpha * mvms
             precond_residual = np.copy(residual)
 
-            linear_cg_retvals = linear_cg_updates(
-                result,
-                alpha,
-                residual_inner_prod,
-                eps,
-                beta,
-                residual,
-                precond_residual,
-                curr_conjugate_vec,
-            )
             (
                 result,
                 alpha,
@@ -220,7 +209,16 @@ def linear_cg(
                 residual,
                 precond_residual,
                 curr_conjugate_vec,
-            ) = linear_cg_retvals
+            ) = linear_cg_updates(
+                result,
+                alpha,
+                residual_inner_prod,
+                eps,
+                beta,
+                residual,
+                precond_residual,
+                curr_conjugate_vec,
+            )
 
         residual_norm = np.linalg.norm(residual, 2)
         residual_norm = masked_fill(residual_norm, mask=rhs_is_zero, fill_value=0)
