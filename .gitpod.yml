@@ -1,4 +1,3 @@
-image: numpy/numpy-gitpod:latest
 tasks:
   - name: initialize
     init: |
