@@ -5,92 +5,81 @@ import pymc as pm
 
 class HSGP(pm.gp.gp.Base):
     def __init__(
-        self, M, c=3 / 2, L=None, *, mean_func=pm.gp.mean.Zero(), cov_func=pm.gp.cov.Constant(0.0)
+        self,
+        n_basis,
+        c=3 / 2,
+        L=None,
+        *,
+        mean_func=pm.gp.mean.Zero(),
+        cov_func=pm.gp.cov.Constant(0.0),
     ):
-        super().__init__(mean_func=mean_func, cov_func=cov_func)
-        self.M = M
-        self.c = c
+        arg_err_msg = (
+            "`n_basis` and L, if provided, must be lists or tuples, with one element per active "
+            "dimension."
+        )
+        try:
+            if len(n_basis) != cov_func.D:
+                raise ValueError(arg_err_msg)
+        except TypeError as e:
+            raise ValueError(arg_err_msg) from e
+
+        if L is not None and len(L) != cov_func.D:
+            raise ValueError(arg_err_msg)
+
+        self.M = n_basis
         self.L = L
-        self.m_star = at.power(self.M, self.cov_func.D)
+        self.c = c
+        self.D = cov_func.D
 
-    def _construct_basis(self, X):
-        """Construct the set of basis vectors and associated eigenvalue array."""
-        S = np.meshgrid(*[np.arange(1, 1 + self.M) for _ in range(self.cov_func.D)])
-        S = np.vstack([s.flatten() for s in S]).T
-        eigvals = at.square((np.pi * S) / (2 * self.L))
+        super().__init__(mean_func=mean_func, cov_func=cov_func)
 
-        phi_shape = (X.shape[0], self.m_star)
-        phi = at.ones(phi_shape)
-        for d in range(self.cov_func.D):
-            c = 1.0 / np.sqrt(self.L[d])
-            phi *= c * at.sin(
-                at.sqrt(eigvals[:, d]) * (at.tile(X[:, d][:, None], self.m_star) + self.L[d])
-            )
-        return eigvals, phi
+    def __add__(self, other):
+        raise NotImplementedError("Additive HSGP's isn't supported ")
 
-    def _build_prior(self, name, X, **kwargs):
-        X = at.as_tensor_variable(X)
-
+    def _set_boundary(self, X):
         if self.L is None:
-
             # Define new L based on c and X range
             La = at.abs(at.min(X, axis=0))
             Lb = at.abs(at.max(X, axis=0))
             self.L = self.c * at.max(at.stack((La, Lb)), axis=0)
-
         else:
-            # If L is passed as a scalar, put it into a one-element list.
-            if np.isscalar(self.L):
-                self.L = [self.L]
-
-            # Make sure L has the right dimension
-            if len(self.L) != self.cov_func.D:
-                raise ValueError(
-                    (
-                        "Must provide one L for each active dimension.  `len(L)` must ",
-                        "equal the number of active dimensions of your covariance function.",
-                    )
-                )
-
-            ## If L is provided, don't rescale X
             self.L = at.as_tensor_variable(self.L)
 
-        # Construct basis and eigenvalues
-        eigvals, phi = self._construct_basis(X)
+    @staticmethod
+    def _eigendecomposition(X, L, M, D):
+        """Construct the eigenvalues and eigenfunctions of the Laplace operator."""
+        m_star = at.prod(M)
+        S = np.meshgrid(*[np.arange(1, 1 + M[d]) for d in range(D)])
+        S = np.vstack([s.flatten() for s in S]).T
+        eigvals = at.square((np.pi * S) / (2 * L))
+        phi = at.ones((X.shape[0], m_star))
+        for d in range(D):
+            c = 1.0 / np.sqrt(L[d])
+            phi *= c * at.sin(at.sqrt(eigvals[:, d]) * (at.tile(X[:, d][:, None], m_star) + L[d]))
         omega = at.sqrt(eigvals)
+        return omega, phi, m_star
+
+    def approx_K(self, X):
+        # construct eigenvectors after slicing X
+        X, _ = self.cov_func._slice(X)
+        omega, phi, _ = self._eigendecomposition(X, self.L, self.M, self.D)
         psd = self.cov_func.psd(omega)
-        beta = pm.Normal(f"{name}_coeffs_", size=self.m_star)
-        f = pm.Deterministic(name, self.mean_func(X) + at.squeeze(at.dot(phi, beta * psd)))
-        return eigvals, phi, psd, f, beta
-
-    @property
-    def basis(self):
-        try:
-            return self.phi
-        except AttributeError:
-            raise RuntimeError("Must construct the prior first by calling `.prior.")
-
-    @property
-    def power_spectral_density(self):
-        try:
-            return self.psd
-        except AttributeError:
-            raise RuntimeError("Must construct the prior first by calling `.prior.")
-
-    @property
-    def omega(self):
-        try:
-            return at.sqrt(self.eigvals)
-        except AttributeError:
-            raise RuntimeError("Must construct the prior first by calling `.prior.")
+        return at.dot(phi * psd, at.transpose(phi))
 
     def prior(self, name, X, **kwargs):
-        self.eigvals, self.phi, self.psd, self.f, self.beta = self._build_prior(name, X, **kwargs)
+        X, _ = self.cov_func._slice(X)
+        self._set_boundary(X)
+        omega, phi, m_star = self._eigendecomposition(X, self.L, self.M, self.D)
+        psd = self.cov_func.psd(omega)
+        self.beta = pm.Normal(f"{name}_coeffs_", size=m_star)
+        self.f = pm.Deterministic(
+            name, self.mean_func(X) + at.squeeze(at.dot(phi, self.beta * psd))
+        )
         return self.f
 
     def _build_conditional(self, name, Xnew):
-        eigvals, phi = self._construct_basis(Xnew)
-        omega = at.sqrt(eigvals)
+        Xnew, _ = self.cov_func._slice(Xnew)
+        omega, phi, _ = self._eigendecomposition(Xnew, self.L, self.M, self.D)
         psd = self.cov_func.psd(omega)
         return self.mean_func(Xnew) + at.squeeze(at.dot(phi, self.beta * psd))
 
