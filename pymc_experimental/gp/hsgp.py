@@ -4,11 +4,78 @@ import pymc as pm
 
 
 class HSGP(pm.gp.gp.Base):
+    R"""
+    Hilbert Space Gaussian process
+
+    The `gp.HSGP` class is an implementation of the Hilbert Space Gaussian process.  This
+    approximation is a linear model that uses a fixed set of basis vectors, whose coeficients are
+    random functions of a stationary covariance function's power spectral density.  Like
+    `gp.Latent`, it does not assume a Gaussian noise model and can be used with any likelihood or as
+    a component anywhere within a model.  Also like `gp.Latent`, it has `prior` and `conditional`
+    methods.  It additonally has an `approx_K` method which returns the approximate covariance
+    matrix.  It supports a limited subset of additive covariances.
+
+    Parameters
+    ----------
+    n_basis: list
+        The number of basis vectors to use for each active dimension (covariance parameter
+        `active_dim`).
+    L: list
+        The boundary of the space for each `active_dim`.  It is called the boundary condition.
+        Choose L such that the domain `[-L, L]` contains all points in the column of X given by the
+        `active_dim`.
+    c: 3/2
+        The proportion extension factor.  Used to construct L from X.  Defined as `S = max|X|` such
+        that `X` is in `[-S, S]`.  `L` is the calculated as `c * S`.  One of `c` or `L` must be
+        provided.  Further information can be found in Ruitort-Mayol et. al.
+    cov_func: None, 2D array, or instance of Covariance
+        The covariance function.  Defaults to zero.
+    mean_func: None, instance of Mean
+        The mean function.  Defaults to zero.
+
+    Examples
+    --------
+    .. code:: python
+
+        # A three dimensional column vector of inputs.
+        X = np.random.randn(100, 3)
+
+        with pm.Model() as model:
+            # Specify the covariance function.  Three input dimensions, but we only want to use the
+            # last two.
+            cov_func = pm.gp.cov.ExpQuad(3, ls=0.1, active_dims=[1, 2])
+
+            # Specify the HSGP.  Use 10 basis vectors across each active dimension, [1, 2]  for a
+            # total of 10 * 10 = 100.  The input X is normally distributed, so use a boundary
+            # condition that should easily contain all the points, from -6 to 6 in each dimension.
+            gp = pmx.gp.HSGP(n_basis=[10, 10], L=[6, 6], cov_func=cov_func)
+
+            # Place a GP prior over the function f.
+            f = gp.prior("f", X=X)
+
+        ...
+
+        # After fitting or sampling, specify the distribution
+        # at new points with .conditional
+        Xnew = np.linspace(-1, 2, 50)[:, None]
+
+        with model:
+            fcond = gp.conditional("fcond", Xnew=Xnew)
+
+    References
+    ----------
+    -   Ruitort-Mayol, G., and Anderson, M., and Solin, A., and Vehtari, A. (2022). Practical
+    Hilbert Space Approximate Bayesian Gaussian Processes for Probabilistic Programming
+
+    -   Solin, A., Sarkka, S. (2019) Hilbert Space Methods for Reduced-Rank Gaussian Process
+    Regression.
+    """
+
     def __init__(
         self,
         n_basis,
-        c=3 / 2,
         L=None,
+        c=3 / 2,
         *,
         mean_func=pm.gp.mean.Zero(),
         cov_func=pm.gp.cov.Constant(0.0),
@@ -60,7 +127,6 @@ class HSGP(pm.gp.gp.Base):
         return omega, phi, m_star
 
     def approx_K(self, X):
-        # construct eigenvectors after slicing X
         X, _ = self.cov_func._slice(X)
         omega, phi, _ = self._eigendecomposition(X, self.L, self.M, self.D)
         psd = self.cov_func.psd(omega)
