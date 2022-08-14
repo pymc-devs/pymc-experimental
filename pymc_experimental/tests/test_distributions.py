@@ -7,7 +7,7 @@ from pymc.tests.test_distributions import Rplus, Rplusbig, check_logp, check_log
 
 class TestMatchesScipy:
     
-    def test_gengamma_logp(self):
+    def test_generalized_gamma_logp(self):
         check_logp(
             GeneralizedGamma,
             Rplus,
@@ -19,7 +19,7 @@ class TestMatchesScipy:
         condition=(aesara.config.floatX == "float32"),
         reason="Fails on float32 due to numerical issues",
     )
-    def test_gengamma_logcdf(self):
+    def test_generalized_gamma_logcdf(self):
         check_logcdf(
             GeneralizedGamma,
             Rplus,
