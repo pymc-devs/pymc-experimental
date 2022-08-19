@@ -10,7 +10,7 @@ tasks:
       pip install -r requirements-dev.txt
       pip install -e .
     command: |
-      conda init bash && source ~/.bashrc && conda activate pymc-test-py39
+      conda init bash && echo "conda activate pymc-test-py39" >> ~/.bashrc && source ~/.bashrc && conda activate pymc-test-py39
 
 vscode:
   extensions:
