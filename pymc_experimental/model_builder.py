@@ -7,6 +7,20 @@ from typing import Dict
 import cloudpickle
 import arviz as az
 import hashlib
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 class ModelBuilder(pm.Model):
     '''
@@ -56,7 +70,7 @@ class ModelBuilder(pm.Model):
         raise NotImplementedError
 
 
-    def _data_setter(self, data : Dict[Str, Union[np.ndarray, pd.DataFrame, pd.Series]], x_only : bool = True):
+    def _data_setter(self, data : Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]], x_only : bool = True):
         '''
         Sets new data in the model.
 
@@ -126,7 +140,7 @@ class ModelBuilder(pm.Model):
             file.write(Model)
         self.saved = True
 
-    def load_model(self,filename):
+    def _load_model(self,filename):
         '''
         Loads the saved model from local system.
         Return pymc model
@@ -165,14 +179,14 @@ class ModelBuilder(pm.Model):
         '''
 
         file = Path(str(filepath)+str(file_prefix)+'.pickle')
-        self = load_model(self,file)
+        self = _load_model(file)
         filepath = Path(str(filepath)+str(file_prefix)+'.nc')
         data = az.from_netcdf(filepath)
         self.idata = data
         return self
 
     # fit and predict methods
-    def fit(self, data : Dict[Str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
+    def fit(self, data : Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
         '''
         As the name suggests fit can be used to fit a model using the data that is passed as a parameter.
         It returns the inference data.
@@ -202,7 +216,7 @@ class ModelBuilder(pm.Model):
         return self.idata
 
 
-    def predict(self, data_prediction : Dict[Str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None, point_estimate : bool = True):
+    def predict(self, data_prediction : Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None, point_estimate : bool = True):
         '''
         Uses model to predict on unseen data and returns posterioir prediction on the data.
 
