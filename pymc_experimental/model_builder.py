@@ -24,13 +24,11 @@ from typing import (
 
 
 class ModelBuilder(pm.Model):
-    """
+        """
     Extention of pm.Model class to improve workflow.
 
     ModelBuilder class can be used to play around models with ease using direct API calls
     for multiple tasks that one need to deploy a model.  
-
-    Example:
     
     """
 
@@ -38,6 +36,21 @@ class ModelBuilder(pm.Model):
     version = "None"
 
     def __init__(self, model_config: Dict, sampler_config: Dict):
+        """
+        Initialises model configration and sampler configration for the model
+        Parameters
+        ----------
+        model_confid: Dictionary
+            dictonary of parameters that initialise model configration. Genrated by the user defiend create_sample_input method.
+        sampler_config: Dictionary
+            dictonary of parameters that initialise sampler configration. Genrated by the user defiend create_sample_input method.
+        
+        Example:
+        >>> class LinearModel(ModelBuilder)
+            ...
+        >>> model = LinearModel(model_config, sampler_config)
+        """
+
         super().__init__()
         self.model_config = model_config  # parameters for priors etc.
         self.sample_config = sampler_config  # parameters for sampling
@@ -59,13 +72,13 @@ class ModelBuilder(pm.Model):
 
         Example: 
 
-        def _data_setter(self, data : pd.DataFrame):
-        with self.model:
-            pm.set_data({'x': data['input'].values})
-            try: # if y values in new data
-                pm.set_data({'y_data': data['output'].values})
-            except: # dummies otherwise
-                pm.set_data({'y_data': np.zeros(len(data))})
+        >>>def _data_setter(self, data : pd.DataFrame):
+        >>> with self.model:
+        >>>    pm.set_data({'x': data['input'].values})
+        >>>    try: # if y values in new data
+        >>>        pm.set_data({'y_data': data['output'].values})
+        >>>    except: # dummies otherwise
+        >>>        pm.set_data({'y_data': np.zeros(len(data))})
 
         """
         raise NotImplementedError
@@ -74,15 +87,39 @@ class ModelBuilder(pm.Model):
     def create_sample_input(cls):
         """
         Needs to be implemented by the user in the inherited class.
-        Returns examples for data, model_config, samples_config.
+        Returns examples for data, model_config, sampler_config.
         This is useful for understanding the required 
         data structures for the user model.
+        
+        Example:
+        >>>@classmethod
+        >>>def create_sample_input(cls):
+        >>>    x = np.linspace(start=1, stop=50, num=100)
+        >>>    y = 5 * x + 3 + np.random.normal(0, 1, len(x)) * np.random.rand(100)*10 +  np.random.rand(100)*6.4
+        >>>    data = pd.DataFrame({'input': x, 'output': y})
+
+        >>>    model_config = {
+        >>>    'a_loc': 7,
+        >>>    'a_scale': 3,
+        >>>    'b_loc': 5,
+        >>>    'b_scale': 3,
+        >>>    'obs_error': 2,
+        >>>    }
+
+        >>>    sampler_config = {
+        >>>    'draws': 1_000,
+        >>>    'tune': 1_000,
+        >>>    'chains': 1,
+        >>>    'target_accept': 0.95,
+        >>>    }
+
+        >>>    return data, model_config, sampler_config
         """
         raise NotImplementedError
 
     def save(self, file_prefix, filepath):
         """
-        Saves the model as well as inference data of the model.
+        Saves inference data of the model.
 
         Parameters
         ----------
@@ -90,6 +127,12 @@ class ModelBuilder(pm.Model):
             Passed which denotes the name with which model and idata should be saved.
         filepath: string
             Used as path at which model and idata should be saved
+
+        Example
+        ------
+        >>> name = 'mymodel'
+        >>> path = '.'
+        >>> model.save(name,path)
             
         """
         file = Path(filepath + str(file_prefix) + ".nc")
@@ -99,7 +142,7 @@ class ModelBuilder(pm.Model):
     @classmethod
     def load(cls, file_prefix, filepath):
         """
-        Loads model and the idata of used for model.
+        Loads infernce data for the model.
 
         Parameters
         ----------
@@ -108,23 +151,56 @@ class ModelBuilder(pm.Model):
         filepath: string
             Used as path at which model and idata should be loaded from.
 
-        """
+        Return
+        ------
+        Returns the inference data that is loaded from local system.
 
+        Example
+        -------
+        >>> class LinearModel
+        ...
+        >>> name = 'mymodel'
+        >>> path = '.'
+        >>> imported_model = LinearModel.load(name,path)
+
+        """
+    
         filepath = Path(str(filepath) + str(file_prefix) + ".nc")
         data = az.from_netcdf(filepath)
         self.idata = data
-        return self
+        # if model.idata.attrs is not None:
+        #     if model.idata.attrs['id'] == self.idata.attrs['id']:
+        #         self = model
+        #         self.idata = data
+        #         return self
+        #     else:
+        #         raise ValueError(
+        #             f"The route '{file}' does not contain an inference data of the same model '{self.__name__}'"
+        #         )
+        return self.idata
 
     # fit and predict methods
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
         """
         As the name suggests fit can be used to fit a model using the data that is passed as a parameter.
-        It returns the inference data.
+        Sets attrs to inference data of the model
 
         Parameter
         ---------
         data: Dictionary of string and either of numpy array, pandas dataframe or pandas Series
             It is the data we need to train the model on.
+
+        Retruns
+        --------
+        returns infernece data of the fitted model.
+
+        Example
+        -------
+        >>>data, model_config, sampler_config = LinearModel.create_sample_input() 
+        >>>model = LinearModel(model_config, sampler_config)
+        >>>idata = model.fit(data)
+        Auto-assigning NUTS sampler...
+        Initializing NUTS using jitter+adapt_diag...
         """
         if data is not None:
             self.data = data
@@ -151,7 +227,7 @@ class ModelBuilder(pm.Model):
         point_estimate: bool = True,
     ):
         """
-        Uses model to predict on unseen data and returns posterioir prediction on the data.
+        Uses model to predict on unseen data.
 
         Parameters
         ---------
@@ -160,6 +236,17 @@ class ModelBuilder(pm.Model):
         point_estimate: bool
             Adds point like estimate used as mean passed as 
 
+        Returns
+        -------
+        returns sample's posterior predict 
+
+        Example
+        -------
+        >>> prediction_data = pd.DataFrame({'input':x_pred})
+        # only point estimate
+        >>>pred_mean = imported_model.predict(prediction_data)
+        # samples
+        >>>pred_samples = imported_model.predict(prediction_data, point_estimate=False)
         """
         if data_prediction is not None:  # set new input data
             self._data_setter(data_prediction)
@@ -182,11 +269,13 @@ class ModelBuilder(pm.Model):
     @staticmethod
     def _extract_samples(post_pred: arviz.data.inference_data.InferenceData) -> Dict[str, np.array]:
         """
-        Returns dict of numpy arrays from InferenceData object
-
         Parameters
         ----------
         post_pred: arviz InferenceData object
+
+        Returns
+        -------
+        Dictionary of numpy arrays from InferenceData object
         """
         post_pred_dict = dict()
         for key in post_pred.posterior_predictive:
@@ -197,6 +286,10 @@ class ModelBuilder(pm.Model):
     def id(self):
         """
         It creates a hash value to match the model version using last 16 characters of hash encoding.
+
+        Return
+        ------
+        Returns string of length 16 characters containg unique hash of the model
         """
         hasher = hashlib.sha256()
         hasher.update(str(self.model_config.values()).encode())
