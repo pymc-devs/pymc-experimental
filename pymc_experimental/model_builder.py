@@ -43,34 +43,6 @@ class ModelBuilder(pm.Model):
         self.sample_config = sampler_config  # parameters for sampling
         self.idata = None  # parameters for
 
-    def _build(self):
-        """
-        Needs to be implemented by the user in the inherited class.
-        Builds user model. Requires suitable self.data and self.model_config. 
-
-        Example:
-        def _build(self):
-        # data
-        x = pm.MutableData('x', self.data['input'].values)
-        y_data = pm.MutableData('y_data', self.data['output'].values)
-
-        # prior parameters
-        a_loc = self.model_config['a_loc']
-        a_scale = self.model_config['a_scale']
-        b_loc = self.model_config['b_loc']
-        b_scale = self.model_config['b_scale']
-        obs_error = self.model_config['obs_error']
-
-        # priors
-        a = pm.Normal("a", a_loc, sigma=a_scale)
-        b = pm.Normal("b", b_loc, sigma=b_scale)
-        obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
-
-        # observed data
-        y_model = pm.Normal('y_model', a + b * x, obs_error, observed=y_data)
-        """
-        raise NotImplementedError
-
     def _data_setter(
         self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]], x_only: bool = True
     ):
@@ -108,11 +80,7 @@ class ModelBuilder(pm.Model):
         """
         raise NotImplementedError
 
-    def build(self):
-        with self:
-            self._build()
-
-    def save(self, file_prefix, filepath, save_model=True, save_idata=True):
+    def save(self, file_prefix, filepath):
         """
         Saves the model as well as inference data of the model.
 
@@ -122,45 +90,14 @@ class ModelBuilder(pm.Model):
             Passed which denotes the name with which model and idata should be saved.
         filepath: string
             Used as path at which model and idata should be saved
-        save_model: bool
-            Saves the model at given filepath with given file_prefix.
-            Does not save the model if passed as False
-        save_idata: bool
-            Saves the idata at given filepath with given file_prefix.
-            Does not save the idata if passed as False
             
         """
-        if save_idata:
-            file = Path(filepath + str(file_prefix) + ".nc")
-            self.idata.to_netcdf(file)
-        if save_model:
-            filepath = Path(str(filepath) + str(file_prefix) + ".pickle")
-            Model = cloudpickle.dumps(self)
-            file = open(filepath, "wb")
-            file.write(Model)
-        self.saved = True
-
-    def _load_model(self, filename):
-        """
-        Loads the saved model from local system.
-        Return pymc model
-
-        Parameters
-        ----------
-        filename: string
-            File name of saved model with it's path if not present in current working directory. 
-        """
-        with open(filename, "rb") as pickle_file:
-            model = pickle.load(pickle_file)
-        if isinstance(model, self):
-            return model
-        else:
-            raise ValueError(
-                f"The route '{filename}' does not contain an object of the class '{self.__name__}'"
-            )
+        file = Path(filepath + str(file_prefix) + ".nc")
+        self.idata.to_netcdf(file)
+            
 
     @classmethod
-    def load(cls, file_prefix, filepath, load_model=True, load_idata=True):
+    def load(cls, file_prefix, filepath):
         """
         Loads model and the idata of used for model.
 
@@ -170,17 +107,9 @@ class ModelBuilder(pm.Model):
             Passed which denotes the name with which model and idata should be loaded from.
         filepath: string
             Used as path at which model and idata should be loaded from.
-        save_model: bool
-            Loads the model at given filepath with given file_prefix.
-            Does not load the model if passed as False
-        save_idata: bool
-            Loads the idata at given filepath with given file_prefix.
-            Does not load the idata if passed as False
 
         """
 
-        file = Path(str(filepath) + str(file_prefix) + ".pickle")
-        self = _load_model(file)
         filepath = Path(str(filepath) + str(file_prefix) + ".nc")
         data = az.from_netcdf(filepath)
         self.idata = data
