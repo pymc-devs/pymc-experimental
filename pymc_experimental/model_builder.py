@@ -24,7 +24,7 @@ from typing import (
 
 
 class ModelBuilder(pm.Model):
-        """
+    """
     Extention of pm.Model class to improve workflow.
 
     ModelBuilder class can be used to play around models with ease using direct API calls
@@ -72,14 +72,13 @@ class ModelBuilder(pm.Model):
 
         Example: 
 
-        >>>def _data_setter(self, data : pd.DataFrame):
-        >>> with self.model:
-        >>>    pm.set_data({'x': data['input'].values})
-        >>>    try: # if y values in new data
-        >>>        pm.set_data({'y_data': data['output'].values})
-        >>>    except: # dummies otherwise
-        >>>        pm.set_data({'y_data': np.zeros(len(data))})
-
+        >>> def _data_setter(self, data : pd.DataFrame):
+        >>>  with self.model:
+        >>>     pm.set_data({'x': data['input'].values})
+        >>>     try: # if y values in new data
+        >>>         pm.set_data({'y_data': data['output'].values})
+        >>>     except: # dummies otherwise
+        >>>         pm.set_data({'y_data': np.zeros(len(data))})
         """
         raise NotImplementedError
 
@@ -92,8 +91,8 @@ class ModelBuilder(pm.Model):
         data structures for the user model.
         
         Example:
-        >>>@classmethod
-        >>>def create_sample_input(cls):
+        >>> @classmethod
+        >>> def create_sample_input(cls):
         >>>    x = np.linspace(start=1, stop=50, num=100)
         >>>    y = 5 * x + 3 + np.random.normal(0, 1, len(x)) * np.random.rand(100)*10 +  np.random.rand(100)*6.4
         >>>    data = pd.DataFrame({'input': x, 'output': y})
@@ -117,7 +116,7 @@ class ModelBuilder(pm.Model):
         """
         raise NotImplementedError
 
-    def save(self, file_prefix, filepath):
+    def save(self, fname):
         """
         Saves inference data of the model.
 
@@ -135,12 +134,11 @@ class ModelBuilder(pm.Model):
         >>> model.save(name,path)
             
         """
-        file = Path(filepath + str(file_prefix) + ".nc")
+        file = Path(str(fname) + ".nc")
         self.idata.to_netcdf(file)
-            
 
     @classmethod
-    def load(cls, file_prefix, filepath):
+    def load(cls, fname):
         """
         Loads infernce data for the model.
 
@@ -164,10 +162,12 @@ class ModelBuilder(pm.Model):
         >>> imported_model = LinearModel.load(name,path)
 
         """
-    
-        filepath = Path(str(filepath) + str(file_prefix) + ".nc")
+
+        filepath = Path(str(fname) + ".nc")
         data = az.from_netcdf(filepath)
         self.idata = data
+        # Since there is an issue with attrs geting saved in netcdf format which will be fixd in future the following part of code is commented
+        # Link of issue -> https://github.com/arviz-devs/arviz/issues/2109
         # if model.idata.attrs is not None:
         #     if model.idata.attrs['id'] == self.idata.attrs['id']:
         #         self = model
@@ -196,9 +196,9 @@ class ModelBuilder(pm.Model):
 
         Example
         -------
-        >>>data, model_config, sampler_config = LinearModel.create_sample_input() 
-        >>>model = LinearModel(model_config, sampler_config)
-        >>>idata = model.fit(data)
+        >>> data, model_config, sampler_config = LinearModel.create_sample_input() 
+        >>> model = LinearModel(model_config, sampler_config)
+        >>> idata = model.fit(data)
         Auto-assigning NUTS sampler...
         Initializing NUTS using jitter+adapt_diag...
         """
@@ -244,9 +244,9 @@ class ModelBuilder(pm.Model):
         -------
         >>> prediction_data = pd.DataFrame({'input':x_pred})
         # only point estimate
-        >>>pred_mean = imported_model.predict(prediction_data)
+        >>> pred_mean = imported_model.predict(prediction_data)
         # samples
-        >>>pred_samples = imported_model.predict(prediction_data, point_estimate=False)
+        >>> pred_samples = imported_model.predict(prediction_data, point_estimate=False)
         """
         if data_prediction is not None:  # set new input data
             self._data_setter(data_prediction)
