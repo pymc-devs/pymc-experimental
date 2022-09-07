@@ -127,9 +127,8 @@ class ModelBuilder(pm.Model):
 
         Example
         ------
-        >>> name = 'mymodel'
-        >>> path = '.'
-        >>> model.save(name,path)
+        >>> name = './mymodel.nc'
+        >>> model.save(name)
             
         """
         file = Path(str(fname))
@@ -153,9 +152,8 @@ class ModelBuilder(pm.Model):
         -------
         >>> class LinearModel
         ...
-        >>> name = 'mymodel'
-        >>> path = '.'
-        >>> imported_model = LinearModel.load(name,path)
+        >>> name = './mymodel.nc'
+        >>> imported_model = LinearModel.load(name)
 
         """
 
