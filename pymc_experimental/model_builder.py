@@ -122,10 +122,8 @@ class ModelBuilder(pm.Model):
 
         Parameters
         ----------
-        file_prefix: string
-            Passed which denotes the name with which model and idata should be saved.
-        filepath: string
-            Used as path at which model and idata should be saved
+        fname: string
+            This denotes the name with path from where idata should be saved.
 
         Example
         ------
@@ -144,10 +142,8 @@ class ModelBuilder(pm.Model):
 
         Parameters
         ----------
-        file_prefix: string
-            Passed which denotes the name with which model and idata should be loaded from.
-        filepath: string
-            Used as path at which model and idata should be loaded from.
+        fname: string
+            This denotes the name with path from where idata should be loaded from.
 
         Return
         ------
