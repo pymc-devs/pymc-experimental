@@ -26,10 +26,8 @@ from typing import (
 class ModelBuilder(pm.Model):
     """
     Extention of pm.Model class to improve workflow.
-
     ModelBuilder class can be used to play around models with ease using direct API calls
     for multiple tasks that one need to deploy a model.  
-    
     """
 
     _model_type = "BaseClass"
@@ -38,14 +36,16 @@ class ModelBuilder(pm.Model):
     def __init__(self, model_config: Dict, sampler_config: Dict):
         """
         Initialises model configration and sampler configration for the model
+
         Parameters
         ----------
-        model_confid: Dictionary
+        model_confid : Dictionary
             dictonary of parameters that initialise model configration. Genrated by the user defiend create_sample_input method.
-        sampler_config: Dictionary
+        sampler_config : Dictionary
             dictonary of parameters that initialise sampler configration. Genrated by the user defiend create_sample_input method.
-        
-        Example:
+
+        Examples
+        --------
         >>> class LinearModel(ModelBuilder)
             ...
         >>> model = LinearModel(model_config, sampler_config)
@@ -62,24 +62,24 @@ class ModelBuilder(pm.Model):
         """
         Sets new data in the model.
 
-        Parameter
-        --------
-
-        data: Dictionary of string and either of numpy array, pandas dataframe or pandas Series
+        Parameters
+        ----------
+        data : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
             It is the data we need to set as idata for the model
-        x_only: bool
+        x_only : bool
             if data only contains values of x and y is not present in the data
 
-        Example: 
-
+        Examples
+        --------
         >>> def _data_setter(self, data : pd.DataFrame):
-        >>>  with self.model:
-        >>>     pm.set_data({'x': data['input'].values})
-        >>>     try: # if y values in new data
-        >>>         pm.set_data({'y_data': data['output'].values})
-        >>>     except: # dummies otherwise
-        >>>         pm.set_data({'y_data': np.zeros(len(data))})
+        >>>     with self.model:
+        >>>         pm.set_data({'x': data['input'].values})
+        >>>         try: # if y values in new data
+        >>>             pm.set_data({'y_data': data['output'].values})
+        >>>         except: # dummies otherwise
+        >>>             pm.set_data({'y_data': np.zeros(len(data))})
         """
+
         raise NotImplementedError
 
     @classmethod
@@ -90,7 +90,8 @@ class ModelBuilder(pm.Model):
         This is useful for understanding the required 
         data structures for the user model.
         
-        Example:
+        Examples
+        --------
         >>> @classmethod
         >>> def create_sample_input(cls):
         >>>    x = np.linspace(start=1, stop=50, num=100)
@@ -111,9 +112,9 @@ class ModelBuilder(pm.Model):
         >>>    'chains': 1,
         >>>    'target_accept': 0.95,
         >>>    }
-
         >>>    return data, model_config, sampler_config
         """
+
         raise NotImplementedError
 
     def save(self, fname):
@@ -125,12 +126,12 @@ class ModelBuilder(pm.Model):
         fname: string
             This denotes the name with path from where idata should be saved.
 
-        Example
-        ------
+        Examples
+        --------
         >>> name = './mymodel.nc'
         >>> model.save(name)
-            
         """
+
         file = Path(str(fname))
         self.idata.to_netcdf(file)
 
@@ -144,17 +145,21 @@ class ModelBuilder(pm.Model):
         fname: string
             This denotes the name with path from where idata should be loaded from.
 
-        Return
-        ------
+        Returns
+        -------
         Returns the inference data that is loaded from local system.
 
-        Example
-        -------
+        Raises
+        ------
+        ValueError
+            If the inference data that is loaded doesn't match with the model.
+
+        Examples
+        --------
         >>> class LinearModel
         ...
         >>> name = './mymodel.nc'
         >>> imported_model = LinearModel.load(name)
-
         """
 
         filepath = Path(str(fname))
@@ -173,7 +178,6 @@ class ModelBuilder(pm.Model):
         #         )
         return self.idata
 
-    # fit and predict methods
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
         """
         As the name suggests fit can be used to fit a model using the data that is passed as a parameter.
@@ -181,21 +185,22 @@ class ModelBuilder(pm.Model):
 
         Parameter
         ---------
-        data: Dictionary of string and either of numpy array, pandas dataframe or pandas Series
+        data : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
             It is the data we need to train the model on.
 
         Retruns
         --------
         returns infernece data of the fitted model.
 
-        Example
-        -------
+        Examples
+        --------
         >>> data, model_config, sampler_config = LinearModel.create_sample_input() 
         >>> model = LinearModel(model_config, sampler_config)
         >>> idata = model.fit(data)
         Auto-assigning NUTS sampler...
         Initializing NUTS using jitter+adapt_diag...
         """
+
         if data is not None:
             self.data = data
 
@@ -225,23 +230,24 @@ class ModelBuilder(pm.Model):
 
         Parameters
         ---------
-        data_prediction: Dictionary of string and either of numpy array, pandas dataframe or pandas Series
+        data_prediction : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
             It is the data we need to make prediction on using the model.
-        point_estimate: bool
+        point_estimate : bool
             Adds point like estimate used as mean passed as 
 
         Returns
         -------
-        returns sample's posterior predict 
+        returns dictionary of sample's posterior predict. 
 
-        Example
-        -------
+        Examples
+        --------
         >>> prediction_data = pd.DataFrame({'input':x_pred})
         # only point estimate
         >>> pred_mean = imported_model.predict(prediction_data)
         # samples
         >>> pred_samples = imported_model.predict(prediction_data, point_estimate=False)
         """
+
         if data_prediction is not None:  # set new input data
             self._data_setter(data_prediction)
 
@@ -263,6 +269,7 @@ class ModelBuilder(pm.Model):
     @staticmethod
     def _extract_samples(post_pred: arviz.data.inference_data.InferenceData) -> Dict[str, np.array]:
         """
+        This method can be used to extract samples from posteriror predict
         Parameters
         ----------
         post_pred: arviz InferenceData object
@@ -271,6 +278,7 @@ class ModelBuilder(pm.Model):
         -------
         Dictionary of numpy arrays from InferenceData object
         """
+
         post_pred_dict = dict()
         for key in post_pred.posterior_predictive:
             post_pred_dict[key] = post_pred.posterior_predictive[key].to_numpy()[0]
@@ -285,6 +293,7 @@ class ModelBuilder(pm.Model):
         ------
         Returns string of length 16 characters containg unique hash of the model
         """
+
         hasher = hashlib.sha256()
         hasher.update(str(self.model_config.values()).encode())
         hasher.update(self.version.encode())

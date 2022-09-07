@@ -3,10 +3,7 @@ from pymc.model_builder import ModelBuilder
 import unittest
 import pytest
 import re
-from nose.tools import *
 
-
-# relevant libraries
 import arviz
 import pandas as pd
 from pathlib import Path
@@ -21,16 +18,16 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def _build(self):
+    def __init__(self, data, model_config: Dict, sampler_config: Dict):
+        super().__init__(model_config, sampler_config)
+        x = pm.MutableData("x", data["input"].values)
+        y_data = pm.MutableData("y_data", data["output"].values)
 
-        x = pm.MutableData("x", self.data["input"].values)
-        y_data = pm.MutableData("y_data", self.data["output"].values)
-
-        a_loc = self.model_config["a_loc"]
-        a_scale = self.model_config["a_scale"]
-        b_loc = self.model_config["b_loc"]
-        b_scale = self.model_config["b_scale"]
-        obs_error = self.model_config["obs_error"]
+        a_loc = model_config["a_loc"]
+        a_scale = model_config["a_scale"]
+        b_loc = model_config["b_loc"]
+        b_scale = model_config["b_scale"]
+        obs_error = model_config["obs_error"]
 
         a = pm.Normal("a", a_loc, sigma=a_scale)
         b = pm.Normal("b", b_loc, sigma=b_scale)
@@ -61,21 +58,14 @@ class test_ModelBuilder(ModelBuilder):
         }
 
         sampler_config = {
-            "draws": 1_000,
-            "tune": 1_000,
+            "draws": 20,
+            "tune": 10,
             "chains": 1,
-            "target_accept": 0.95,
+            "cores": 1,
+            "target_accept": 0.5,
         }
 
         return data, model_config, sampler_config
-
-
-def test_model_pickle():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config)
-    cloned = cloudpickle.loads(cloudpickle.dumps(model))
-    assert_equal(model.basic_RVs, cloned.basic_RVs)
-    assert_equal(model.id(), cloned.id())
 
 
 def test_fit():
@@ -97,14 +87,23 @@ def test_fit():
 
         y_model = pm.Normal("y_model", a + b * x, obs_error, observed=y_data)
 
-        idata = pm.sample(1000, tune=1000)
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model_2 = test_ModelBuilder(model_config, sampler_config)
+        idata = pm.sample(tune=100, draws=200, chains=1, cores=1, target_accept=0.5)
+        idata.extend(pm.sample_prior_predictive())
+        idata.extend(pm.sample_posterior_predictive(idata))
 
-    assert_equal(model_2.idata, idata)
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    model_2 = test_ModelBuilder(data, model_config, sampler_config)
+    model_2.idata = model_2.fit(data)
+    assert str(model_2.idata.groups) == str(idata.groups)
 
 
 def test_predict():
+    x_pred = np.random.uniform(low=0, high=1, size=100)
+    prediction_data = pd.DataFrame({"input": x_pred})
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    model_2 = test_ModelBuilder(data, model_config, sampler_config)
+    model_2.idata = model_2.fit(data)
+    model_2.predict(prediction_data)
     with pm.Model() as model:
         x = np.linspace(start=0, stop=1, num=100)
         y = 5 * x + 3
@@ -122,7 +121,9 @@ def test_predict():
 
         y_model = pm.Normal("y_model", a + b * x, obs_error, observed=y_data)
 
-        idata = pm.sample(1000, tune=1000)
+        idata = pm.sample(tune=10, draws=20, chains=1, cores=1)
+        idata.extend(pm.sample_prior_predictive())
+        idata.extend(pm.sample_posterior_predictive(idata))
         y_test = pm.sample_posterior_predictive(idata)
 
-        y_test.posterior_predictive.equlas(model.posterior_predictive)
+        assert str(model_2.idata.groups) == str(idata.groups)
