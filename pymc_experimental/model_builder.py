@@ -134,7 +134,7 @@ class ModelBuilder(pm.Model):
         >>> model.save(name,path)
             
         """
-        file = Path(str(fname) + ".nc")
+        file = Path(str(fname))
         self.idata.to_netcdf(file)
 
     @classmethod
@@ -163,7 +163,7 @@ class ModelBuilder(pm.Model):
 
         """
 
-        filepath = Path(str(fname) + ".nc")
+        filepath = Path(str(fname))
         data = az.from_netcdf(filepath)
         self.idata = data
         # Since there is an issue with attrs geting saved in netcdf format which will be fixd in future the following part of code is commented
