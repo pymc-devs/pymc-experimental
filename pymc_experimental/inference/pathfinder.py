@@ -1,16 +1,16 @@
-import sys
 import collections
+import sys
 
 import arviz as az
-import numpy as np
-import pymc as pm
-from pymc import modelcontext
-from pymc.util import get_default_varnames
-from pymc.sampling_jax import get_jaxified_logp, get_jaxified_graph
+import blackjax
 import jax
 import jax.numpy as jnp
 import jax.random as random
-import blackjax
+import numpy as np
+import pymc as pm
+from pymc import modelcontext
+from pymc.sampling_jax import get_jaxified_graph
+from pymc.util import get_default_varnames
 
 
 def convert_flat_trace_to_idata(

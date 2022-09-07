@@ -1,6 +1,5 @@
 import numpy as np
 import pymc as pm
-import pytest
 
 import pymc_experimental as pmx
 
