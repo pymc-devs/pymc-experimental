@@ -4,6 +4,7 @@ import pytest
 
 import pymc_experimental as pmx
 
+
 def test_pathfinder():
     # Data of the Eight Schools Model
     J = 8

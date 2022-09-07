@@ -12,8 +12,14 @@ import jax.numpy as jnp
 import jax.random as random
 import blackjax
 
+
 def convert_flat_trace_to_idata(
-    samples, dims=None, coords=None, include_transformed=False, postprocessing_backend="cpu", model=None,
+    samples,
+    dims=None,
+    coords=None,
+    include_transformed=False,
+    postprocessing_backend="cpu",
+    model=None,
 ):
     model = modelcontext(model)
     init_position_dict = model.initial_point()
