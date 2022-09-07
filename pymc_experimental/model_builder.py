@@ -270,6 +270,7 @@ class ModelBuilder(pm.Model):
     def _extract_samples(post_pred: arviz.data.inference_data.InferenceData) -> Dict[str, np.array]:
         """
         This method can be used to extract samples from posteriror predict
+        
         Parameters
         ----------
         post_pred: arviz InferenceData object
