@@ -164,7 +164,7 @@ class ModelBuilder(pm.Model):
 
         filepath = Path(str(fname))
         data = az.from_netcdf(filepath)
-        self.idata = data
+        idata = data
         # Since there is an issue with attrs geting saved in netcdf format which will be fixd in future the following part of code is commented
         # Link of issue -> https://github.com/arviz-devs/arviz/issues/2109
         # if model.idata.attrs is not None:
@@ -176,7 +176,7 @@ class ModelBuilder(pm.Model):
         #         raise ValueError(
         #             f"The route '{file}' does not contain an inference data of the same model '{self.__name__}'"
         #         )
-        return self.idata
+        return idata
 
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
         """
@@ -252,18 +252,14 @@ class ModelBuilder(pm.Model):
             self._data_setter(data_prediction)
 
         with self.model:  # sample with new input data
-            post_pred = pm.sample_posterior_predictive(self.idata.posterior)
+            post_pred = pm.sample_posterior_predictive(self.idata)
 
         # reshape output
         post_pred = self._extract_samples(post_pred)
-
         if point_estimate:  # average, if point-like estimate desired
             for key in post_pred:
                 post_pred[key] = post_pred[key].mean(axis=0)
-
-        if data_prediction is not None:  # set back original data in model
-            self._data_setter(self.data)
-
+                
         return post_pred
 
     @staticmethod
