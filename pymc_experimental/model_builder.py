@@ -286,8 +286,8 @@ class ModelBuilder(pm.Model):
         """
         It creates a hash value to match the model version using last 16 characters of hash encoding.
 
-        Return
-        ------
+        Returns
+        -------
         Returns string of length 16 characters containg unique hash of the model
         """
 
