@@ -189,7 +189,7 @@ class ModelBuilder(pm.Model):
             It is the data we need to train the model on.
 
         Returns
-        --------
+        -------
         returns inference data of the fitted model.
 
         Examples
@@ -289,7 +289,7 @@ class ModelBuilder(pm.Model):
 
         Returns
         -------
-        Returns string of length 16 characters containing unique hash of the model
+        Returns string of length 16 characters contains unique hash of the model
         """
 
         hasher = hashlib.sha256()
