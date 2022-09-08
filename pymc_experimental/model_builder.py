@@ -181,7 +181,7 @@ class ModelBuilder(pm.Model):
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
         """
         As the name suggests fit can be used to fit a model using the data that is passed as a parameter.
-        Sets attrs to inference data of the model
+        Sets attrs to inference data of the model.
 
         Parameter
         ---------
@@ -259,13 +259,13 @@ class ModelBuilder(pm.Model):
         if point_estimate:  # average, if point-like estimate desired
             for key in post_pred:
                 post_pred[key] = post_pred[key].mean(axis=0)
-                
+
         return post_pred
 
     @staticmethod
     def _extract_samples(post_pred: arviz.data.inference_data.InferenceData) -> Dict[str, np.array]:
         """
-        This method can be used to extract samples from posteriror predict
+        This method can be used to extract samples from posteriror predict.
         
         Parameters
         ----------
