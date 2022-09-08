@@ -14,6 +14,7 @@
 
 import collections
 import sys
+from typing import Optional
 
 import arviz as az
 import blackjax
@@ -23,6 +24,7 @@ import jax.random as random
 import numpy as np
 import pymc as pm
 from pymc import modelcontext
+from pymc.sampling import RandomSeed, _get_seeds_per_chain
 from pymc.sampling_jax import get_jaxified_graph
 from pymc.util import get_default_varnames
 
@@ -62,7 +64,11 @@ def convert_flat_trace_to_idata(
 
 
 def fit_pathfinder(
-    iterations=5_000, random_seed=312, postprocessing_backend="cpu", ftol=1e-4, model=None
+    iterations=5_000,
+    random_seed: Optional[RandomSeed] = None,
+    postprocessing_backend="cpu",
+    ftol=1e-4,
+    model=None,
 ):
     """
     Fit the pathfinder algorithm as implemented in blackjax
@@ -89,6 +95,8 @@ def fit_pathfinder(
     ---------
     https://arxiv.org/abs/2108.03782
     """
+    (random_seed,) = _get_seeds_per_chain(random_seed, 1)
+
     model = modelcontext(model)
 
     rvs = [rv.name for rv in model.value_vars]

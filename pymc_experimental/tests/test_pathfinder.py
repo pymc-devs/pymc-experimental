@@ -39,3 +39,6 @@ def test_pathfinder():
         assert "theta" in idata.posterior._variables.keys()
         assert "tau" in idata.posterior._variables.keys()
         assert "mu" in idata.posterior._variables.keys()
+        assert idata.posterior["mu"].shape == (1, 100)
+        assert idata.posterior["tau"].shape == (1, 100)
+        assert idata.posterior["theta"].shape == (1, 100, 8)
