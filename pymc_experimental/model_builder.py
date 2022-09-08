@@ -142,7 +142,7 @@ class ModelBuilder(pm.Model):
 
         Parameters
         ----------
-        fname: string
+        fname : string
             This denotes the name with path from where idata should be loaded from.
 
         Returns
