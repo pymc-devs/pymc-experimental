@@ -189,7 +189,7 @@ class ModelBuilder(pm.Model):
             It is the data we need to train the model on.
 
         Retruns
-        --------
+        -------
         returns infernece data of the fitted model.
 
         Examples
