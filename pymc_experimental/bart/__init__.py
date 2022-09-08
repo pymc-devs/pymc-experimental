@@ -20,6 +20,7 @@ from pymc_experimental.bart.utils import (
     plot_variable_importance,
     predict,
 )
+from pymc_experimental.inference.fit import fit
 
 __all__ = ["BART", "PGBART"]
 
