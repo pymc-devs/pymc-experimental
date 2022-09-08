@@ -12,12 +12,16 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import sys
+
 import numpy as np
 import pymc as pm
+import pytest
 
 import pymc_experimental as pmx
 
 
+@pytest.skip(sys.platform == "win32")
 def test_pathfinder():
     # Data of the Eight Schools Model
     J = 8
