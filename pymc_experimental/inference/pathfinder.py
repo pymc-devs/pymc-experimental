@@ -116,7 +116,7 @@ def fit_pathfinder(
 
     rng_key = random.PRNGKey(random_seed)
     w0 = random.multivariate_normal(rng_key, 2.0 + jnp.zeros(dim), jnp.eye(dim))
-    path = blackjax.vi.pathfinder.init(rng_key, logprob_fn, w0, return_path=True, ftol=1e-4)
+    path = blackjax.vi.pathfinder.init(rng_key, logprob_fn, w0, return_path=True, ftol=ftol)
 
     pathfinder = blackjax.kernels.pathfinder(rng_key, logprob_fn, ftol=1e-4)
     state = pathfinder.init(w0)
