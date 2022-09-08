@@ -1,3 +1,17 @@
+#   Copyright 2022 The PyMC Developers
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
 import collections
 import sys
 
@@ -31,7 +45,6 @@ def convert_flat_trace_to_idata(
         for p, v in point.items():
             trace[p].append(v.tolist())
 
-    print("Creating trace...", file=sys.stdout)
     trace = {k: np.asarray(v)[None, ...] for k, v in trace.items()}
 
     var_names = model.unobserved_value_vars
@@ -48,7 +61,34 @@ def convert_flat_trace_to_idata(
     return idata
 
 
-def fit_pathfinder(iterations=5_000, model=None):
+def fit_pathfinder(
+    iterations=5_000, random_seed=312, postprocessing_backend="cpu", ftol=1e-4, model=None
+):
+    """
+    Fit the pathfinder algorithm as implemented in blackjax
+
+    Requires the JAX backend
+
+    Parameters
+    ----------
+    iterations : int
+        Number of iterations to run.
+    random_seed : int
+        Random seed to set.
+    postprocessing_backend : str
+        Where to compute transformations of the trace.
+        "cpu" or "gpu".
+    ftol : float
+        Floating point tolerance
+
+    Returns
+    -------
+    arviz.InferenceData
+
+    Reference
+    ---------
+    https://arxiv.org/abs/2108.03782
+    """
     model = modelcontext(model)
 
     rvs = [rv.name for rv in model.value_vars]
@@ -66,7 +106,7 @@ def fit_pathfinder(iterations=5_000, model=None):
 
     dim = sum(v.size for v in init_position_dict.values())
 
-    rng_key = random.PRNGKey(314)
+    rng_key = random.PRNGKey(random_seed)
     w0 = random.multivariate_normal(rng_key, 2.0 + jnp.zeros(dim), jnp.eye(dim))
     path = blackjax.vi.pathfinder.init(rng_key, logprob_fn, w0, return_path=True, ftol=1e-4)
 
@@ -91,6 +131,8 @@ def fit_pathfinder(iterations=5_000, model=None):
         for var_name, dims in model.RV_dims.items()
     }
 
-    idata = convert_flat_trace_to_idata(samples, coords=model.coords, dims=dims)
+    idata = convert_flat_trace_to_idata(
+        samples, postprocessing_backend=postprocessing_backend, coords=model.coords, dims=dims
+    )
 
     return idata
