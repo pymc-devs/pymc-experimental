@@ -17,10 +17,6 @@ import sys
 from typing import Optional
 
 import arviz as az
-import blackjax
-import jax
-import jax.numpy as jnp
-import jax.random as random
 import numpy as np
 import pymc as pm
 from pymc import modelcontext
@@ -37,6 +33,8 @@ def convert_flat_trace_to_idata(
     postprocessing_backend="cpu",
     model=None,
 ):
+    import jax
+
     model = modelcontext(model)
     init_position_dict = model.initial_point()
     trace = collections.defaultdict(list)
@@ -95,6 +93,11 @@ def fit_pathfinder(
     ---------
     https://arxiv.org/abs/2108.03782
     """
+    import blackjax
+    import jax
+    import jax.numpy as jnp
+    import jax.random as random
+
     (random_seed,) = _get_seeds_per_chain(random_seed, 1)
 
     model = modelcontext(model)

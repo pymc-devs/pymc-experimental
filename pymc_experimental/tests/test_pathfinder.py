@@ -21,7 +21,7 @@ import pytest
 import pymc_experimental as pmx
 
 
-@pytest.skip(sys.platform == "win32")
+@pytest.mark.xfail(sys.platform == "win32", reason="JAX not supported on windows.")
 def test_pathfinder():
     # Data of the Eight Schools Model
     J = 8
