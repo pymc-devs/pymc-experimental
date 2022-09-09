@@ -1,12 +1,8 @@
-import unittest
-from typing import Dict
-
-import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
-import pytest
-from pymc.model_builder import ModelBuilder
+
+from pymc_experimental.model_builder import ModelBuilder
 
 
 class test_ModelBuilder(ModelBuilder):

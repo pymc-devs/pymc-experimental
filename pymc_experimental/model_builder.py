@@ -1,23 +1,8 @@
 import hashlib
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import Dict, Union
 
-import arviz
 import arviz as az
-import cloudpickle
 import numpy as np
 import pandas as pd
 import pymc as pm
@@ -217,7 +202,6 @@ class ModelBuilder(pm.Model):
             self._data_setter(data)
 
         if self.basic_RVs == []:
-            print("No model found, building model...")
             self.build()
 
         with self:
