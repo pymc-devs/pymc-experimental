@@ -12,26 +12,21 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import warnings
-
-try:
-    import blackjax
-    import jax
-    import jax.numpy as jnp
-    import jax.random as random
-    from pymc.sampling_jax import get_jaxified_graph
-except ImportError:
-    warnings.warn("Can't import blackjax. Pathfinder will not be available.")
 
 import collections
 import sys
 from typing import Optional
 
 import arviz as az
+import blackjax
+import jax
+import jax.numpy as jnp
+import jax.random as random
 import numpy as np
 import pymc as pm
 from pymc import modelcontext
 from pymc.sampling import RandomSeed, _get_seeds_per_chain
+from pymc.sampling_jax import get_jaxified_graph
 from pymc.util import get_default_varnames
 
 
