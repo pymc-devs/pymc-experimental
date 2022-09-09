@@ -19,6 +19,7 @@ try:
     import jax
     import jax.numpy as jnp
     import jax.random as random
+    from pymc.sampling_jax import get_jaxified_graph
 except ImportError:
     warnings.warn("Can't import blackjax. Pathfinder will not be available.")
 
@@ -31,7 +32,6 @@ import numpy as np
 import pymc as pm
 from pymc import modelcontext
 from pymc.sampling import RandomSeed, _get_seeds_per_chain
-from pymc.sampling_jax import get_jaxified_graph
 from pymc.util import get_default_varnames
 
 
