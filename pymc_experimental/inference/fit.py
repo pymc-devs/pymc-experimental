@@ -32,4 +32,8 @@ def fit(method, *kwargs):
     arviz.InferenceData
     """
     if method == "pathfinder":
+        try:
+            from pymc_experimental.inference import fit_pathfinder
+        except ImportError as exc:
+            raise RuntimeError("Need JAX/ Blackjax / wahever to use `pathfinder`") from exc
         return fit_pathfinder(**kwargs)
