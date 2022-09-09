@@ -68,7 +68,7 @@ jobs:
       - name: Run tests
         run: |
           conda activate pymc-test-py38
-          python -m pytest -vv --cov=pymc_experimental --cov-append --cov-report=xml --cov-report term --durations=50 $TEST_SUBSET
+          python -m pytest -vv --cov=pymc_experimental/tests --cov-append --cov-report=xml --cov-report term --durations=50 $TEST_SUBSET
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
