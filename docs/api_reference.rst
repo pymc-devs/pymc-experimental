@@ -20,7 +20,7 @@ methods in the current release of PyMC experimental.
 =============================
 
 .. automodule:: pymc_experimental.distributions.histogram_utils
-   :members: histogram_approximation
+   :members: histogram_approximation, GeneralizedGamma
 
 
 :mod:`pymc_experimental.utils`
