@@ -12,6 +12,16 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import warnings
+
+try:
+    import blackjax
+    import jax
+    import jax.numpy as jnp
+    import jax.random as random
+except ImportError:
+    warnings.warn("Can't import blackjax. Pathfinder will not be available.")
+
 import collections
 import sys
 from typing import Optional
@@ -33,7 +43,6 @@ def convert_flat_trace_to_idata(
     postprocessing_backend="cpu",
     model=None,
 ):
-    import jax
 
     model = modelcontext(model)
     init_position_dict = model.initial_point()
@@ -93,10 +102,6 @@ def fit_pathfinder(
     ---------
     https://arxiv.org/abs/2108.03782
     """
-    import blackjax
-    import jax
-    import jax.numpy as jnp
-    import jax.random as random
 
     (random_seed,) = _get_seeds_per_chain(random_seed, 1)
 
