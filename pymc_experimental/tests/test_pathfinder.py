@@ -37,7 +37,7 @@ def test_pathfinder():
         theta_1 = mu + tau * theta
         obs = pm.Normal("obs", mu=theta, sigma=sigma, shape=J, observed=y)
 
-        idata = pmx.inference.fit(method="pathfinder", iterations=100)
+        idata = pmx.fit(method="pathfinder", iterations=100)
 
         assert idata is not None
         assert "theta" in idata.posterior._variables.keys()
