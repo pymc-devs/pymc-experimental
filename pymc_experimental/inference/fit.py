@@ -13,7 +13,7 @@
 #   limitations under the License.
 
 
-def fit(method, *kwargs):
+def fit(method, **kwargs):
     """
     Fit a model with an inference algorithm
 
