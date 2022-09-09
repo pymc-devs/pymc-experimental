@@ -13,7 +13,6 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    @classmethod
     def build_model(self, model_config, data=None):
         if data is not None:
             x = pm.MutableData("x", data["input"].values)
