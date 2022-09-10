@@ -38,7 +38,7 @@ class test_ModelBuilder(ModelBuilder):
 
     @classmethod
     def create_sample_input(cls):
-        x = np.linspace(start=0, stop=1, num=100)
+        x = np.linespace(start=0, stop=1, num=100)
         y = 5 * x + 3
         y = y + np.random.normal(0, 1, len(x))
         data = pd.DataFrame({"input": x, "output": y})
