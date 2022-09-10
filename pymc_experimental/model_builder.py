@@ -259,7 +259,7 @@ class ModelBuilder(pm.Model):
         return post_pred
 
     @staticmethod
-    def _extract_samples(post_pred: arviz.data.inference_data.InferenceData) -> Dict[str, np.array]:
+    def _extract_samples(post_pred: az.data.inference_data.InferenceData) -> Dict[str, np.array]:
         """
         This method can be used to extract samples from posterior predict.
 
