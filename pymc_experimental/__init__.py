@@ -11,5 +11,4 @@ if not logging.root.handlers:
         _log.addHandler(handler)
 
 
-from pymc_experimental import distributions, gp, inference, utils
-from pymc_experimental.inference.fit import fit
+from pymc_experimental import distributions, gp, utils
