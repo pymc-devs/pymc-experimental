@@ -18,7 +18,12 @@ class ModelBuilder(pm.Model):
     _model_type = "BaseClass"
     version = "None"
 
-    def __init__(self, model_config: Dict, sampler_config: Dict):
+    def __init__(
+        self,
+        model_config: Dict,
+        sampler_config: Dict,
+        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+    ):
         """
         Initializes model configuration and sampler configuration for the model
 
