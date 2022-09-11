@@ -90,7 +90,7 @@ class ModelBuilder(pm.Model):
         --------
         >>> @classmethod
         >>> def create_sample_input(cls):
-        >>>    x = np.linspace(start=1, stop=50, num=100)
+        >>>    x = np.linespace(start=1, stop=50, num=100)
         >>>    y = 5 * x + 3 + np.random.normal(0, 1, len(x)) * np.random.rand(100)*10 +  np.random.rand(100)*6.4
         >>>    data = pd.DataFrame({'input': x, 'output': y})
 
