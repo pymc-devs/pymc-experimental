@@ -38,7 +38,7 @@ class ModelBuilder(pm.Model):
         Examples
         --------
         >>> class LinearModel(ModelBuilder)
-            ...
+        >>> ...
         >>> model = LinearModel(model_config, sampler_config)
         """
 
