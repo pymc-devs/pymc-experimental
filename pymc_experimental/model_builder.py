@@ -38,7 +38,7 @@ class ModelBuilder(pm.Model):
         Examples
         --------
         >>> class LinearModel(ModelBuilder):
-        >>> ...
+        >>>     ...
         >>> model = LinearModel(model_config, sampler_config)
         """
 
@@ -100,18 +100,18 @@ class ModelBuilder(pm.Model):
         >>>    data = pd.DataFrame({'input': x, 'output': y})
 
         >>>    model_config = {
-        >>>    'a_loc': 7,
-        >>>    'a_scale': 3,
-        >>>    'b_loc': 5,
-        >>>    'b_scale': 3,
-        >>>    'obs_error': 2,
+        >>>       'a_loc': 7,
+        >>>       'a_scale': 3,
+        >>>       'b_loc': 5,
+        >>>       'b_scale': 3,
+        >>>       'obs_error': 2,
         >>>    }
 
         >>>    sampler_config = {
-        >>>    'draws': 1_000,
-        >>>    'tune': 1_000,
-        >>>    'chains': 1,
-        >>>    'target_accept': 0.95,
+        >>>       'draws': 1_000,
+        >>>       'tune': 1_000,
+        >>>       'chains': 1,
+        >>>       'target_accept': 0.95,
         >>>    }
         >>>    return data, model_config, sampler_config
         """
@@ -129,8 +129,8 @@ class ModelBuilder(pm.Model):
 
         Examples
         --------
-        >>> class LinearModel():
-        >>> ...
+        >>> class LinearModel(ModelBuilder):
+        >>>     ...
         >>> data, model_config, sampler_config = LinearModel.create_sample_input()
         >>> model = LinearModel(model_config, sampler_config)
         >>> idata = model.fit(data)
@@ -162,8 +162,8 @@ class ModelBuilder(pm.Model):
 
         Examples
         --------
-        >>> class LinearModel():
-        >>> ...
+        >>> class LinearModel(ModelBuilder):
+        >>>     ...
         >>> name = './mymodel.nc'
         >>> imported_model = LinearModel.load(name)
         """
