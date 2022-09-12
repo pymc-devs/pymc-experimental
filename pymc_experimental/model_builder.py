@@ -129,6 +129,9 @@ class ModelBuilder(pm.Model):
 
         Examples
         --------
+        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
+        >>> model = LinearModel(model_config, sampler_config)
+        >>> idata = model.fit(data)
         >>> name = './mymodel.nc'
         >>> model.save(name)
         """
@@ -157,8 +160,8 @@ class ModelBuilder(pm.Model):
 
         Examples
         --------
-        >>> class LinearModel
-        ...
+        >>> class LinearModel():
+        >>> ...
         >>> name = './mymodel.nc'
         >>> imported_model = LinearModel.load(name)
         """
@@ -242,11 +245,15 @@ class ModelBuilder(pm.Model):
 
         Examples
         --------
+        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
+        >>> model = LinearModel(model_config, sampler_config)
+        >>> idata = model.fit(data)
+        >>> x_pred = []
         >>> prediction_data = pd.DataFrame({'input':x_pred})
         # only point estimate
-        >>> pred_mean = imported_model.predict(prediction_data)
+        >>> pred_mean = model.predict(prediction_data)
         # samples
-        >>> pred_samples = imported_model.predict(prediction_data, point_estimate=False)
+        >>> pred_samples = model.predict(prediction_data, point_estimate=False)
         """
 
         if data_prediction is not None:  # set new input data
