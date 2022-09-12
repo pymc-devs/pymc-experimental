@@ -37,7 +37,7 @@ class ModelBuilder(pm.Model):
             It is the data we need to train the model on.
         Examples
         --------
-        >>> class LinearModel(ModelBuilder)
+        >>> class LinearModel(ModelBuilder):
         >>> ...
         >>> model = LinearModel(model_config, sampler_config)
         """
@@ -129,6 +129,8 @@ class ModelBuilder(pm.Model):
 
         Examples
         --------
+        >>> class LinearModel():
+        >>> ...
         >>> data, model_config, sampler_config = LinearModel.create_sample_input()
         >>> model = LinearModel(model_config, sampler_config)
         >>> idata = model.fit(data)
