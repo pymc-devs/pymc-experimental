@@ -10,7 +10,7 @@ import pymc as pm
 
 class ModelBuilder(pm.Model):
     """
-    ModelBuilder class can be used to provide an easy-to-use API (similar to scikit-learn) for models
+    ModelBuilder can be used to provide an easy-to-use API (similar to scikit-learn) for models
     and help with deployment.
 
     Extends the pymc.Model class.
