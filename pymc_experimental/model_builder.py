@@ -10,9 +10,9 @@ import pymc as pm
 
 class ModelBuilder(pm.Model):
     """
-    Extension of pm.Model class to improve workflow.
-    ModelBuilder class can be used to play around models with ease using direct API calls
-    for multiple tasks that one need to deploy a model.
+    ModelBuilder class can be used to provide an easy-to-use API (similar to scikit-learn) for models
+    and help with deployment.
+    Extends the pymc.Model class.
     """
 
     _model_type = "BaseClass"
