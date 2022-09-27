@@ -1,6 +1,6 @@
 try:
-    from gpytorch.utils.permutation import apply_permutation
     import torch
+    from gpytorch.utils.permutation import apply_permutation
 except ImportError as e:
     raise ImportError(
         "Please install Pytorch and GPyTorch to use this pivoted Cholesky implementation."
