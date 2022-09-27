@@ -269,7 +269,8 @@ def linear_cg(
         # Note that after transpose the last two dimensions are dimensions 0 and 1 of the matrix above
         # Which are the same values i.e. n_tridiag_iter
         # So we generate identity matrices of size n_tridiag_iter and repeat them [n_iter, *range(2, 2+len(batch_shape))] times
-        # TODO: for same input, n_tridiag = True and n_tridiag = False must produce t_mat with same shape
+        # TODO: for same input, n_tridiag = True and n_tridiag = False must produce t_mat with same shape (with assumed n_tridiag=1)
+        n_tridiag = 1
         eye = np.eye(n_tridiag_iter)
-        t_mat_eye = np.tile(eye, [n_iter] + [1] * (len(batch_shape) + 2))
+        t_mat_eye = np.tile(eye, [n_tridiag] + [1] * (len(batch_shape) + 2))
         return result, t_mat_eye
