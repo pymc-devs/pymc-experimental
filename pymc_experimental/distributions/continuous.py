@@ -188,9 +188,8 @@ class GenExtreme(Continuous):
         return check_parameters(
             logp,
             sigma > 0,
-            1 + xi * scaled > 0,
             at.and_(xi > -1, xi < 1),
-            msg="sigma <= 0 or 1+xi*(x-mu)/sigma <= 0")
+            msg="sigma <= 0 or -1 < xi < 1")
 
     def logcdf(value, mu, sigma, xi):
         """
@@ -220,9 +219,8 @@ class GenExtreme(Continuous):
 
         return check_parameters(logc,
             sigma > 0,
-            1 + xi * scaled > 0,
             at.and_(xi > -1, xi < 1),
-            msg="sigma <= 0 or 1+xi*(x-mu)/sigma <= 0")
+            msg="sigma <= 0 or -1 < xi < 1")
 
     def moment(rv, size, mu, sigma, xi):
         r"""
