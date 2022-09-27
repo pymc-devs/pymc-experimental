@@ -58,14 +58,15 @@ class TestGenExtremeClass:
             GenExtreme,
             R,
             {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
-            lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma),
+            lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma)
+                if 1 + xi*(value-mu)/sigma > 0 else -np.inf
         )
 
     @pytest.mark.parametrize(
         "mu, sigma, xi, size, expected",
         [
             (0, 1, 0, None, 0),
-            (1, np.arange(1, 4), 0.1, None, np.arange(1, 4) * (1.1 ** -0.1 - 1) / 0.1),
+            (1, np.arange(1, 4), 0.1, None, 1 + np.arange(1, 4) * (1.1 ** -0.1 - 1) / 0.1),
             (np.arange(5), 1, 0.1, None, np.arange(5) + (1.1 ** -0.1 - 1) / 0.1),
             (
                 0,

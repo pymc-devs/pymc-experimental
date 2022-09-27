@@ -30,6 +30,7 @@ from pymc.distributions.distribution import Continuous
 from aesara.tensor.var import TensorVariable
 from pymc.aesaraf import floatX
 from pymc.distributions.dist_math import check_parameters
+from pymc.distributions.shape_utils import rv_size_is_none
 
 
 class GenExtremeRV(RandomVariable):
@@ -188,6 +189,7 @@ class GenExtreme(Continuous):
             logp,
             sigma > 0,
             1 + xi * scaled > 0,
+            at.and_(xi > -1, xi < 1),
             msg="sigma <= 0 or 1+xi*(x-mu)/sigma <= 0")
 
     def logcdf(value, mu, sigma, xi):
@@ -219,13 +221,16 @@ class GenExtreme(Continuous):
         return check_parameters(logc,
             sigma > 0,
             1 + xi * scaled > 0,
+            at.and_(xi > -1, xi < 1),
             msg="sigma <= 0 or 1+xi*(x-mu)/sigma <= 0")
 
-    def get_moment(value_var, size, mu, sigma, xi):
+    def moment(rv, size, mu, sigma, xi):
         r"""
         Using the mode, as the mean can be infinite when :math:`\xi > 1`
         """
         mode = at.switch(
             at.isclose(xi, 0), mu, mu + sigma * (at.pow(1 + xi, -xi) - 1) / xi
         )
-        return at.full(size, mode, dtype=aesara.config.floatX)
+        if not rv_size_is_none(size):
+            mode = at.full(size, mode)
+        return mode
