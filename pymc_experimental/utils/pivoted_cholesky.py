@@ -2,9 +2,10 @@ try:
     import torch
     from gpytorch.utils.permutation import apply_permutation
 except ImportError as e:
-    raise ImportError(
-        "Please install Pytorch and GPyTorch to use this pivoted Cholesky implementation."
-    )
+    # print(
+    #     f"Please install Pytorch and GPyTorch to use this pivoted Cholesky implementation. Error {e}"
+    # )
+    pass
 import numpy as np
 
 pp = lambda x: np.array2string(x, precision=4, floatmode="fixed")

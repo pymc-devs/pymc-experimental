@@ -2,9 +2,10 @@ try:
     import gpytorch
     import torch
 except ImportError as e:
-    raise ImportError(
-        "Please install Pytorch and GPyTorch to use this pivoted Cholesky implementation."
-    )
+    # print(
+    #     f"Please install Pytorch and GPyTorch to use this pivoted Cholesky implementation. Error {e}"
+    # )
+    pass
 import numpy as np
 
 import pymc_experimental as pmx
