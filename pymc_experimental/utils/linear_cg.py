@@ -262,4 +262,14 @@ def linear_cg(
         t_mat = t_mat[: last_tridiag_iter + 1, : last_tridiag_iter + 1]
         return result, t_mat.transpose(-1, *range(2, 2 + len(batch_shape)), 0, 1)
     else:
-        return result
+        # We set the estimated Lanczos tri-diagonal matrices to be identity so that
+        # the subsequent eigen decomposition https://arxiv.org/pdf/1809.11165.pdf (eq.S7)
+        # would work fine.
+        # t_mat = np.zeros((n_tridiag_iter, n_tridiag_iter, *batch_shape, n_tridiag))
+        # Note that after transpose the last two dimensions are dimensions 0 and 1 of the matrix above
+        # Which are the same values i.e. n_tridiag_iter
+        # So we generate identity matrices of size n_tridiag_iter and repeat them [n_iter, *range(2, 2+len(batch_shape))] times
+        # TODO: for same input, n_tridiag = True and n_tridiag = False must produce t_mat with same shape
+        eye = np.eye(n_tridiag_iter)
+        t_mat_eye = np.tile(eye, [n_iter] + [1] * (len(batch_shape) + 2))
+        return result, t_mat_eye
