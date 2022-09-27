@@ -51,7 +51,8 @@ class TestGenExtremeClass:
             GenExtreme,
             R,
             {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
-            lambda value, mu, sigma, xi: sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma),
+            lambda value, mu, sigma, xi: sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma)
+                if 1 + xi*(value-mu)/sigma > 0 else -np.inf
         )
         check_logcdf(
             GenExtreme,

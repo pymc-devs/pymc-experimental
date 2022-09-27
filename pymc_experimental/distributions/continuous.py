@@ -180,7 +180,7 @@ class GenExtreme(Continuous):
         )
 
         logp = at.switch(
-            at.gt((1 + xi * (value - mu) / sigma), 0.0),
+            at.gt(1 + xi * scaled, 0.0),
             logp_expression,
             -np.inf)
 
