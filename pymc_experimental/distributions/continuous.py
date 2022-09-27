@@ -178,13 +178,17 @@ class GenExtreme(Continuous):
             - ((xi + 1) / xi) * at.log1p(xi * scaled)
             - at.pow(1 + xi * scaled, -1 / xi),
         )
-        # bnd = mu - sigma/xi
-        return check_parameters(
-            logp_expression,
+        # Confirm in valid domain
+        logp = at.switch(
             1 + xi * (value - mu) / sigma > 0,
-            # at.switch(xi > 0, value > bnd, value < bnd),
-            sigma > 0,
-        )
+            logp_expression,
+            -np.inf)
+
+        return check_parameters(
+            logp,
+            sigma < 0,
+            1 + xi * scaled < 0,
+            msg="sigma < 0, 1+xi*(x-mu)/sigma < 0")
 
     def logcdf(value, mu, sigma, xi):
         """
@@ -206,7 +210,16 @@ class GenExtreme(Continuous):
         logc_expression = at.switch(
             at.isclose(xi, 0), -at.exp(-scaled), -at.pow(1 + xi * scaled, -1 / xi)
         )
-        return check_parameters(logc_expression, 1 + xi * scaled > 0, sigma > 0)
+        # Confirm in valid domain
+        logc = at.switch(
+            1 + xi * (value - mu) / sigma > 0,
+            logc_expression,
+            -np.inf)
+
+        return check_parameters(logc,
+            sigma < 0,
+            1 + xi * scaled < 0,
+            msg="sigma < 0, 1+xi*(x-mu)/sigma < 0")
 
     def get_moment(value_var, size, mu, sigma, xi):
         r"""
