@@ -38,23 +38,25 @@ from pymc_experimental.distributions import (
     GenExtreme,
 )
 
-class TestGenExtreme():
+class TestGenExtremeClass:
     """
     Wrapper class so that tests of experimental additions can be dropped into
     PyMC directly on adoption.
+
+    pm.logp(GenExtreme.dist(mu=0.,sigma=1.,xi=0.5),value=-0.01)
     """
 
-    def test_genextreme():
+    def test_genextreme(self):
         check_logp(
             GenExtreme,
             R,
-            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
+            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
             lambda value, mu, sigma, xi: sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma),
         )
         check_logcdf(
             GenExtreme,
             R,
-            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -1, -0.5, 0, 0.5, 1, 1])},
+            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
             lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma),
         )
 
@@ -88,10 +90,17 @@ class TestGenExtreme():
             ),
         ],
     )
-    def test_genextreme_moment(mu, sigma, xi, size, expected):
+    def test_genextreme_moment(self, mu, sigma, xi, size, expected):
         with pm.Model() as model:
             GenExtreme("x", mu=mu, sigma=sigma, xi=xi, size=size)
         assert_moment_is_expected(model, expected)
+
+    def test_gen_extreme_scipy_kwarg(self):
+        dist = GenExtreme.dist(xi=1, scipy=False)
+        assert dist.owner.inputs[-1].eval() == 1
+
+        dist = GenExtreme.dist(xi=1, scipy=True)
+        assert dist.owner.inputs[-1].eval() == -1
 
 
 class TestGenExtreme(BaseTestDistributionRandom):

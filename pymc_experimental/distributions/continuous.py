@@ -1,4 +1,4 @@
-#   Copyright 2020 The PyMC Developers
+#   Copyright 2022 The PyMC Developers
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ Experimental probability distributions for stochastic nodes in PyMC.
 The imports from pymc are not fully replicated here: add imports as necessary.
 """
 
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import aesara
 import aesara.tensor as at
 import numpy as np
@@ -47,7 +47,7 @@ class GenExtremeRV(RandomVariable):
     @classmethod
     def rng_fn(
         cls,
-        rng: np.random.RandomState,
+        rng: Union[np.random.RandomState, np.random.Generator],
         mu: np.ndarray,
         sigma: np.ndarray,
         xi: np.ndarray,
@@ -178,17 +178,17 @@ class GenExtreme(Continuous):
             - ((xi + 1) / xi) * at.log1p(xi * scaled)
             - at.pow(1 + xi * scaled, -1 / xi),
         )
-        # Confirm in valid domain
+
         logp = at.switch(
-            1 + xi * (value - mu) / sigma > 0,
+            at.gt((1 + xi * (value - mu) / sigma), 0.0),
             logp_expression,
             -np.inf)
 
         return check_parameters(
             logp,
-            sigma < 0,
-            1 + xi * scaled < 0,
-            msg="sigma < 0, 1+xi*(x-mu)/sigma < 0")
+            sigma > 0,
+            1 + xi * scaled > 0,
+            msg="sigma <= 0 or 1+xi*(x-mu)/sigma <= 0")
 
     def logcdf(value, mu, sigma, xi):
         """
@@ -210,16 +210,16 @@ class GenExtreme(Continuous):
         logc_expression = at.switch(
             at.isclose(xi, 0), -at.exp(-scaled), -at.pow(1 + xi * scaled, -1 / xi)
         )
-        # Confirm in valid domain
+
         logc = at.switch(
             1 + xi * (value - mu) / sigma > 0,
             logc_expression,
             -np.inf)
 
         return check_parameters(logc,
-            sigma < 0,
-            1 + xi * scaled < 0,
-            msg="sigma < 0, 1+xi*(x-mu)/sigma < 0")
+            sigma > 0,
+            1 + xi * scaled > 0,
+            msg="sigma <= 0 or 1+xi*(x-mu)/sigma <= 0")
 
     def get_moment(value_var, size, mu, sigma, xi):
         r"""
