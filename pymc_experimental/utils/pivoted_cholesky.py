@@ -1,7 +1,11 @@
+try:
+    from gpytorch.utils.permutation import apply_permutation
+    import torch
+except ImportError as e:
+    raise ImportError(
+        "Please install Pytorch and GPyTorch to use this pivoted Cholesky implementation."
+    )
 import numpy as np
-import torch
-
-from gpytorch.utils.permutation import apply_permutation
 
 pp = lambda x: np.array2string(x, precision=4, floatmode="fixed")
 
