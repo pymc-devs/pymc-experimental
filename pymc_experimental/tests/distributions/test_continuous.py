@@ -13,6 +13,7 @@
 #   limitations under the License.
 
 # general imports
+import aesara
 import numpy as np
 import pymc as pm
 import pytest
@@ -42,6 +43,10 @@ class TestGenExtremeClass:
     pm.logp(GenExtreme.dist(mu=0.,sigma=1.,xi=0.5),value=-0.01)
     """
 
+    @pytest.mark.skipif(
+        condition=(aesara.config.floatX == "float32"),
+        reason="PyMC underflows earlier than scipy on float32",
+    )
     def test_genextreme(self):
         check_logp(
             GenExtreme,
@@ -51,6 +56,7 @@ class TestGenExtremeClass:
             if 1 + xi * (value - mu) / sigma > 0
             else -np.inf,
         )
+
         check_logcdf(
             GenExtreme,
             R,
@@ -59,6 +65,8 @@ class TestGenExtremeClass:
             if 1 + xi * (value - mu) / sigma > 0
             else -np.inf,
         )
+        if aesara.config.floatX == "float32":
+            raise Exception("Flaky test: It passed this time, but XPASS is not allowed.")
 
     @pytest.mark.parametrize(
         "mu, sigma, xi, size, expected",
