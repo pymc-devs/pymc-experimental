@@ -20,17 +20,16 @@ The imports from pymc are not fully replicated here: add imports as necessary.
 """
 
 from typing import List, Tuple, Union
-import aesara
+
 import aesara.tensor as at
 import numpy as np
-from scipy import stats
-
 from aesara.tensor.random.op import RandomVariable
-from pymc.distributions.distribution import Continuous
 from aesara.tensor.var import TensorVariable
 from pymc.aesaraf import floatX
 from pymc.distributions.dist_math import check_parameters
+from pymc.distributions.distribution import Continuous
 from pymc.distributions.shape_utils import rv_size_is_none
+from scipy import stats
 
 
 class GenExtremeRV(RandomVariable):
@@ -40,9 +39,7 @@ class GenExtremeRV(RandomVariable):
     dtype: str = "floatX"
     _print_name: Tuple[str, str] = ("Generalized Extreme Value", "\\operatorname{GEV}")
 
-    def __call__(
-        self, mu=0.0, sigma=1.0, xi=0.0, size=None, **kwargs
-    ) -> TensorVariable:
+    def __call__(self, mu=0.0, sigma=1.0, xi=0.0, size=None, **kwargs) -> TensorVariable:
         return super().__call__(mu, sigma, xi, size=size, **kwargs)
 
     @classmethod
@@ -55,9 +52,7 @@ class GenExtremeRV(RandomVariable):
         size: Tuple[int, ...],
     ) -> np.ndarray:
         # Notice negative here, since remainder of GenExtreme is based on Coles parametrization
-        return stats.genextreme.rvs(
-            c=-xi, loc=mu, scale=sigma, random_state=rng, size=size
-        )
+        return stats.genextreme.rvs(c=-xi, loc=mu, scale=sigma, random_state=rng, size=size)
 
 
 gev = GenExtremeRV()
@@ -180,16 +175,11 @@ class GenExtreme(Continuous):
             - at.pow(1 + xi * scaled, -1 / xi),
         )
 
-        logp = at.switch(
-            at.gt(1 + xi * scaled, 0.0),
-            logp_expression,
-            -np.inf)
+        logp = at.switch(at.gt(1 + xi * scaled, 0.0), logp_expression, -np.inf)
 
         return check_parameters(
-            logp,
-            sigma > 0,
-            at.and_(xi > -1, xi < 1),
-            msg="sigma > 0 or -1 < xi < 1")
+            logp, sigma > 0, at.and_(xi > -1, xi < 1), msg="sigma > 0 or -1 < xi < 1"
+        )
 
     def logcdf(value, mu, sigma, xi):
         """
@@ -212,23 +202,17 @@ class GenExtreme(Continuous):
             at.isclose(xi, 0), -at.exp(-scaled), -at.pow(1 + xi * scaled, -1 / xi)
         )
 
-        logc = at.switch(
-            1 + xi * (value - mu) / sigma > 0,
-            logc_expression,
-            -np.inf)
+        logc = at.switch(1 + xi * (value - mu) / sigma > 0, logc_expression, -np.inf)
 
-        return check_parameters(logc,
-            sigma > 0,
-            at.and_(xi > -1, xi < 1),
-            msg="sigma > 0 or -1 < xi < 1")
+        return check_parameters(
+            logc, sigma > 0, at.and_(xi > -1, xi < 1), msg="sigma > 0 or -1 < xi < 1"
+        )
 
     def moment(rv, size, mu, sigma, xi):
         r"""
         Using the mode, as the mean can be infinite when :math:`\xi > 1`
         """
-        mode = at.switch(
-            at.isclose(xi, 0), mu, mu + sigma * (at.pow(1 + xi, -xi) - 1) / xi
-        )
+        mode = at.switch(at.isclose(xi, 0), mu, mu + sigma * (at.pow(1 + xi, -xi) - 1) / xi)
         if not rv_size_is_none(size):
             mode = at.full(size, mode)
         return mode

@@ -1,4 +1,3 @@
-
 #   Copyright 2020 The PyMC Developers
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,28 +14,25 @@
 
 # general imports
 import numpy as np
-import pytest
-import scipy.stats as st
-import scipy.stats.distributions as sp
-
 import pymc as pm
+import pytest
+import scipy.stats.distributions as sp
 
 # test support imports from pymc
 from pymc.tests.distributions.util import (
     BaseTestDistributionRandom,
+    Domain,
     R,
     Rplus,
-    Domain,
-    check_logp,
-    check_logcdf,
     assert_moment_is_expected,
+    check_logcdf,
+    check_logp,
     seeded_scipy_distribution_builder,
 )
 
 # the distributions to be tested
-from pymc_experimental.distributions import (
-    GenExtreme,
-)
+from pymc_experimental.distributions import GenExtreme
+
 
 class TestGenExtremeClass:
     """
@@ -52,22 +48,24 @@ class TestGenExtremeClass:
             R,
             {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
             lambda value, mu, sigma, xi: sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma)
-                if 1 + xi*(value-mu)/sigma > 0 else -np.inf
+            if 1 + xi * (value - mu) / sigma > 0
+            else -np.inf,
         )
         check_logcdf(
             GenExtreme,
             R,
             {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
             lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma)
-                if 1 + xi*(value-mu)/sigma > 0 else -np.inf
+            if 1 + xi * (value - mu) / sigma > 0
+            else -np.inf,
         )
 
     @pytest.mark.parametrize(
         "mu, sigma, xi, size, expected",
         [
             (0, 1, 0, None, 0),
-            (1, np.arange(1, 4), 0.1, None, 1 + np.arange(1, 4) * (1.1 ** -0.1 - 1) / 0.1),
-            (np.arange(5), 1, 0.1, None, np.arange(5) + (1.1 ** -0.1 - 1) / 0.1),
+            (1, np.arange(1, 4), 0.1, None, 1 + np.arange(1, 4) * (1.1**-0.1 - 1) / 0.1),
+            (np.arange(5), 1, 0.1, None, np.arange(5) + (1.1**-0.1 - 1) / 0.1),
             (
                 0,
                 1,
@@ -76,7 +74,7 @@ class TestGenExtremeClass:
                 ((1 + np.linspace(-0.2, 0.2, 6)) ** -np.linspace(-0.2, 0.2, 6) - 1)
                 / np.linspace(-0.2, 0.2, 6),
             ),
-            (1, 2, 0.1, 5, np.full(5, 1 + 2 * (1.1 ** -0.1 - 1) / 0.1)),
+            (1, 2, 0.1, 5, np.full(5, 1 + 2 * (1.1**-0.1 - 1) / 0.1)),
             (
                 np.arange(6),
                 np.arange(1, 7),
