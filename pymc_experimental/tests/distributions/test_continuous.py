@@ -52,7 +52,7 @@ class TestGenExtremeClass:
             GenExtreme,
             R,
             {
-                "mu": Domain([-np.inf, -2.1, -1, -0.01, 0.0, 0.01, 1, 2.1, np.inf]),
+                "mu": R,
                 "sigma": Rplusbig,
                 "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1]),
             },
@@ -65,7 +65,7 @@ class TestGenExtremeClass:
             GenExtreme,
             R,
             {
-                "mu": Domain([-np.inf, -2.1, -1, -0.01, 0.0, 0.01, 1, 2.1, np.inf]),
+                "mu": R,
                 "sigma": Rplusbig,
                 "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1]),
             },
