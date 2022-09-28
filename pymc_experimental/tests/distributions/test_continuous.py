@@ -24,7 +24,7 @@ from pymc.tests.distributions.util import (
     BaseTestDistributionRandom,
     Domain,
     R,
-    Rplus,
+    Rplusbig,
     assert_moment_is_expected,
     check_logcdf,
     check_logp,
@@ -51,7 +51,11 @@ class TestGenExtremeClass:
         check_logp(
             GenExtreme,
             R,
-            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
+            {
+                "mu": Domain([-np.inf, -2.1, -1, -0.01, 0.0, 0.01, 1, 2.1, np.inf]),
+                "sigma": Rplusbig,
+                "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1]),
+            },
             lambda value, mu, sigma, xi: sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma)
             if 1 + xi * (value - mu) / sigma > 0
             else -np.inf,
@@ -60,7 +64,11 @@ class TestGenExtremeClass:
         check_logcdf(
             GenExtreme,
             R,
-            {"mu": R, "sigma": Rplus, "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1])},
+            {
+                "mu": Domain([-np.inf, -2.1, -1, -0.01, 0.0, 0.01, 1, 2.1, np.inf]),
+                "sigma": Rplusbig,
+                "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1]),
+            },
             lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma)
             if 1 + xi * (value - mu) / sigma > 0
             else -np.inf,
