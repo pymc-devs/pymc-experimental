@@ -30,6 +30,7 @@ from pymc.tests.distributions.util import (
     check_logp,
     seeded_scipy_distribution_builder,
 )
+from pymc.tests.helpers import select_by_precision
 
 # the distributions to be tested
 from pymc_experimental.distributions import GenExtreme
@@ -43,11 +44,11 @@ class TestGenExtremeClass:
     pm.logp(GenExtreme.dist(mu=0.,sigma=1.,xi=0.5),value=-0.01)
     """
 
-    @pytest.mark.skipif(
+    @pytest.mark.xfail(
         condition=(aesara.config.floatX == "float32"),
         reason="PyMC underflows earlier than scipy on float32",
     )
-    def test_genextreme(self):
+    def test_logp(self):
         check_logp(
             GenExtreme,
             R,
@@ -61,6 +62,10 @@ class TestGenExtremeClass:
             else -np.inf,
         )
 
+        if aesara.config.floatX == "float32":
+            raise Exception("Flaky test: It passed this time, but XPASS is not allowed.")
+
+    def test_logcdf(self):
         check_logcdf(
             GenExtreme,
             R,
@@ -72,9 +77,8 @@ class TestGenExtremeClass:
             lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma)
             if 1 + xi * (value - mu) / sigma > 0
             else -np.inf,
+            decimal=select_by_precision(float64=6, float32=2),
         )
-        if aesara.config.floatX == "float32":
-            raise Exception("Flaky test: It passed this time, but XPASS is not allowed.")
 
     @pytest.mark.parametrize(
         "mu, sigma, xi, size, expected",
