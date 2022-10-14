@@ -13,7 +13,5 @@
 #   limitations under the License.
 
 
-from pymc_experimental.utils import prior, spline
-
-from pymc_experimental.utils.pivoted_cholesky import pivoted_cholesky
-from pymc_experimental.utils.linear_cg import linear_cg
+from pymc_experimental.distributions import histogram_utils
+from pymc_experimental.distributions.histogram_utils import histogram_approximation

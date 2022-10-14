@@ -1,3 +1,18 @@
+#   Copyright 2022 The PyMC Developers
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+
 import numpy as np
 import pymc as pm
 import pytest
@@ -72,7 +87,7 @@ def test_histogram_approx_cont(use_dask, ndims):
     with pm.Model():
         m = pm.Normal("m")
         s = pm.HalfNormal("s", size=2 if ndims > 1 else 1)
-        pot = pmx.distributions.histogram_approximation(
+        pot = pmx.distributions.histogram_utils.histogram_approximation(
             "histogram_potential", pm.Normal.dist(m, s), observed=data, n_quantiles=1000
         )
         trace = pm.sample(10, tune=0)  # very fast
@@ -88,7 +103,7 @@ def test_histogram_approx_discrete(use_dask, ndims):
         data = dask_df.from_array(data)
     with pm.Model():
         s = pm.Exponential("s", 1.0, size=2 if ndims > 1 else 1)
-        pot = pmx.distributions.histogram_approximation(
+        pot = pmx.distributions.histogram_utils.histogram_approximation(
             "histogram_potential", pm.Poisson.dist(s), observed=data, min_count=10
         )
         trace = pm.sample(10, tune=0)  # very fast
