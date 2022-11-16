@@ -81,5 +81,9 @@ if __name__ == "__main__":
         classifiers=classifiers,
         python_requires=">=3.8",
         install_requires=install_reqs,
-        extras_requires=dict(dask=["dask[all]"]),
+        extras_requires=dict(
+            dask=["dask[all]"], 
+            histogram=["xhistogram"], 
+            complete=["dask[all]", "xhistogram"]
+        ),
     )
