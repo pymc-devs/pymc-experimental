@@ -84,6 +84,6 @@ if __name__ == "__main__":
         extras_requires=dict(
             dask=["dask[all]"], 
             histogram=["xhistogram"], 
-            complete=["dask[all]", "xhistogram"]
+            all=["dask[all]", "xhistogram"]
         ),
     )
