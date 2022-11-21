@@ -12,10 +12,11 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import itertools
 import re
 from codecs import open
 from os.path import dirname, join, realpath
-import itertools
+
 from setuptools import find_packages, setup
 
 DISTNAME = "pymc_experimental"
