@@ -71,7 +71,7 @@ extras_require = dict(
     dask_histogram=["dask[complete]", "xhistogram"],
     histogram=["xhistogram"],
 )
-extras_require["all"] = sorted(set(itertools.chain.from_iterable(extras_require.values())))
+extras_require["complete"] = sorted(set(itertools.chain.from_iterable(extras_require.values())))
 extras_require["dev"] = dev_install_reqs
 
 
