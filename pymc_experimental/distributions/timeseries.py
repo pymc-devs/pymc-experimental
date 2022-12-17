@@ -1,48 +1,26 @@
-import pymc as pm
 import numpy as np
-import pytensor.tensor as at
+import pymc as pm
 import pytensor
-
+import pytensor.tensor as at
+from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import (
-    Distribution,
     Discrete,
+    Distribution,
     SymbolicRandomVariable,
     _moment,
 )
-
+from pymc.distributions.shape_utils import _change_dist_size, get_support_shape_1d
 from pymc.logprob.abstract import _logprob
 from pymc.pytensorf import intX
-from pytensor.tensor import TensorVariable
-from pytensor.tensor.random.op import RandomVariable
 from pytensor.graph.basic import Node
-
-from pymc.distributions.shape_utils import (
-    _change_dist_size,
-    get_support_shape_1d,
-)
-
-
-def validate_transition_matrix(P):
-    """
-    Checks that P is a valid transition matrix
-    """
-
-    # TODO: Can this eval be avoided?
-    n, k = P.shape.eval()
-    if n != k:
-        raise ValueError(f'P must be square, found shape ({n}, {k})')
-
-    row_sums_all_one = at.allclose(P.sum(axis=1), 1.0)
-    if not row_sums_all_one.eval():
-        raise ValueError('All rows of P must sum to 1.')
+from pytensor.tensor import TensorVariable
 
 
 class DiscreteMarkovChainRV(SymbolicRandomVariable):
     default_output = 1
-    _print_name = ('DiscreteMC', '\\operatorname{DiscreteMC}')
+    _print_name = ("DiscreteMC", "\\operatorname{DiscreteMC}")
 
     def update(self, node: Node):
-        # TODO: Do I need this?
         return {node.inputs[-1]: node.outputs[0]}
 
 
@@ -80,42 +58,44 @@ class DiscreteMarkovChain(Distribution):
         steps = get_support_shape_1d(
             support_shape=steps,
             shape=None,
-            dims=kwargs.get('dims', None),
-            observed=kwargs.get('observed', None),
-            support_shape_offset=1
+            dims=kwargs.get("dims", None),
+            observed=kwargs.get("observed", None),
+            support_shape_offset=1,
         )
 
         return super().__new__(cls, *args, steps=steps, **kwargs)
 
     @classmethod
     def dist(cls, P=None, logit_P=None, steps=None, x0=None, **kwargs):
+
         steps = get_support_shape_1d(
-            support_shape=steps, shape=kwargs.get('shape', None), support_shape_offset=1
+            support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=1
         )
         if steps is None:
             raise ValueError("Must specify steps or shape parameter")
         if P is None and logit_P is None:
-            raise ValueError('Must specify P or logit_P parameter')
+            raise ValueError("Must specify P or logit_P parameter")
         if P is not None and logit_P is not None:
-            raise ValueError('Must specify only one of either P or logit_P parameter')
+            raise ValueError("Must specify only one of either P or logit_P parameter")
 
         if logit_P is not None:
             P = pm.math.softmax(logit_P, axis=1)
         P = at.as_tensor_variable(P)
-        validate_transition_matrix(P)
 
         # TODO: Can this eval be avoided?
         n_states = P.shape[0].eval()
 
         if not isinstance(x0, TensorVariable):
-            x0 = at.as_tensor_variable(x0).astype(intX)
+            x0 = at.as_tensor_variable(intX(x0))
 
             # TODO: Can this eval be avoided?
             if not at.all(at.lt(x0, n_states - 1)).eval():
-                raise ValueError('At least one initial state is larger than the number of states in the Markov Chain')
+                raise ValueError(
+                    "At least one initial state is larger than the number of states in the Markov Chain"
+                )
 
         elif not isinstance(x0.owner.op, Discrete):
-            raise ValueError('x0 must be a discrete distribution')
+            raise ValueError("x0 must be a discrete distribution")
 
         else:
             x0_probs = x0.owner.inputs[-1].eval()
@@ -123,7 +103,8 @@ class DiscreteMarkovChain(Distribution):
 
             if not n_cats <= n_states:
                 raise ValueError(
-                    'x0 has support over a range of values larger than the number of states in the Markov Chain')
+                    "x0 has support over a range of values larger than the number of states in the Markov Chain"
+                )
 
         return super().dist([P, logit_P, steps, x0], **kwargs)
 
@@ -143,19 +124,23 @@ class DiscreteMarkovChain(Distribution):
         def transition(previous_state, transition_probs, old_rng):
             p = transition_probs[previous_state]
             next_rng, next_state = pm.Categorical.dist(p=p, rng=old_rng).owner.outputs
-            return next_state, {old_rng: next_rng}
+            return intX(next_state), {old_rng: next_rng}
 
-        markov_chain, state_updates = pytensor.scan(transition,
-                                                  non_sequences=[P_, state_rng],
-                                                  outputs_info=[x0_],
-                                                  n_steps=steps_,
-                                                  strict=True)
+        markov_chain, state_updates = pytensor.scan(
+            transition,
+            non_sequences=[P_, state_rng],
+            outputs_info=[x0_],
+            n_steps=steps_,
+            strict=True,
+        )
 
         (state_next_rng,) = tuple(state_updates.values())
 
-        discrete_mc_ = at.concatenate([x0_[None, ...], markov_chain], axis=0).dimshuffle(
-            tuple(range(1, markov_chain.ndim)) + (0,)
-        ).squeeze()
+        discrete_mc_ = (
+            at.concatenate([x0_[None, ...], markov_chain], axis=0)
+            .dimshuffle(tuple(range(1, markov_chain.ndim)) + (0,))
+            .squeeze()
+        )
 
         discrete_mc_op = DiscreteMarkovChainRV(
             inputs=[P_, x0_, steps_],
@@ -180,19 +165,21 @@ def change_mc_size(op, dist, new_size, expand=False):
 
 
 @_logprob.register(DiscreteMarkovChainRV)
-def discrete_mc_logp(
-        op, values, P, x0, steps, state_rng, **kwargs
-):
+def discrete_mc_logp(op, values, P, x0, steps, state_rng, **kwargs):
+    n, k = P.shape
 
     (value,) = values
-    # GARCH11 swaps the time axis to the front, not sure why this is necessary
+
     mc_logprob = at.log(P[value[..., :-1], value[..., 1:]]).sum(axis=-1)
 
-    return mc_logprob
+    return check_parameters(
+        mc_logprob,
+        at.eq(n, k),
+        at.all(at.allclose(P.sum(axis=1), 1.0)),
+        msg="P must be square with rows that sum to 1",
+    )
+
 
 @_moment.register(DiscreteMarkovChainRV)
-def discrete_markov_chain_moment(
-        op, rv, P, x0, steps, state_rng
-):
-    # TODO: What is the mean of the chain?
+def discrete_markov_chain_moment(op, rv, P, x0, steps, state_rng):
     return at.zeros_like(rv)
