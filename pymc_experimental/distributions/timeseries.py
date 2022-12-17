@@ -1,19 +1,22 @@
+import warnings
+
 import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as at
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import (
-    Discrete,
     Distribution,
     SymbolicRandomVariable,
     _moment,
 )
+from pymc.distributions.logprob import ignore_logprob, logp
 from pymc.distributions.shape_utils import _change_dist_size, get_support_shape_1d
 from pymc.logprob.abstract import _logprob
-from pymc.pytensorf import intX
+from pymc.util import check_dist_not_registered
 from pytensor.graph.basic import Node
 from pytensor.tensor import TensorVariable
+from pytensor.tensor.random.op import RandomVariable
 
 
 class DiscreteMarkovChainRV(SymbolicRandomVariable):
@@ -36,13 +39,16 @@ class DiscreteMarkovChain(Distribution):
     P: tensor
         Matrix of transition probabilities between states. Rows must sum to 1.
         One of P or P_logits must be provided.
-    P_logit: tensor, Optional
+    P_logit: tensor, optional
         Matrix of tranisiton logits. Converted to probabilities via Softmax activation.
         One of P or P_logits must be provided.
-    steps: tensor
-        Length of the markov chain
-    x0: tensor or RandomVariable
-        Intial state of the system. If tensor, treated as deterministic.
+    steps: tensor, optional
+        Length of the markov chain. Only needed if state is not provided.
+    init_dist : unnamed distribution, optional
+        Vector distribution for initial values. Unnamed refers to distributions
+        created with the ``.dist()`` API. Distribution should have shape n_states.
+        If not, it will be automatically resized. Defaults to pm.Categorical.dist(p=np.full(n_states, 1/n_states)).
+        .. warning:: init_dist will be cloned, rendering it independent of the one passed as input.
     """
 
     rv_type = DiscreteMarkovChainRV
@@ -66,11 +72,19 @@ class DiscreteMarkovChain(Distribution):
         return super().__new__(cls, *args, steps=steps, **kwargs)
 
     @classmethod
-    def dist(cls, P=None, logit_P=None, steps=None, x0=None, **kwargs):
+    def dist(cls, P=None, logit_P=None, steps=None, init_dist=None, **kwargs):
 
-        steps = get_support_shape_1d(
-            support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=1
-        )
+        shape = kwargs.get("shape", None)
+
+        steps = get_support_shape_1d(support_shape=steps, shape=shape, support_shape_offset=1)
+
+        batch_size = None
+        if shape is not None:
+            batch_size = shape[1:] if shape[0] == steps else shape
+
+        # TODO: Was getting errors with int32 vs int64 mismatches, is there a better way to address this?
+        dtype = kwargs.get("dtype", None) or pytensor.config.floatX.replace("float", "int")
+
         if steps is None:
             raise ValueError("Must specify steps or shape parameter")
         if P is None and logit_P is None:
@@ -80,42 +94,43 @@ class DiscreteMarkovChain(Distribution):
 
         if logit_P is not None:
             P = pm.math.softmax(logit_P, axis=1)
+
         P = at.as_tensor_variable(P)
+        steps = at.as_tensor_variable(steps.astype(dtype), ndim=1)
 
-        # TODO: Can this eval be avoided?
-        n_states = P.shape[0].eval()
-
-        if not isinstance(x0, TensorVariable):
-            x0 = at.as_tensor_variable(intX(x0))
-
-            # TODO: Can this eval be avoided?
-            if not at.all(at.lt(x0, n_states - 1)).eval():
+        if init_dist is not None:
+            if not isinstance(init_dist, TensorVariable) or not isinstance(
+                init_dist.owner.op, (RandomVariable, SymbolicRandomVariable)
+            ):
                 raise ValueError(
-                    "At least one initial state is larger than the number of states in the Markov Chain"
+                    f"Init dist must be a distribution created via the `.dist()` API, "
+                    f"got {type(init_dist)}"
                 )
-
-        elif not isinstance(x0.owner.op, Discrete):
-            raise ValueError("x0 must be a discrete distribution")
-
+            check_dist_not_registered(init_dist)
+            if init_dist.owner.op.ndim_supp > 1:
+                raise ValueError(
+                    "Init distribution must have a scalar or vector support dimension, ",
+                    f"got ndim_supp={init_dist.owner.op.ndim_supp}.",
+                )
         else:
-            x0_probs = x0.owner.inputs[-1].eval()
-            n_cats = 1 if x0_probs.ndim == 0 else len(x0_probs)
+            warnings.warn(
+                "Initial distribution not specified, defaulting to "
+                "`Categorical.dist(p=at.full((k_states, ), 1/k_states), shape=...)`. You can specify an init_dist "
+                "manually to suppress this warning.",
+                UserWarning,
+            )
+            k = P.shape[0]
+            init_dist = pm.Categorical.dist(p=at.full((k,), 1 / k), shape=batch_size, dtype=dtype)
 
-            if not n_cats <= n_states:
-                raise ValueError(
-                    "x0 has support over a range of values larger than the number of states in the Markov Chain"
-                )
+        # We can ignore init_dist, as it will be accounted for in the logp term
+        init_dist = ignore_logprob(init_dist)
 
-        return super().dist([P, logit_P, steps, x0], **kwargs)
+        return super().dist([P, steps, init_dist], **kwargs)
 
     @classmethod
-    def rv_op(cls, P, logit_P, steps, x0, size=None):
-        if size is not None:
-            batch_size = size
-        else:
-            batch_size = at.broadcast_shape(x0)
+    def rv_op(cls, P, steps, init_dist, size=None):
 
-        x0_ = x0.type()
+        init_dist_ = init_dist.type()
         P_ = P.type()
         steps_ = steps.type()
 
@@ -124,12 +139,12 @@ class DiscreteMarkovChain(Distribution):
         def transition(previous_state, transition_probs, old_rng):
             p = transition_probs[previous_state]
             next_rng, next_state = pm.Categorical.dist(p=p, rng=old_rng).owner.outputs
-            return intX(next_state), {old_rng: next_rng}
+            return next_state, {old_rng: next_rng}
 
         markov_chain, state_updates = pytensor.scan(
             transition,
             non_sequences=[P_, state_rng],
-            outputs_info=[x0_],
+            outputs_info=[init_dist_],
             n_steps=steps_,
             strict=True,
         )
@@ -137,18 +152,18 @@ class DiscreteMarkovChain(Distribution):
         (state_next_rng,) = tuple(state_updates.values())
 
         discrete_mc_ = (
-            at.concatenate([x0_[None, ...], markov_chain], axis=0)
+            at.concatenate([init_dist_[None, ...], markov_chain], axis=0)
             .dimshuffle(tuple(range(1, markov_chain.ndim)) + (0,))
             .squeeze()
         )
 
         discrete_mc_op = DiscreteMarkovChainRV(
-            inputs=[P_, x0_, steps_],
+            inputs=[P_, init_dist_, steps_],
             outputs=[state_next_rng, discrete_mc_],
             ndim_supp=1,
         )
 
-        discrete_mc = discrete_mc_op(P, x0, steps)
+        discrete_mc = discrete_mc_op(P, init_dist, steps)
         return discrete_mc
 
 
@@ -165,12 +180,13 @@ def change_mc_size(op, dist, new_size, expand=False):
 
 
 @_logprob.register(DiscreteMarkovChainRV)
-def discrete_mc_logp(op, values, P, x0, steps, state_rng, **kwargs):
+def discrete_mc_logp(op, values, P, init_dist, steps, state_rng, **kwargs):
     n, k = P.shape
 
     (value,) = values
 
-    mc_logprob = at.log(P[value[..., :-1], value[..., 1:]]).sum(axis=-1)
+    mc_logprob = logp(init_dist, value[..., 0])
+    mc_logprob += at.log(P[value[..., :-1], value[..., 1:]]).sum(axis=-1)
 
     return check_parameters(
         mc_logprob,
@@ -181,5 +197,5 @@ def discrete_mc_logp(op, values, P, x0, steps, state_rng, **kwargs):
 
 
 @_moment.register(DiscreteMarkovChainRV)
-def discrete_markov_chain_moment(op, rv, P, x0, steps, state_rng):
+def discrete_markov_chain_moment(op, rv, P, init_dist, steps, state_rng):
     return at.zeros_like(rv)
