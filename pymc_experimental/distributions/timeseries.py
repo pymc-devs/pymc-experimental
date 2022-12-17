@@ -58,9 +58,6 @@ class DiscreteMarkovChain(Distribution):
     rv_type = DiscreteMarkovChainRV
 
     def __new__(cls, *args, steps=None, **kwargs):
-        # TODO: Allow steps to be None and infer chain length from shape?
-        # TODO: Dims breaks the RV
-
         # Subtract 1 step to account for x0 given, better match user expectation of
         # len(markov_chain) = steps
         if steps is not None:
