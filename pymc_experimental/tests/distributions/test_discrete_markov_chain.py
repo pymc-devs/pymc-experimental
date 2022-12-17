@@ -46,3 +46,46 @@ def test_define_steps_via_shape_arg():
     chain = DiscreteMarkovChain.dist(P=P, shape=(3,))
 
     assert chain.eval().shape[0] == 3
+
+
+def test_define_steps_via_dim_arg():
+    coords = {"steps": [1, 2, 3]}
+
+    with pm.Model(coords=coords):
+        P = at.full((3, 3), 1 / 3)
+        chain = DiscreteMarkovChain("chain", P=P, dims=["steps"])
+
+    assert chain.eval().shape[0] == 3
+
+
+def test_dims_when_steps_are_defined():
+    coords = {"steps": [1, 2, 3]}
+
+    with pm.Model(coords=coords):
+        P = at.full((3, 3), 1 / 3)
+        chain = DiscreteMarkovChain("chain", P=P, steps=3, dims=["steps"])
+
+    assert chain.eval().shape == (3,)
+
+
+def test_multiple_dims_with_steps():
+    coords = {"steps": [1, 2, 3], "mc_chains": [1, 2, 3]}
+
+    with pm.Model(coords=coords):
+        P = at.full((3, 3), 1 / 3)
+        chain = DiscreteMarkovChain("chain", P=P, steps=3, dims=["steps", "mc_chains"])
+
+    assert chain.eval().shape == (3, 3)
+
+
+def test_mutiple_dims_with_steps_and_init_dist():
+    coords = {"steps": [1, 2, 3], "mc_chains": [1, 2, 3]}
+
+    with pm.Model(coords=coords):
+        P = at.full((3, 3), 1 / 3)
+        x0 = pm.Categorical.dist(p=[0.1, 0.1, 0.8], size=(3,))
+        chain = DiscreteMarkovChain(
+            "chain", P=P, init_dist=x0, steps=3, dims=["steps", "mc_chains"]
+        )
+
+    assert chain.eval().shape == (3, 3)

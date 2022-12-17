@@ -11,7 +11,11 @@ from pymc.distributions.distribution import (
     _moment,
 )
 from pymc.distributions.logprob import ignore_logprob, logp
-from pymc.distributions.shape_utils import _change_dist_size, get_support_shape_1d
+from pymc.distributions.shape_utils import (
+    _change_dist_size,
+    change_dist_size,
+    get_support_shape_1d,
+)
 from pymc.logprob.abstract import _logprob
 from pymc.util import check_dist_not_registered
 from pytensor.graph.basic import Node
@@ -53,13 +57,14 @@ class DiscreteMarkovChain(Distribution):
 
     rv_type = DiscreteMarkovChainRV
 
-    def __new__(cls, *args, steps, **kwargs):
+    def __new__(cls, *args, steps=None, **kwargs):
         # TODO: Allow steps to be None and infer chain length from shape?
         # TODO: Dims breaks the RV
 
         # Subtract 1 step to account for x0 given, better match user expectation of
         # len(markov_chain) = steps
-        steps -= 1
+        if steps is not None:
+            steps -= 1
 
         steps = get_support_shape_1d(
             support_shape=steps,
@@ -129,6 +134,17 @@ class DiscreteMarkovChain(Distribution):
 
     @classmethod
     def rv_op(cls, P, steps, init_dist, size=None):
+        if size is not None:
+            batch_size = size
+        else:
+            batch_size = (1,)
+
+        if init_dist.owner.op.ndim_supp == 0:
+            init_dist_size = (*batch_size,)
+        else:
+            init_dist_size = batch_size
+
+        init_dist = change_dist_size(init_dist, init_dist_size)
 
         init_dist_ = init_dist.type()
         P_ = P.type()
