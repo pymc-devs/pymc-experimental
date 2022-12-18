@@ -41,7 +41,7 @@ class DiscreteMarkovChain(Distribution):
         Matrix of transition probabilities between states. Rows must sum to 1.
         One of P or P_logits must be provided.
     P_logit: tensor, optional
-        Matrix of tranisiton logits. Converted to probabilities via Softmax activation.
+        Matrix of transition logits. Converted to probabilities via Softmax activation.
         One of P or P_logits must be provided.
     steps: tensor, optional
         Length of the markov chain. Only needed if state is not provided.
@@ -50,6 +50,23 @@ class DiscreteMarkovChain(Distribution):
         created with the ``.dist()`` API. Distribution should have shape n_states.
         If not, it will be automatically resized. Defaults to pm.Categorical.dist(p=np.full(n_states, 1/n_states)).
         .. warning:: init_dist will be cloned, rendering it independent of the one passed as input.
+
+    Notes
+    -----
+    The initial distribution will be cloned, rendering it distinct from the one passed as
+    input.
+
+    Examples
+    --------
+    .. code-block:: python
+        # Create a Markov Chain of length 100 with 3 states
+        with pm.Model() as markov_chain:
+            # The transition probability matrix should be square with rows that sum to 1
+            # The number of states in the markov chain is given by the shape of P, 3 in this example
+            P = pm.Dirichlet("P", a=[1, 1, 1], size=(3,))
+            # The initial state probabilities should have size = n_states, or 3 in this case.
+            init = pm.Categorical.dist(p = np.full(3, 1 / 3))
+            markov_chain = pm.DiscreteMarkovChain("markov_chain", P=P, init_dist=init, steps=100)
     """
 
     rv_type = DiscreteMarkovChainRV
