@@ -22,9 +22,14 @@ class TestDiscreteMarkovRV:
         with pytest.raises(ParameterValueError):
             pm.logp(chain, np.zeros((3,))).eval()
 
-    def test_logp_with_default_init_dist(self):
+    def test_default_init_dist_warns_user(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
 
+        with pytest.warns(UserWarning):
+            DiscreteMarkovChain.dist(P=P, steps=3)
+
+    def test_logp_with_default_init_dist(self):
+        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
         chain = DiscreteMarkovChain.dist(P=P, steps=3)
 
         logp = pm.logp(chain, [0, 1, 2]).eval()
