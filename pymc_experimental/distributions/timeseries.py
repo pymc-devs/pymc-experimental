@@ -66,7 +66,7 @@ class DiscreteMarkovChain(Distribution):
             P = pm.Dirichlet("P", a=[1, 1, 1], size=(3,))
             # The initial state probabilities should have size = n_states, or 3 in this case.
             init = pm.Categorical.dist(p = np.full(3, 1 / 3))
-            markov_chain = pm.DiscreteMarkovChain("markov_chain", P=P, init_dist=init, steps=100)
+            markov_chain = pm.DiscreteMarkovChain("markov_chain", P=P, init_dist=init, shape=(100,))
     """
 
     rv_type = DiscreteMarkovChainRV
