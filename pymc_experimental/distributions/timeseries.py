@@ -130,7 +130,7 @@ class DiscreteMarkovChain(Distribution):
                 "manually to suppress this warning.",
                 UserWarning,
             )
-            k = P.shape[..., 0, :]
+            k = P.shape[..., 0]
             init_dist = pm.Categorical.dist(p=pt.full((k,), 1 / k))
 
         # We can ignore init_dist, as it will be accounted for in the logp term
@@ -197,8 +197,6 @@ def change_mc_size(op, dist, new_size, expand=False):
 
 @_logprob.register(DiscreteMarkovChainRV)
 def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
-    n, k = P.shape
-
     (value,) = values
 
     mc_logprob = logp(init_dist, value[..., 0])
@@ -206,7 +204,7 @@ def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
 
     return check_parameters(
         mc_logprob,
-        pt.eq(n, k),
+        pt.all(pt.eq(P.shape, P.shape[0])),
         pt.all(pt.allclose(P.sum(axis=1), 1.0)),
         msg="P must be square with rows that sum to 1",
     )

@@ -48,7 +48,7 @@ class TestDiscreteMarkovRV:
         P = pt.full((3, 3), 1 / 3)
         chain = DiscreteMarkovChain.dist(P=P, shape=(3,))
 
-        assert chain.eval().shape[0] == 3
+        assert chain.eval().shape[-1] == 3
 
     def test_define_steps_via_dim_arg(self):
         coords = {"steps": [1, 2, 3]}
@@ -57,23 +57,23 @@ class TestDiscreteMarkovRV:
             P = pt.full((3, 3), 1 / 3)
             chain = DiscreteMarkovChain("chain", P=P, dims=["steps"])
 
-        assert chain.eval().shape[0] == 3
+        assert chain.eval().shape[-1] == 3
 
     def test_dims_when_steps_are_defined(self):
-        coords = {"steps": [1, 2, 3]}
+        coords = {"steps": [1, 2, 3, 4]}
 
         with pm.Model(coords=coords):
             P = pt.full((3, 3), 1 / 3)
             chain = DiscreteMarkovChain("chain", P=P, steps=3, dims=["steps"])
 
-        assert chain.eval().shape == (3,)
+        assert chain.eval().shape == (1, 4)
 
     def test_multiple_dims_with_steps(self):
         coords = {"steps": [1, 2, 3], "mc_chains": [1, 2, 3]}
 
         with pm.Model(coords=coords):
             P = pt.full((3, 3), 1 / 3)
-            chain = DiscreteMarkovChain("chain", P=P, steps=3, dims=["steps", "mc_chains"])
+            chain = DiscreteMarkovChain("chain", P=P, steps=2, dims=["steps", "mc_chains"])
 
         assert chain.eval().shape == (3, 3)
 
@@ -84,7 +84,7 @@ class TestDiscreteMarkovRV:
             P = pt.full((3, 3), 1 / 3)
             x0 = pm.Categorical.dist(p=[0.1, 0.1, 0.8], size=(3,))
             chain = DiscreteMarkovChain(
-                "chain", P=P, init_dist=x0, steps=3, dims=["steps", "mc_chains"]
+                "chain", P=P, init_dist=x0, steps=2, dims=["steps", "mc_chains"]
             )
 
         assert chain.eval().shape == (3, 3)
@@ -102,10 +102,10 @@ class TestDiscreteMarkovRV:
 
         # Test x0 is uniform over n_states
         assert np.allclose(
-            np.histogram(draws[:, 0], bins=n_states)[0] / n_draws, 1 / n_states, atol=atol
+            np.histogram(draws[:, ..., 0], bins=n_states)[0] / n_draws, 1 / n_states, atol=atol
         )
 
-        bigrams = [(chain[i], chain[i + 1]) for chain in draws for i in range(1, steps)]
+        bigrams = [(chain[..., i], chain[..., i + 1]) for chain in draws for i in range(1, steps)]
         freq_table = np.zeros((n_states, n_states))
         for bigram in bigrams:
             i, j = bigram
