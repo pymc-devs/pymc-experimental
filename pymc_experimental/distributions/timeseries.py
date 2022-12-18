@@ -159,12 +159,12 @@ class DiscreteMarkovChain(Distribution):
         ).squeeze()
 
         discrete_mc_op = DiscreteMarkovChainRV(
-            inputs=[P_, init_dist_, steps_],
+            inputs=[P_, steps_, init_dist_],
             outputs=[state_next_rng, discrete_mc_],
             ndim_supp=1,
         )
 
-        discrete_mc = discrete_mc_op(P, init_dist, steps)
+        discrete_mc = discrete_mc_op(P, steps, init_dist)
         return discrete_mc
 
 
@@ -174,14 +174,14 @@ def change_mc_size(op, dist, new_size, expand=False):
         old_size = dist.shape[:-1]
         new_size = tuple(new_size) + tuple(old_size)
 
-    return DiscreteMarkovChainRV.rv_op(
+    return DiscreteMarkovChain.rv_op(
         *dist.owner.inputs[:-1],
         size=new_size,
     )
 
 
 @_logprob.register(DiscreteMarkovChainRV)
-def discrete_mc_logp(op, values, P, init_dist, steps, state_rng, **kwargs):
+def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
     n, k = P.shape
 
     (value,) = values

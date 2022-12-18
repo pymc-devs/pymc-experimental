@@ -4,6 +4,7 @@ import pymc as pm
 # general imports
 import pytensor.tensor as pt
 import pytest
+from pymc.distributions.shape_utils import change_dist_size
 from pymc.logprob.utils import ParameterValueError
 
 from pymc_experimental.distributions.timeseries import DiscreteMarkovChain
@@ -113,3 +114,13 @@ class TestDiscreteMarkovRV:
 
         # Test continuation probabilities match P
         assert np.allclose(P, freq_table, atol=atol)
+
+    def test_change_size_univariate(self):
+        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        chain = DiscreteMarkovChain.dist(P=P, shape=(100, 5))
+
+        new_rw = change_dist_size(chain, new_size=(7,))
+        assert tuple(new_rw.shape.eval()) == (7, 5)
+
+        new_rw = change_dist_size(chain, new_size=(4, 3), expand=True)
+        assert tuple(new_rw.shape.eval()) == (4, 3, 100, 5)
