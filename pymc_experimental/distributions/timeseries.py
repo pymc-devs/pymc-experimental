@@ -74,8 +74,6 @@ class DiscreteMarkovChain(Distribution):
     def __new__(cls, *args, steps=None, initval="prior", **kwargs):
         # Subtract 1 step to account for x0 given, better match user expectation of
         # len(markov_chain) = steps
-        if steps is not None:
-            steps -= 1
 
         steps = get_support_shape_1d(
             support_shape=steps,
@@ -173,7 +171,7 @@ class DiscreteMarkovChain(Distribution):
 
         discrete_mc_ = pt.moveaxis(
             pt.concatenate([init_dist_[None, ...], markov_chain], axis=0), 0, -1
-        ).squeeze()
+        )
 
         discrete_mc_op = DiscreteMarkovChainRV(
             inputs=[P_, steps_, init_dist_],
