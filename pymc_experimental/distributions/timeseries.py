@@ -5,11 +5,7 @@ import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 from pymc.distributions.dist_math import check_parameters
-from pymc.distributions.distribution import (
-    Distribution,
-    SymbolicRandomVariable,
-    _moment,
-)
+from pymc.distributions.distribution import Distribution, SymbolicRandomVariable
 from pymc.distributions.logprob import ignore_logprob, logp
 from pymc.distributions.shape_utils import (
     _change_dist_size,
@@ -58,7 +54,7 @@ class DiscreteMarkovChain(Distribution):
 
     rv_type = DiscreteMarkovChainRV
 
-    def __new__(cls, *args, steps=None, **kwargs):
+    def __new__(cls, *args, steps=None, initval="prior", **kwargs):
         # Subtract 1 step to account for x0 given, better match user expectation of
         # len(markov_chain) = steps
         if steps is not None:
@@ -205,8 +201,3 @@ def discrete_mc_logp(op, values, P, init_dist, steps, state_rng, **kwargs):
         pt.all(pt.allclose(P.sum(axis=1), 1.0)),
         msg="P must be square with rows that sum to 1",
     )
-
-
-@_moment.register(DiscreteMarkovChainRV)
-def discrete_markov_chain_moment(op, rv, P, init_dist, steps, state_rng):
-    return pt.zeros_like(rv)
