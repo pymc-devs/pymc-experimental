@@ -141,13 +141,7 @@ class DiscreteMarkovChain(Distribution):
     @classmethod
     def rv_op(cls, P, steps, init_dist, size=None):
         batch_size = size or (1,)
-
-        if init_dist.owner.op.ndim_supp == 0:
-            init_dist_size = (*batch_size,)
-        else:
-            init_dist_size = batch_size
-
-        init_dist = change_dist_size(init_dist, init_dist_size)
+        init_dist = change_dist_size(init_dist, batch_size)
 
         init_dist_ = init_dist.type()
         P_ = P.type()
