@@ -158,11 +158,9 @@ class DiscreteMarkovChain(Distribution):
 
         (state_next_rng,) = tuple(state_updates.values())
 
-        discrete_mc_ = (
-            pt.concatenate([init_dist_[None, ...], markov_chain], axis=0)
-            .dimshuffle(tuple(range(1, markov_chain.ndim)) + (0,))
-            .squeeze()
-        )
+        discrete_mc_ = pt.moveaxis(
+            pt.concatenate([init_dist_[None, ...], markov_chain], axis=0), 0, -1
+        ).squeeze()
 
         discrete_mc_op = DiscreteMarkovChainRV(
             inputs=[P_, init_dist_, steps_],
