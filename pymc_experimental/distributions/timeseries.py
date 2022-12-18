@@ -92,7 +92,7 @@ class DiscreteMarkovChain(Distribution):
             P = pm.math.softmax(logit_P, axis=1)
 
         P = pt.as_tensor_variable(P)
-        steps = pt.as_tensor_variable(intX(steps), ndim=1)
+        steps = pt.as_tensor_variable(intX(steps))
 
         if init_dist is not None:
             if not isinstance(init_dist, TensorVariable) or not isinstance(
@@ -125,10 +125,7 @@ class DiscreteMarkovChain(Distribution):
 
     @classmethod
     def rv_op(cls, P, steps, init_dist, size=None):
-        if size is not None:
-            batch_size = size
-        else:
-            batch_size = (1,)
+        batch_size = size or (1,)
 
         if init_dist.owner.op.ndim_supp == 0:
             init_dist_size = (*batch_size,)
@@ -153,7 +150,6 @@ class DiscreteMarkovChain(Distribution):
             non_sequences=[P_, state_rng],
             outputs_info=[init_dist_],
             n_steps=steps_,
-            strict=True,
         )
 
         (state_next_rng,) = tuple(state_updates.values())

@@ -87,3 +87,29 @@ class TestDiscreteMarkovRV:
             )
 
         assert chain.eval().shape == (3, 3)
+
+    def test_random_draws(self):
+        steps = 3
+        n_states = 2
+        n_draws = 2500
+        atol = 0.05
+
+        P = np.full((n_states, n_states), 1 / n_states)
+        chain = DiscreteMarkovChain.dist(P=pt.as_tensor_variable(P), steps=steps)
+
+        draws = pm.draw(chain, n_draws)
+
+        # Test x0 is uniform over n_states
+        assert np.allclose(
+            np.histogram(draws[:, 0], bins=n_states)[0] / n_draws, 1 / n_states, atol=atol
+        )
+
+        bigrams = [(chain[i], chain[i + 1]) for chain in draws for i in range(1, steps)]
+        freq_table = np.zeros((n_states, n_states))
+        for bigram in bigrams:
+            i, j = bigram
+            freq_table[i, j] += 1
+        freq_table /= freq_table.sum(axis=1)[:, None]
+
+        # Test continuation probabilities match P
+        assert np.allclose(P, freq_table, atol=atol)
