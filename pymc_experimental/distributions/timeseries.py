@@ -132,7 +132,7 @@ class DiscreteMarkovChain(Distribution):
                 "manually to suppress this warning.",
                 UserWarning,
             )
-            k = P.shape[0]
+            k = P.shape[..., 0, :]
             init_dist = pm.Categorical.dist(p=pt.full((k,), 1 / k), shape=batch_size)
 
         # We can ignore init_dist, as it will be accounted for in the logp term
