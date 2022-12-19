@@ -29,6 +29,23 @@ class TestDiscreteMarkovRV:
         with pytest.warns(UserWarning):
             DiscreteMarkovChain.dist(P=P, steps=3)
 
+    def test_logp_shape(self):
+        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+
+        # Test with steps
+        chain = DiscreteMarkovChain.dist(P=P, steps=3)
+        draws = pm.draw(chain, 5)
+        logp = pm.logp(chain, draws).eval()
+
+        assert logp.shape == (5,)
+
+        # Test with shape
+        chain = DiscreteMarkovChain.dist(P=P, shape=(3,))
+        draws = pm.draw(chain, 5)
+        logp = pm.logp(chain, draws).eval()
+
+        assert logp.shape == (5,)
+
     def test_logp_with_default_init_dist(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
         chain = DiscreteMarkovChain.dist(P=P, steps=3)
@@ -47,8 +64,10 @@ class TestDiscreteMarkovRV:
     def test_define_steps_via_shape_arg(self):
         P = pt.full((3, 3), 1 / 3)
         chain = DiscreteMarkovChain.dist(P=P, shape=(3,))
+        assert chain.eval().shape == (3,)
 
-        assert chain.eval().shape[-1] == 3
+        chain = DiscreteMarkovChain.dist(P=P, shape=(3, 2))
+        assert chain.eval().shape == (3, 2)
 
     def test_define_steps_via_dim_arg(self):
         coords = {"steps": [1, 2, 3]}
@@ -57,7 +76,7 @@ class TestDiscreteMarkovRV:
             P = pt.full((3, 3), 1 / 3)
             chain = DiscreteMarkovChain("chain", P=P, dims=["steps"])
 
-        assert chain.eval().shape[-1] == 3
+        assert chain.eval().shape == (3,)
 
     def test_dims_when_steps_are_defined(self):
         coords = {"steps": [1, 2, 3, 4]}
@@ -66,7 +85,7 @@ class TestDiscreteMarkovRV:
             P = pt.full((3, 3), 1 / 3)
             chain = DiscreteMarkovChain("chain", P=P, steps=3, dims=["steps"])
 
-        assert chain.eval().shape == (1, 4)
+        assert chain.eval().shape == (4,)
 
     def test_multiple_dims_with_steps(self):
         coords = {"steps": [1, 2, 3], "mc_chains": [1, 2, 3]}

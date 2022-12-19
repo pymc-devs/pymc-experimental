@@ -88,13 +88,9 @@ class DiscreteMarkovChain(Distribution):
     @classmethod
     def dist(cls, P=None, logit_P=None, steps=None, init_dist=None, **kwargs):
 
-        shape = kwargs.get("shape", None)
-
-        steps = get_support_shape_1d(support_shape=steps, shape=shape, support_shape_offset=1)
-
-        batch_size = None
-        if shape is not None:
-            batch_size = shape[1:] if shape[0] == steps else shape
+        steps = get_support_shape_1d(
+            support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=1
+        )
 
         if steps is None:
             raise ValueError("Must specify steps or shape parameter")
@@ -130,7 +126,7 @@ class DiscreteMarkovChain(Distribution):
                 "manually to suppress this warning.",
                 UserWarning,
             )
-            k = P.shape[..., 0]
+            k = P.shape[-1]
             init_dist = pm.Categorical.dist(p=pt.full((k,), 1 / k))
 
         # We can ignore init_dist, as it will be accounted for in the logp term
@@ -139,8 +135,13 @@ class DiscreteMarkovChain(Distribution):
         return super().dist([P, steps, init_dist], **kwargs)
 
     @classmethod
-    def rv_op(cls, P, steps, init_dist, size=None):
-        batch_size = size or (1,)
+    def rv_op(cls, P, steps, init_dist, n_lags=1, size=None):
+        if size is not None:
+            batch_size = size
+        else:
+            batch_size = pt.broadcast_shape(
+                P[tuple([...] + [0] * (n_lags + 1))], pt.atleast_1d(init_dist)[..., 0]
+            )
         init_dist = change_dist_size(init_dist, batch_size)
 
         init_dist_ = init_dist.type()
@@ -149,15 +150,16 @@ class DiscreteMarkovChain(Distribution):
 
         state_rng = pytensor.shared(np.random.default_rng())
 
-        def transition(previous_state, transition_probs, old_rng):
-            p = transition_probs[previous_state]
+        def transition(*args):
+            *states, transition_probs, old_rng = args
+            p = transition_probs[tuple(states)]
             next_rng, next_state = pm.Categorical.dist(p=p, rng=old_rng).owner.outputs
             return next_state, {old_rng: next_rng}
 
         markov_chain, state_updates = pytensor.scan(
             transition,
             non_sequences=[P_, state_rng],
-            outputs_info=[init_dist_],
+            outputs_info=[{"initial": init_dist_, "taps": list(range(-n_lags, 0))}],
             n_steps=steps_,
         )
 
@@ -191,8 +193,7 @@ def change_mc_size(op, dist, new_size, expand=False):
 
 @_logprob.register(DiscreteMarkovChainRV)
 def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
-    (value,) = values
-
+    value = pt.atleast_1d(values[0])
     mc_logprob = logp(init_dist, value[..., 0])
     mc_logprob += pt.log(P[value[..., :-1], value[..., 1:]]).sum(axis=-1)
 
