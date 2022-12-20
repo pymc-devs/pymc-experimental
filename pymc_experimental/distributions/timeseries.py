@@ -163,16 +163,18 @@ class DiscreteMarkovChain(Distribution):
         markov_chain, state_updates = pytensor.scan(
             transition,
             non_sequences=[P_, state_rng],
-            outputs_info=[{"initial": init_dist_, "taps": list(range(-n_lags, 0))}],
+            # If n_lags = 1, we need to throw away the first dimension of init_dist_ or else
+            # markov_chain will have shape (steps, 1, *batch_size) instead of desired (steps, *batch_size)
+            outputs_info=[{"initial": init_dist_, "taps": list(range(-n_lags, 0))}]
+            if n_lags > 1
+            else [init_dist_[0]],
             n_steps=steps_,
             strict=True,
         )
 
         (state_next_rng,) = tuple(state_updates.values())
 
-        discrete_mc_ = pt.moveaxis(
-            pt.concatenate([init_dist_, markov_chain.squeeze()], axis=0), 0, -1
-        )
+        discrete_mc_ = pt.moveaxis(pt.concatenate([init_dist_, markov_chain], axis=0), 0, -1)
 
         discrete_mc_op = DiscreteMarkovChainRV(
             inputs=[P_, steps_, init_dist_],
