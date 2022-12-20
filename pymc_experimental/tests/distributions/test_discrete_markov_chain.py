@@ -10,6 +10,30 @@ from pymc.logprob.utils import ParameterValueError
 from pymc_experimental.distributions.timeseries import DiscreteMarkovChain
 
 
+def transition_probabiility_tests(steps, n_states, n_lags, n_draws, atol):
+    P = np.full((n_states,) * (n_lags + 1), 1 / n_states)
+    chain = DiscreteMarkovChain.dist(P=pt.as_tensor_variable(P), steps=steps, n_lags=n_lags)
+
+    draws = pm.draw(chain, n_draws)
+
+    # Test x0 is uniform over n_states
+    for i in range(n_lags):
+        assert np.allclose(
+            np.histogram(draws[:, ..., i], bins=n_states)[0] / n_draws, 1 / n_states, atol=atol
+        )
+
+    n_grams = [[tuple(row[i : i + n_lags + 1]) for i in range(len(row) - n_lags)] for row in draws]
+    freq_table = np.zeros((n_states,) * (n_lags + 1))
+
+    for row in n_grams:
+        for ngram in row:
+            freq_table[ngram] += 1
+    freq_table /= freq_table.sum(axis=-1)[:, None]
+
+    # Test continuation probabilities match P
+    assert np.allclose(P, freq_table, atol=atol)
+
+
 class TestDiscreteMarkovRV:
     def test_fail_if_P_not_square(self):
         P = pt.eye(3, 2)
@@ -109,30 +133,8 @@ class TestDiscreteMarkovRV:
         assert chain.eval().shape == (3, 3)
 
     def test_random_draws(self):
-        steps = 3
-        n_states = 2
-        n_draws = 2500
-        atol = 0.05
-
-        P = np.full((n_states, n_states), 1 / n_states)
-        chain = DiscreteMarkovChain.dist(P=pt.as_tensor_variable(P), steps=steps)
-
-        draws = pm.draw(chain, n_draws)
-
-        # Test x0 is uniform over n_states
-        assert np.allclose(
-            np.histogram(draws[:, ..., 0], bins=n_states)[0] / n_draws, 1 / n_states, atol=atol
-        )
-
-        bigrams = [(chain[..., i], chain[..., i + 1]) for chain in draws for i in range(1, steps)]
-        freq_table = np.zeros((n_states, n_states))
-        for bigram in bigrams:
-            i, j = bigram
-            freq_table[i, j] += 1
-        freq_table /= freq_table.sum(axis=1)[:, None]
-
-        # Test continuation probabilities match P
-        assert np.allclose(P, freq_table, atol=atol)
+        transition_probabiility_tests(steps=3, n_states=2, n_lags=1, n_draws=2500, atol=0.05)
+        transition_probabiility_tests(steps=3, n_states=2, n_lags=3, n_draws=7500, atol=0.05)
 
     def test_change_size_univariate(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
