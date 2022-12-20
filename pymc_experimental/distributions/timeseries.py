@@ -210,8 +210,8 @@ def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
         mc_logprob,
         pt.all(pt.eq(P.shape[-(n_lags + 1) :], P.shape[-1])),
         pt.all(pt.allclose(P.sum(axis=-1), 1.0)),
-        pt.eq(pt.atleast_1d(init_dist).shape[-1], n_lags),
+        pt.eq(pt.atleast_1d(init_dist).shape[0], n_lags),
         msg="Last (n_lags + 1) dimensions of P must be square, "
-        "P must sum to 1 along the last axis"
-        "Last dimension of init_dist must be n_lags",
+        "P must sum to 1 along the last axis, "
+        "First dimension of init_dist must be n_lags",
     )
