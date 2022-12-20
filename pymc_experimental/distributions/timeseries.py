@@ -21,8 +21,13 @@ from pytensor.tensor.random.op import RandomVariable
 
 
 class DiscreteMarkovChainRV(SymbolicRandomVariable):
+    n_lags: int
     default_output = 1
     _print_name = ("DiscreteMC", "\\operatorname{DiscreteMC}")
+
+    def __init__(self, *args, n_lags, **kwargs):
+        self.n_lags = n_lags
+        super().__init__(*args, **kwargs)
 
     def update(self, node: Node):
         return {node.inputs[-1]: node.outputs[0]}
@@ -71,22 +76,20 @@ class DiscreteMarkovChain(Distribution):
 
     rv_type = DiscreteMarkovChainRV
 
-    def __new__(cls, *args, steps=None, initval="prior", **kwargs):
-        # Subtract 1 step to account for x0 given, better match user expectation of
-        # len(markov_chain) = steps
+    def __new__(cls, *args, steps=None, n_lags=1, initval="prior", **kwargs):
 
         steps = get_support_shape_1d(
             support_shape=steps,
             shape=None,
             dims=kwargs.get("dims", None),
             observed=kwargs.get("observed", None),
-            support_shape_offset=1,
+            support_shape_offset=n_lags,
         )
 
-        return super().__new__(cls, *args, steps=steps, **kwargs)
+        return super().__new__(cls, *args, steps=steps, n_lags=n_lags, **kwargs)
 
     @classmethod
-    def dist(cls, P=None, logit_P=None, steps=None, init_dist=None, **kwargs):
+    def dist(cls, P=None, logit_P=None, steps=None, init_dist=None, n_lags=1, **kwargs):
 
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=1
@@ -100,7 +103,7 @@ class DiscreteMarkovChain(Distribution):
             raise ValueError("Must specify only one of either P or logit_P parameter")
 
         if logit_P is not None:
-            P = pm.math.softmax(logit_P, axis=1)
+            P = pm.math.softmax(logit_P, axis=-1)
 
         P = pt.as_tensor_variable(P)
         steps = pt.as_tensor_variable(intX(steps))
@@ -132,17 +135,18 @@ class DiscreteMarkovChain(Distribution):
         # We can ignore init_dist, as it will be accounted for in the logp term
         init_dist = ignore_logprob(init_dist)
 
-        return super().dist([P, steps, init_dist], **kwargs)
+        return super().dist([P, steps, init_dist], n_lags=n_lags, **kwargs)
 
     @classmethod
-    def rv_op(cls, P, steps, init_dist, n_lags=1, size=None):
+    def rv_op(cls, P, steps, init_dist, n_lags, size=None):
         if size is not None:
             batch_size = size
         else:
             batch_size = pt.broadcast_shape(
                 P[tuple([...] + [0] * (n_lags + 1))], pt.atleast_1d(init_dist)[..., 0]
             )
-        init_dist = change_dist_size(init_dist, batch_size)
+
+        init_dist = change_dist_size(init_dist, (n_lags, *batch_size))
 
         init_dist_ = init_dist.type()
         P_ = P.type()
@@ -161,18 +165,20 @@ class DiscreteMarkovChain(Distribution):
             non_sequences=[P_, state_rng],
             outputs_info=[{"initial": init_dist_, "taps": list(range(-n_lags, 0))}],
             n_steps=steps_,
+            strict=True,
         )
 
         (state_next_rng,) = tuple(state_updates.values())
 
         discrete_mc_ = pt.moveaxis(
-            pt.concatenate([init_dist_[None, ...], markov_chain], axis=0), 0, -1
+            pt.concatenate([init_dist_, markov_chain.squeeze()], axis=0), 0, -1
         )
 
         discrete_mc_op = DiscreteMarkovChainRV(
             inputs=[P_, steps_, init_dist_],
             outputs=[state_next_rng, discrete_mc_],
             ndim_supp=1,
+            n_lags=n_lags,
         )
 
         discrete_mc = discrete_mc_op(P, steps, init_dist)
@@ -185,21 +191,25 @@ def change_mc_size(op, dist, new_size, expand=False):
         old_size = dist.shape[:-1]
         new_size = tuple(new_size) + tuple(old_size)
 
-    return DiscreteMarkovChain.rv_op(
-        *dist.owner.inputs[:-1],
-        size=new_size,
-    )
+    return DiscreteMarkovChain.rv_op(*dist.owner.inputs[:-1], size=new_size, n_lags=op.n_lags)
 
 
 @_logprob.register(DiscreteMarkovChainRV)
 def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
-    value = pt.atleast_1d(values[0])
-    mc_logprob = logp(init_dist, value[..., 0])
-    mc_logprob += pt.log(P[value[..., :-1], value[..., 1:]]).sum(axis=-1)
+    value = values[0]
+    n_lags = op.n_lags
+
+    indexes = [value[..., i : -(n_lags - i) if n_lags != i else None] for i in range(n_lags + 1)]
+
+    mc_logprob = logp(init_dist, value[..., :n_lags]).sum(axis=-1)
+    mc_logprob += pt.log(P[tuple(indexes)]).sum(axis=-1)
 
     return check_parameters(
         mc_logprob,
-        pt.all(pt.eq(P.shape, P.shape[0])),
-        pt.all(pt.allclose(P.sum(axis=1), 1.0)),
-        msg="P must be square with rows that sum to 1",
+        pt.all(pt.eq(P.shape[-(n_lags + 1) :], P.shape[-1])),
+        pt.all(pt.allclose(P.sum(axis=-1), 1.0)),
+        pt.eq(pt.atleast_1d(init_dist).shape[-1], n_lags),
+        msg="Last (n_lags + 1) dimensions of P must be square, "
+        "P must sum to 1 along the last axis"
+        "Last dimension of init_dist must be n_lags",
     )
