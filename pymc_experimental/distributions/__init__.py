@@ -18,7 +18,10 @@ Experimental probability distributions for stochastic nodes in PyMC.
 """
 
 from pymc_experimental.distributions.continuous import GenExtreme
+from pymc_experimental.distributions.timeseries import kalman_filter_onestep
+
 
 __all__ = [
     "GenExtreme",
+    "kalman_filter_onestep",
 ]
