@@ -186,8 +186,12 @@ class ModelBuilder(pm.Model):
 
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
-        self = cls(dict(zip(idata.attrs['model_config_keys'],idata.attrs['model_config_values'])), dict(zip(idata.attrs['sample_config_keys'],idata.attrs['sample_config_values'])), idata.data)
-        self.idata=idata
+        self = cls(
+            dict(zip(idata.attrs["model_config_keys"], idata.attrs["model_config_values"])),
+            dict(zip(idata.attrs["sample_config_keys"], idata.attrs["sample_config_values"])),
+            idata.data,
+        )
+        self.idata = idata
         if self.id() != idata.attrs["id"]:
             raise ValueError(
                 f"The route '{fname}' does not contain an inference data of the same model '{self._model_type}'"
@@ -236,7 +240,7 @@ class ModelBuilder(pm.Model):
         self.idata.attrs["sample_config_values"] = tuple(self.sample_config.values())
         self.idata.attrs["model_config_keys"] = tuple(self.model_config.keys())
         self.idata.attrs["model_config_values"] = tuple(self.model_config.values())
-        self.idata.add_groups(data = self.data.to_xarray())
+        self.idata.add_groups(data=self.data.to_xarray())
         return self.idata
 
     def predict(
