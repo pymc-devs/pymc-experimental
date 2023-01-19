@@ -158,7 +158,7 @@ class ModelBuilder(pm.Model):
         self.idata.to_netcdf(file)
 
     @classmethod
-    def load(cls, self, fname):
+    def load(cls, fname):
         """
         Loads inference data for the model.
 
@@ -185,16 +185,13 @@ class ModelBuilder(pm.Model):
         """
 
         filepath = Path(str(fname))
-        data = az.from_netcdf(filepath)
-        idata = data
-        if idata.attrs is not None:
-            if self.id() == idata.attrs["id"]:
-                self = cls(idata.attrs["sample_config"], idata.attrs["model_config"])
-                self.idata = idata
-            else:
-                raise ValueError(
-                    f"The route '{file}' does not contain an inference data of the same model '{self.__name__}'"
-                )
+        idata = az.from_netcdf(filepath)
+        self = cls(dict(zip(idata.attrs['model_config_keys'],idata.attrs['model_config_values'])), dict(zip(idata.attrs['sample_config_keys'],idata.attrs['sample_config_values'])), idata.data)
+        self.idata=idata
+        if self.id() != idata.attrs["id"]:
+            raise ValueError(
+                f"The route '{fname}' does not contain an inference data of the same model '{self._model_type}'"
+            )
         return self
 
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
@@ -235,8 +232,11 @@ class ModelBuilder(pm.Model):
         self.idata.attrs["id"] = self.id()
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
-        self.idata.attrs["sample_config"] = tuple(self.sample_config)
-        self.idata.attrs["model_config"] = tuple(self.model_config)
+        self.idata.attrs["sample_config_keys"] = tuple(self.sample_config.keys())
+        self.idata.attrs["sample_config_values"] = tuple(self.sample_config.values())
+        self.idata.attrs["model_config_keys"] = tuple(self.model_config.keys())
+        self.idata.attrs["model_config_values"] = tuple(self.model_config.values())
+        self.idata.add_groups(data = self.data.to_xarray())
         return self.idata
 
     def predict(
@@ -352,5 +352,5 @@ class ModelBuilder(pm.Model):
         hasher.update(str(self.model_config.values()).encode())
         hasher.update(self.version.encode())
         hasher.update(self._model_type.encode())
-        hasher.update(str(self.sample_config.values()).encode())
+        # hasher.update(str(self.sample_config.values()).encode())
         return hasher.hexdigest()[:16]
