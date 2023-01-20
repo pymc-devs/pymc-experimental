@@ -240,7 +240,7 @@ class ModelBuilder(pm.Model):
         self.idata.attrs["sample_config_values"] = tuple(self.sample_config.values())
         self.idata.attrs["model_config_keys"] = tuple(self.model_config.keys())
         self.idata.attrs["model_config_values"] = tuple(self.model_config.values())
-        self.idata.add_groups(data=self.data.to_xarray())
+        self.idata.add_groups(constant_data=self.data.to_xarray())
         return self.idata
 
     def predict(
