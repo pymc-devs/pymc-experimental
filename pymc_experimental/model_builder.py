@@ -194,7 +194,7 @@ class ModelBuilder(pm.Model):
         self.idata = idata
         if self.id() != idata.attrs["id"]:
             raise ValueError(
-                f"The route '{fname}' does not contain an inference data of the same model '{self._model_type}'"
+                f"The file '{fname}' does not contain an inference data of the same model or configuration as '{self._model_type}'"
             )
         return self
 
