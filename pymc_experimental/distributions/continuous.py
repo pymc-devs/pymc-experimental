@@ -60,7 +60,7 @@ gev = GenExtremeRV()
 
 class GenExtreme(Continuous):
     r"""
-        Univariate Generalized Extreme Value log-likelihood
+    Univariate Generalized Extreme Value log-likelihood
 
     The cdf of this distribution is
 
