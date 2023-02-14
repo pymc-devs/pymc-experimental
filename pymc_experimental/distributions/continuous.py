@@ -119,13 +119,13 @@ class GenExtreme(Continuous):
 
     Parameters
     ----------
-    mu: float
+    mu : float
         Location parameter.
-    sigma: float
+    sigma : float
         Scale parameter (sigma > 0).
-    xi: float
+    xi : float
         Shape parameter
-    scipy: bool
+    scipy : bool
         Whether or not to use the Scipy interpretation of the shape parameter
         (defaults to `False`).
 

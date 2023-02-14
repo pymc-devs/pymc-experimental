@@ -4,51 +4,51 @@ API Reference
 This reference provides detailed documentation for all modules, classes, and
 methods in the current release of PyMC experimental.
 
+.. currentmodule:: pymc_experimental
+.. autosummary::
+   :toctree: generated/
 
-.. toctree::
-  :maxdepth: 2
+   marginal_model.MarginalModel
+   model_builder.ModelBuilder
 
+Inference
+=========
 
-:mod:`pymc_experimental`
-=============================
+.. currentmodule:: pymc_experimental.inference
+.. autosummary::
+   :toctree: generated/
 
-.. automodule:: pymc_experimental.marginal_model
-   :members: MarginalModel
-
-.. automodule:: pymc_experimental.model_builder
-   :members: ModelBuilder
-
-
-:mod:`pymc_experimental.inference`
-=============================
-
-.. automodule:: pymc_experimental.inference.fit
-   :members: fit
+   fit
 
 
-:mod:`pymc_experimental.distributions`
-=============================
+Distributions
+=============
 
-.. automodule:: pymc_experimental.distributions.continuous
-   :members: GenExtreme
+.. currentmodule:: pymc_experimental.distributions
+.. autosummary::
+   :toctree: generated/
 
-.. automodule:: pymc_experimental.distributions.histogram_utils
-   :members: histogram_approximation
-
-
-:mod:`pymc_experimental.gp`
-=============================
-
-.. automodule:: pymc_experimental.gp.latent_approx
-   :members: HSGP
+   GenExtreme
+   histogram_utils.histogram_approximation
 
 
-:mod:`pymc_experimental.utils`
-=============================
+Gaussian Processess
+===================
 
-.. automodule:: pymc_experimental.utils.spline
-   :members: bspline_interpolation
+.. currentmodule:: pymc_experimental.gp
+.. autosummary::
+   :toctree: generated/
 
-.. automodule:: pymc_experimental.utils.prior
-   :members: prior_from_idata
+   latent_approx.HSGP
+
+
+Utils
+=====
+
+.. currentmodule:: pymc_experimental.utils
+.. autosummary::
+   :toctree: generated/
+
+   spline.bspline_interpolation
+   prior.prior_from_idata
 
