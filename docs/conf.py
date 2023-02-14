@@ -99,7 +99,7 @@ pygments_style = "sphinx"
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "pydata_sphinx_theme"
+html_theme = "pymc_sphinx_theme"
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -112,14 +112,17 @@ html_theme_options = {
     "show_toc_level": 2,
     "navigation_depth": 4,
     "search_bar_text": "Search the docs...",
-    "icon_links": [
-        {
-            "name": "GitHub",
-            "url": "https://github.com/pymc-devs/pymc-experimental",
-            "icon": "fab fa-github-square",
-        },
-    ],
+    "use_search_override": False,
+    "logo": {"text": project},
 }
+html_context = {
+    "github_user": "pymc-devs",
+    "github_repo": "pymc-experimental",
+    "github_version": "main",
+    "doc_path": "docs",
+    "default_mode": "light",
+}
+
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
