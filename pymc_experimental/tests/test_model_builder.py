@@ -95,7 +95,7 @@ def test_fit():
     assert "y_model" in post_pred.keys()
 
 
-@pytest.mark.xfail(
+@pytest.mark.skipif(
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
 def test_save_load():
