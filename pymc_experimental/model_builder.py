@@ -1,4 +1,4 @@
-#   Copyright 2022 The PyMC Developers
+#   Copyright 2023 The PyMC Developers
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -189,13 +189,14 @@ class ModelBuilder(pm.Model):
         self = cls(
             dict(zip(idata.attrs["model_config_keys"], idata.attrs["model_config_values"])),
             dict(zip(idata.attrs["sample_config_keys"], idata.attrs["sample_config_values"])),
-            idata.data,
+            idata.fit_data.to_dataframe(),
         )
         self.idata = idata
         if self.id() != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{self._model_type}'"
             )
+
         return self
 
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
@@ -307,7 +308,7 @@ class ModelBuilder(pm.Model):
         >>> model = LinearModel(model_config, sampler_config)
         >>> idata = model.fit(data)
         >>> x_pred = []
-        >>> prediction_data = pd.DataFrame({'input':x_pred})
+        >>> prediction_data = pd.DataFrame({'input': x_pred})
         # samples
         >>> pred_mean = model.predict_posterior(prediction_data)
         """
