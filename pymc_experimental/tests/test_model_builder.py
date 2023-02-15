@@ -110,4 +110,4 @@ def test_save_load():
         assert pred1["y_model"].shape == pred2["y_model"].shape
     finally:
         temp.close()
-        os.unlink(file.name)
+        os.unlink(temp.name)
