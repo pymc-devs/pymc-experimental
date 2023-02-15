@@ -12,14 +12,12 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-
-import sys
+import os
 import tempfile
 
 import numpy as np
 import pandas as pd
 import pymc as pm
-import pytest
 
 from pymc_experimental.model_builder import ModelBuilder
 
@@ -95,21 +93,21 @@ def test_fit():
     assert "y_model" in post_pred.keys()
 
 
-@pytest.mark.xfail(
-    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
-)
 def test_save_load():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model = test_ModelBuilder(model_config, sampler_config, data)
-    temp = tempfile.TemporaryFile()
     model.fit()
-    model.save(temp.name)
-    model2 = test_ModelBuilder.load(temp.name)
-    assert model.idata.groups() == model2.idata.groups()
+    temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
+    try:
+        model.save(temp.name)
+        model2 = test_ModelBuilder.load(temp.name)
+        assert model.idata.groups() == model2.idata.groups()
 
-    x_pred = np.random.uniform(low=0, high=1, size=100)
-    prediction_data = pd.DataFrame({"input": x_pred})
-    pred1 = model.predict(prediction_data)
-    pred2 = model2.predict(prediction_data)
-    assert pred1["y_model"].shape == pred2["y_model"].shape
-    temp.close()
+        x_pred = np.random.uniform(low=0, high=1, size=100)
+        prediction_data = pd.DataFrame({"input": x_pred})
+        pred1 = model.predict(prediction_data)
+        pred2 = model2.predict(prediction_data)
+        assert pred1["y_model"].shape == pred2["y_model"].shape
+    finally:
+        temp.close()
+        os.unlink(file.name)
