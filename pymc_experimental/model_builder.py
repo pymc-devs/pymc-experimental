@@ -1,4 +1,4 @@
-#   Copyright 2022 The PyMC Developers
+#   Copyright 2023 The PyMC Developers
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -185,20 +185,19 @@ class ModelBuilder(pm.Model):
         """
 
         filepath = Path(str(fname))
-        data = az.from_netcdf(filepath)
-        idata = data
-        # Since there is an issue with attrs getting saved in netcdf format which will be fixed in future the following part of code is commented
-        # Link of issue -> https://github.com/arviz-devs/arviz/issues/2109
-        # if model.idata.attrs is not None:
-        #     if model.idata.attrs['id'] == self.idata.attrs['id']:
-        #         self = model
-        #         self.idata = data
-        #         return self
-        #     else:
-        #         raise ValueError(
-        #             f"The route '{file}' does not contain an inference data of the same model '{self.__name__}'"
-        #         )
-        return idata
+        idata = az.from_netcdf(filepath)
+        self = cls(
+            dict(zip(idata.attrs["model_config_keys"], idata.attrs["model_config_values"])),
+            dict(zip(idata.attrs["sample_config_keys"], idata.attrs["sample_config_values"])),
+            idata.fit_data.to_dataframe(),
+        )
+        self.idata = idata
+        if self.id() != idata.attrs["id"]:
+            raise ValueError(
+                f"The file '{fname}' does not contain an inference data of the same model or configuration as '{self._model_type}'"
+            )
+
+        return self
 
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
         """
@@ -238,8 +237,11 @@ class ModelBuilder(pm.Model):
         self.idata.attrs["id"] = self.id()
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
-        self.idata.attrs["sample_conifg"] = self.sample_config
-        self.idata.attrs["model_config"] = self.model_config
+        self.idata.attrs["sample_config_keys"] = tuple(self.sample_config.keys())
+        self.idata.attrs["sample_config_values"] = tuple(self.sample_config.values())
+        self.idata.attrs["model_config_keys"] = tuple(self.model_config.keys())
+        self.idata.attrs["model_config_values"] = tuple(self.model_config.values())
+        self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
     def predict(
@@ -306,7 +308,7 @@ class ModelBuilder(pm.Model):
         >>> model = LinearModel(model_config, sampler_config)
         >>> idata = model.fit(data)
         >>> x_pred = []
-        >>> prediction_data = pd.DataFrame({'input':x_pred})
+        >>> prediction_data = pd.DataFrame({'input': x_pred})
         # samples
         >>> pred_mean = model.predict_posterior(prediction_data)
         """
@@ -355,5 +357,5 @@ class ModelBuilder(pm.Model):
         hasher.update(str(self.model_config.values()).encode())
         hasher.update(self.version.encode())
         hasher.update(self._model_type.encode())
-        hasher.update(str(self.sample_config.values()).encode())
+        # hasher.update(str(self.sample_config.values()).encode())
         return hasher.hexdigest()[:16]
