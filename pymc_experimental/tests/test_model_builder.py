@@ -13,11 +13,13 @@
 #   limitations under the License.
 
 
+import sys
 import tempfile
 
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytest
 
 from pymc_experimental.model_builder import ModelBuilder
 
@@ -93,6 +95,9 @@ def test_fit():
     assert "y_model" in post_pred.keys()
 
 
+@pytest.mark.xfail(
+    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
+)
 def test_save_load():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model = test_ModelBuilder(model_config, sampler_config, data)
