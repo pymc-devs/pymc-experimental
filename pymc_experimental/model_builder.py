@@ -192,7 +192,7 @@ class ModelBuilder(pm.Model):
             idata.fit_data.to_dataframe(),
         )
         self.idata = idata
-        if self.id() != idata.attrs["id"]:
+        if self.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{self._model_type}'"
             )
@@ -234,7 +234,7 @@ class ModelBuilder(pm.Model):
             self.idata.extend(pm.sample_prior_predictive())
             self.idata.extend(pm.sample_posterior_predictive(self.idata))
 
-        self.idata.attrs["id"] = self.id()
+        self.idata.attrs["id"] = self.id
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
         self.idata.attrs["sample_config_keys"] = tuple(self.sample_config.keys())
@@ -344,7 +344,8 @@ class ModelBuilder(pm.Model):
 
         return post_pred_dict
 
-    def id(self):
+    @property
+    def id(self) -> str:
         """
         It creates a hash value to match the model version using last 16 characters of hash encoding.
 
