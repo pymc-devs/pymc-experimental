@@ -41,5 +41,8 @@ Utils
 .. autosummary::
    :toctree: generated/
 
+   clone_model
    spline.bspline_interpolation
    prior.prior_from_idata
+   model_fgraph.fgraph_from_model
+   model_fgraph.model_from_fgraph
