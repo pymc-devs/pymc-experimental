@@ -15,5 +15,11 @@
 
 from pymc_experimental.utils import prior, spline
 from pymc_experimental.utils.linear_cg import linear_cg
+from pymc_experimental.utils.model_fgraph import clone_model
 
-# from pymc_experimental.utils.pivoted_cholesky import pivoted_cholesky
+__all__ = (
+    "clone_model",
+    "linear_cg",
+    "prior",
+    "spline",
+)
