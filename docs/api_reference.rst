@@ -51,4 +51,3 @@ Utils
 
    spline.bspline_interpolation
    prior.prior_from_idata
-
