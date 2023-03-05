@@ -13,6 +13,7 @@
 #   limitations under the License.
 
 
+import hashlib
 import sys
 import tempfile
 
@@ -79,14 +80,19 @@ class test_ModelBuilder(ModelBuilder):
 
         return data, model_config, sampler_config
 
+    @staticmethod
+    def initial_build_and_fit(check_idata=True):
+        data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+        model = test_ModelBuilder(model_config, sampler_config, data)
+        model.fit()
+        if check_idata:
+            assert model.idata is not None
+            assert "posterior" in model.idata.groups()
+        return model
+
 
 def test_fit():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config, data)
-    model.fit()
-    assert model.idata is not None
-    assert "posterior" in model.idata.groups()
-
+    model = test_ModelBuilder.initial_build_and_fit()
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = model.predict(prediction_data)
@@ -99,9 +105,7 @@ def test_fit():
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
 def test_save_load():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config, data)
-    model.fit()
+    model = test_ModelBuilder.initial_build_and_fit(False)
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
     model.save(temp.name)
     model2 = test_ModelBuilder.load(temp.name)
@@ -113,3 +117,56 @@ def test_save_load():
     pred2 = model2.predict(prediction_data)
     assert pred1["y_model"].shape == pred2["y_model"].shape
     temp.close()
+
+
+def test_predict():
+    model = test_ModelBuilder.initial_build_and_fit()
+    x_pred = np.random.uniform(low=0, high=1, size=100)
+    prediction_data = pd.DataFrame({"input": x_pred})
+    pred = model.predict(prediction_data)
+    assert "y_model" in pred
+    assert isinstance(pred, dict)
+    assert len(prediction_data.input.values) == len(pred["y_model"])
+    assert isinstance(pred["y_model"][0], float)
+
+
+def test_predict_posterior():
+    model = test_ModelBuilder.initial_build_and_fit()
+    x_pred = np.random.uniform(low=0, high=1, size=100)
+    prediction_data = pd.DataFrame({"input": x_pred})
+    pred = model.predict_posterior(prediction_data)
+    assert "y_model" in pred
+    assert isinstance(pred, dict)
+    assert len(prediction_data.input.values) == len(pred["y_model"][0])
+    assert isinstance(pred["y_model"][0], np.ndarray)
+
+
+def test_extract_samples():
+    # create a fake InferenceData object
+    with pm.Model() as model:
+        x = pm.Normal("x", mu=0, sigma=1)
+        intercept = pm.Normal("intercept", mu=0, sigma=1)
+        y_model = pm.Normal("y_model", mu=x * intercept, sigma=1, observed=[0, 1, 2])
+
+        idata = pm.sample(1000, tune=1000)
+        post_pred = pm.sample_posterior_predictive(idata)
+
+    # call the function and get the output
+    samples_dict = test_ModelBuilder._extract_samples(post_pred)
+
+    # assert that the keys and values are correct
+    assert len(samples_dict) == len(post_pred.posterior_predictive)
+    for key in post_pred.posterior_predictive:
+        expected_value = post_pred.posterior_predictive[key].to_numpy()[0]
+        assert np.array_equal(samples_dict[key], expected_value)
+
+
+def test_id():
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    model = test_ModelBuilder(model_config, sampler_config, data)
+
+    expected_id = hashlib.sha256(
+        str(model_config.values()).encode() + model.version.encode() + model._model_type.encode()
+    ).hexdigest()[:16]
+
+    assert model.id == expected_id
