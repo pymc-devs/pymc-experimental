@@ -116,6 +116,19 @@ def test_save_load():
     temp.close()
 
 
+def test_predict():
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    model = test_ModelBuilder(model_config, sampler_config, data)
+    model.fit()
+    x_pred = np.random.uniform(low=0, high=1, size=100)
+    prediction_data = pd.DataFrame({"input": x_pred})
+    pred = model.predict(prediction_data)
+    assert "y_model" in pred
+    assert isinstance(pred, dict)
+    assert len(prediction_data.input.values) == len(pred["y_model"])
+    assert isinstance(pred["y_model"][0], float)
+
+
 def test_id():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model = test_ModelBuilder(model_config, sampler_config, data)
