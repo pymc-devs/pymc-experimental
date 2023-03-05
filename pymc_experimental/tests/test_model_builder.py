@@ -80,14 +80,19 @@ class test_ModelBuilder(ModelBuilder):
 
         return data, model_config, sampler_config
 
+    @staticmethod
+    def initial_build_and_fit(check_idata=True):
+        data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+        model = test_ModelBuilder(model_config, sampler_config, data)
+        model.fit()
+        if check_idata:
+            assert model.idata is not None
+            assert "posterior" in model.idata.groups()
+        return model
+
 
 def test_fit():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config, data)
-    model.fit()
-    assert model.idata is not None
-    assert "posterior" in model.idata.groups()
-
+    model = test_ModelBuilder.initial_build_and_fit()
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = model.predict(prediction_data)
@@ -100,9 +105,7 @@ def test_fit():
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
 def test_save_load():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config, data)
-    model.fit()
+    model = test_ModelBuilder.initial_build_and_fit(False)
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
     model.save(temp.name)
     model2 = test_ModelBuilder.load(temp.name)
@@ -117,9 +120,7 @@ def test_save_load():
 
 
 def test_predict():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config, data)
-    model.fit()
+    model = test_ModelBuilder.initial_build_and_fit()
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = model.predict(prediction_data)
@@ -130,9 +131,7 @@ def test_predict():
 
 
 def test_predict_posterior():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config, data)
-    model.fit()
+    model = test_ModelBuilder.initial_build_and_fit()
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = model.predict_posterior(prediction_data)
