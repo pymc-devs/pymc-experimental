@@ -115,14 +115,13 @@ def test_save_load():
     assert pred1["y_model"].shape == pred2["y_model"].shape
     temp.close()
 
+
 def test_id():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model = test_ModelBuilder(model_config, sampler_config, data)
-    
+
     expected_id = hashlib.sha256(
-        str(model_config.values()).encode() +
-        model.version.encode() +
-        model._model_type.encode()
+        str(model_config.values()).encode() + model.version.encode() + model._model_type.encode()
     ).hexdigest()[:16]
 
     assert model.id == expected_id
