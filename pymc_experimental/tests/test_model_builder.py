@@ -81,26 +81,6 @@ class test_ModelBuilder(ModelBuilder):
         return data, model_config, sampler_config
 
 
-def test_extract_samples():
-    # create a fake InferenceData object
-    with pm.Model() as model:
-        x = pm.Normal("x", mu=0, sigma=1)
-        intercept = pm.Normal("intercept", mu=0, sigma=1)
-        y_model = pm.Normal("y_model", mu=x * intercept, sigma=1, observed=[0, 1, 2])
-
-        idata = pm.sample(1000, tune=1000)
-        post_pred = pm.sample_posterior_predictive(idata)
-
-    # call the function and get the output
-    samples_dict = test_ModelBuilder._extract_samples(post_pred)
-
-    # assert that the keys and values are correct
-    assert len(samples_dict) == len(post_pred.posterior_predictive)
-    for key in post_pred.posterior_predictive:
-        expected_value = post_pred.posterior_predictive[key].to_numpy()[0]
-        assert np.array_equal(samples_dict[key], expected_value)
-
-
 def test_fit():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model = test_ModelBuilder(model_config, sampler_config, data)
@@ -153,6 +133,33 @@ def test_predict_posterior():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model = test_ModelBuilder(model_config, sampler_config, data)
     model.fit()
+    x_pred = np.random.uniform(low=0, high=1, size=100)
+    prediction_data = pd.DataFrame({"input": x_pred})
+    pred = model.predict_posterior(prediction_data)
+    assert "y_model" in pred
+    assert isinstance(pred, dict)
+    assert len(prediction_data.input.values) == len(pred["y_model"][0])
+    assert isinstance(pred["y_model"][0], np.ndarray)
+
+
+def test_extract_samples():
+    # create a fake InferenceData object
+    with pm.Model() as model:
+        x = pm.Normal("x", mu=0, sigma=1)
+        intercept = pm.Normal("intercept", mu=0, sigma=1)
+        y_model = pm.Normal("y_model", mu=x * intercept, sigma=1, observed=[0, 1, 2])
+
+        idata = pm.sample(1000, tune=1000)
+        post_pred = pm.sample_posterior_predictive(idata)
+
+    # call the function and get the output
+    samples_dict = test_ModelBuilder._extract_samples(post_pred)
+
+    # assert that the keys and values are correct
+    assert len(samples_dict) == len(post_pred.posterior_predictive)
+    for key in post_pred.posterior_predictive:
+        expected_value = post_pred.posterior_predictive[key].to_numpy()[0]
+        assert np.array_equal(samples_dict[key], expected_value)
 
 
 def test_id():
