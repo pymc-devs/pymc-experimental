@@ -63,7 +63,6 @@ class ModelBuilder(pm.Model):
         self.sample_config = sampler_config  # parameters for sampling
         self.idata = None  # inference data object
         self.data = data
-        self.build()
 
     def build(self):
         """
@@ -192,6 +191,7 @@ class ModelBuilder(pm.Model):
             idata.fit_data.to_dataframe(),
         )
         self.idata = idata
+        self.build()
         if self.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{self._model_type}'"
@@ -224,10 +224,8 @@ class ModelBuilder(pm.Model):
 
         if data is not None:
             self.data = data
-            self._data_setter(data)
-
-        if self.basic_RVs == []:
             self.build()
+            self._data_setter(data)
 
         with self:
             self.idata = pm.sample(**self.sample_config)

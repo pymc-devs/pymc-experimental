@@ -84,7 +84,7 @@ class test_ModelBuilder(ModelBuilder):
     def initial_build_and_fit(check_idata=True):
         data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
         model = test_ModelBuilder(model_config, sampler_config, data)
-        model.fit()
+        model.fit(data=data)
         if check_idata:
             assert model.idata is not None
             assert "posterior" in model.idata.groups()
