@@ -54,7 +54,5 @@ For example, `pymc-experimental` may just include methods that are not fully dev
 This project is still young and many things have not been answered or implemented.
 Please get involved!
 
-* What are guidlines for organizing submodules?
+* What are guidelines for organizing submodules?
   * Proposal: No default imports of WIP/unstable submodules. By importing manually we can avoid breaking the package if a submodule breaks, for example because of an updated dependency.
-* How can we minimize the additional burden of additional project repositories?
-* ToDo: Setting up a basic CI pipeline
