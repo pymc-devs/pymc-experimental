@@ -14,6 +14,7 @@
 
 
 import hashlib
+from abc import abstractmethod
 from pathlib import Path
 from typing import Dict, Union
 
@@ -23,7 +24,7 @@ import pandas as pd
 import pymc as pm
 
 
-class ModelBuilder(pm.Model):
+class ModelBuilder:
     """
     ModelBuilder can be used to provide an easy-to-use API (similar to scikit-learn) for models
     and help with deployment.
@@ -69,9 +70,9 @@ class ModelBuilder(pm.Model):
         Builds the defined model.
         """
 
-        with self:
-            self.build_model(self.model_config, self.data)
+        self.build_model(self.model_config, self.data)
 
+    @abstractmethod
     def _data_setter(
         self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]], x_only: bool = True
     ):
@@ -98,8 +99,10 @@ class ModelBuilder(pm.Model):
 
         raise NotImplementedError
 
-    @classmethod
-    def create_sample_input(cls):
+    # need a discussion if it's really needed.
+    @staticmethod
+    @abstractmethod
+    def create_sample_input():
         """
         Needs to be implemented by the user in the inherited class.
         Returns examples for data, model_config, sampler_config.
@@ -168,7 +171,7 @@ class ModelBuilder(pm.Model):
 
         Returns
         -------
-        Returns the inference data that is loaded from local system.
+        Returns an instance of pm.Model, that is loaded from local data.
 
         Raises
         ------
@@ -185,7 +188,8 @@ class ModelBuilder(pm.Model):
 
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
-        self = cls(
+        self = ModelBuilder(idata)
+        self.model = cls(
             dict(zip(idata.attrs["model_config_keys"], idata.attrs["model_config_values"])),
             dict(zip(idata.attrs["sample_config_keys"], idata.attrs["sample_config_values"])),
             idata.fit_data.to_dataframe(),
@@ -197,7 +201,7 @@ class ModelBuilder(pm.Model):
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{self._model_type}'"
             )
 
-        return self
+        return self.model
 
     def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
         """
@@ -227,7 +231,7 @@ class ModelBuilder(pm.Model):
             self.build()
             self._data_setter(data)
 
-        with self:
+        with self.model:
             self.idata = pm.sample(**self.sample_config)
             self.idata.extend(pm.sample_prior_predictive())
             self.idata.extend(pm.sample_posterior_predictive(self.idata))
