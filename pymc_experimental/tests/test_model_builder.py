@@ -19,6 +19,7 @@ import tempfile
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytest
 
 from pymc_experimental.model_builder import ModelBuilder
 
@@ -112,7 +113,6 @@ def test_fit():
     assert "y_model" in post_pred.keys()
 
 
-"""
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
@@ -120,7 +120,8 @@ def test_save_load():
     test_builder = test_ModelBuilder.initial_build_and_fit()
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
     test_builder.save(temp.name)
-    test_builder2 = test_ModelBuilder.load(temp.name)
+    test_builder2 = test_ModelBuilder.initial_build_and_fit()
+    test_builder2.model = test_ModelBuilder.load(temp.name)
     assert test_builder.idata.groups() == test_builder2.idata.groups()
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
@@ -182,4 +183,3 @@ def test_id():
     ).hexdigest()[:16]
 
     assert model.id == expected_id
-"""
