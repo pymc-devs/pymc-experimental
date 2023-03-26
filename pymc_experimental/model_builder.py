@@ -70,7 +70,7 @@ class ModelBuilder:
         Builds the defined model.
         """
 
-        self.build_model(self.model_config, self.data)
+        self.build_model(self, self.model_config, self.data)
 
     @abstractmethod
     def _data_setter(
@@ -188,8 +188,7 @@ class ModelBuilder:
 
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
-        self = ModelBuilder(idata)
-        self.model = cls(
+        self = cls(
             dict(zip(idata.attrs["model_config_keys"], idata.attrs["model_config_values"])),
             dict(zip(idata.attrs["sample_config_keys"], idata.attrs["sample_config_values"])),
             idata.fit_data.to_dataframe(),
