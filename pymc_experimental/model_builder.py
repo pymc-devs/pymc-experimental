@@ -28,8 +28,6 @@ class ModelBuilder:
     """
     ModelBuilder can be used to provide an easy-to-use API (similar to scikit-learn) for models
     and help with deployment.
-
-    Extends the pymc.Model class.
     """
 
     _model_type = "BaseClass"
@@ -65,7 +63,7 @@ class ModelBuilder:
         self.idata = None  # inference data object
         self.data = data
 
-    def build(self):
+    def build(self) -> None:
         """
         Builds the defined model.
         """
@@ -136,7 +134,7 @@ class ModelBuilder:
 
         raise NotImplementedError
 
-    def save(self, fname):
+    def save(self, fname: str) -> None:
         """
         Saves inference data of the model.
 
@@ -160,8 +158,9 @@ class ModelBuilder:
         self.idata.to_netcdf(file)
 
     @classmethod
-    def load(cls, fname):
+    def load(cls, fname: str):
         """
+        Creates a ModelBuilder instance from a file,
         Loads inference data for the model.
 
         Parameters
@@ -171,7 +170,7 @@ class ModelBuilder:
 
         Returns
         -------
-        Returns an instance of pm.Model, that is loaded from local data.
+        Returns an instance of ModelBuilder.
 
         Raises
         ------
@@ -188,21 +187,23 @@ class ModelBuilder:
 
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
-        self = cls(
+        model_builder = cls(
             dict(zip(idata.attrs["model_config_keys"], idata.attrs["model_config_values"])),
             dict(zip(idata.attrs["sample_config_keys"], idata.attrs["sample_config_values"])),
             idata.fit_data.to_dataframe(),
         )
-        self.idata = idata
-        self.build()
-        if self.id != idata.attrs["id"]:
+        model_builder.idata = idata
+        model_builder.build()
+        if model_builder.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{self._model_type}'"
             )
 
-        return self.model
+        return model_builder
 
-    def fit(self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None):
+    def fit(
+        self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None
+    ) -> az.InferenceData:
         """
         As the name suggests fit can be used to fit a model using the data that is passed as a parameter.
         Sets attrs to inference data of the model.
@@ -248,7 +249,7 @@ class ModelBuilder:
     def predict(
         self,
         data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
-    ):
+    ) -> dict:
         """
         Uses model to predict on unseen data and return point prediction of all the samples
 
@@ -288,7 +289,7 @@ class ModelBuilder:
     def predict_posterior(
         self,
         data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
-    ):
+    ) -> Dict[str, np.array]:
         """
         Uses model to predict samples on unseen data.
 

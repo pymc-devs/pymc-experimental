@@ -28,7 +28,7 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(self, model_instance, model_config, data=None):
+    def build_model(self, model_instance: ModelBuilder, model_config: dict, data: dict = None):
         model_instance.model_config = model_config
         model_instance.data = data
         self.model_config = model_config
@@ -86,7 +86,7 @@ class test_ModelBuilder(ModelBuilder):
         return data, model_config, sampler_config
 
     @staticmethod
-    def initial_build_and_fit(check_idata=True):
+    def initial_build_and_fit(check_idata=True) -> ModelBuilder:
         data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
         model_builder = test_ModelBuilder(model_config, sampler_config, data)
         model_builder.idata = model_builder.fit(data=data)
@@ -113,8 +113,7 @@ def test_save_load():
     test_builder = test_ModelBuilder.initial_build_and_fit()
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
     test_builder.save(temp.name)
-    test_builder2 = test_ModelBuilder.initial_build_and_fit()
-    test_builder2.model = test_ModelBuilder.load(temp.name)
+    test_builder2 = test_ModelBuilder.load(temp.name)
     assert test_builder.idata.groups() == test_builder2.idata.groups()
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
