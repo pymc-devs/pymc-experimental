@@ -120,8 +120,7 @@ def test_save_load():
     test_builder = test_ModelBuilder.initial_build_and_fit()
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
     test_builder.save(temp.name)
-    test_builder2 = test_ModelBuilder.initial_build_and_fit()
-    test_builder2.model = test_ModelBuilder.load(temp.name)
+    test_builder2 = test_ModelBuilder.load(temp.name)
     assert test_builder.idata.groups() == test_builder2.idata.groups()
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
