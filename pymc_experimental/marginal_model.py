@@ -93,8 +93,6 @@ class MarginalModel(Model):
             self.rvs_to_initial_values.pop(rv)
         else:
             self.observed_RVs.remove(rv)
-        if rv in self.rvs_to_total_sizes:
-            self.rvs_to_total_sizes.pop(rv)
 
     def _transfer_rv_mappings(self, old_rv: TensorVariable, new_rv: TensorVariable) -> None:
         """Transfer model mappings from old_rv to new_rv"""
@@ -122,8 +120,6 @@ class MarginalModel(Model):
             index = self.observed_RVs.index(old_rv)
             self.observed_RVs.pop(index)
             self.observed_RVs.insert(index, new_rv)
-            if old_rv in self.rvs_to_total_sizes:
-                self.rvs_to_total_sizes[new_rv] = self.rvs_to_total_sizes.pop(old_rv)
 
     def _marginalize(self, user_warnings=False):
         fg = FunctionGraph(outputs=self.basic_RVs + self.marginalized_rvs, clone=False)
@@ -212,10 +208,6 @@ class MarginalModel(Model):
         m.values_to_rvs = {i: vars_to_clone[rv] for i, rv in self.values_to_rvs.items()}
         m.rvs_to_values = {vars_to_clone[rv]: i for rv, i in self.rvs_to_values.items()}
         m.rvs_to_transforms = {vars_to_clone[rv]: i for rv, i in self.rvs_to_transforms.items()}
-        # Special logic due to bug in pm.Model
-        m.rvs_to_total_sizes = {
-            vars_to_clone[rv]: i for rv, i in self.rvs_to_total_sizes.items() if rv in vars_to_clone
-        }
         m.rvs_to_initial_values = {
             vars_to_clone[rv]: i for rv, i in self.rvs_to_initial_values.items()
         }
