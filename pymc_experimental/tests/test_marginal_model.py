@@ -170,7 +170,7 @@ def test_nested_marginalized_rvs():
         sigma = pm.HalfNormal("sigma")
 
         idx = pm.Bernoulli("idx", p=0.75)
-        dep = pm.Normal("dep", mu=pt.switch(pt.eq(idx, 0), -1000, 1000), sigma=sigma)
+        dep = pm.Normal("dep", mu=pt.switch(pt.eq(idx, 0), -1000.0, 1000.0), sigma=sigma)
 
         sub_idx = pm.Bernoulli("sub_idx", p=pt.switch(pt.eq(idx, 0), 0.15, 0.95), shape=(5,))
         sub_dep = pm.Normal("sub_dep", mu=dep + sub_idx * 100, sigma=sigma, shape=(5,))
