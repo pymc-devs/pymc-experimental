@@ -4,10 +4,10 @@ channels:
 - defaults
 dependencies:
 - pip
-- pymc>=5.1.2
 - pytest-cov>=2.5
 - pytest>=3.0
 - dask
 - xhistogram
 - pip:
+  - pymc>=5.1.2  # CI was failing to resolve
   - blackjax
