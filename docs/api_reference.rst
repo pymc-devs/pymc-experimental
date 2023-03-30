@@ -4,23 +4,50 @@ API Reference
 This reference provides detailed documentation for all modules, classes, and
 methods in the current release of PyMC experimental.
 
+.. currentmodule:: pymc_experimental
+.. autosummary::
+   :toctree: generated/
 
-.. toctree::
-  :maxdepth: 2
+   marginal_model.MarginalModel
+   model_builder.ModelBuilder
+
+Inference
+=========
+
+.. currentmodule:: pymc_experimental.inference
+.. autosummary::
+   :toctree: generated/
+
+   fit
 
 
-:mod:`pymc_experimental.distributions`
-=============================
+Distributions
+=============
 
-.. automodule:: pymc_experimental.distributions.histogram_utils
-   :members: histogram_approximation
+.. currentmodule:: pymc_experimental.distributions
+.. autosummary::
+   :toctree: generated/
+
+   GenExtreme
+   histogram_utils.histogram_approximation
 
 
-:mod:`pymc_experimental.utils`
-=============================
+Gaussian Processess
+===================
 
-.. automodule:: pymc_experimental.utils.spline
-   :members: bspline_interpolation
+.. currentmodule:: pymc_experimental.gp
+.. autosummary::
+   :toctree: generated/
 
-.. automodule:: pymc_experimental.utils.prior
-   :members: prior_from_idata
+   latent_approx.HSGP
+
+
+Utils
+=====
+
+.. currentmodule:: pymc_experimental.utils
+.. autosummary::
+   :toctree: generated/
+
+   spline.bspline_interpolation
+   prior.prior_from_idata

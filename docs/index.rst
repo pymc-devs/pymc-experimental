@@ -38,16 +38,7 @@ Contributors
 ============
 See the `GitHub contributor page <https://github.com/pymc-devs/pymc-experimental/graphs/contributors>`_.
 
-Contents
-========
-
 .. toctree::
-   :maxdepth: 4
+   :hidden:
 
    api_reference
-
-Indices
-=======
-
-* :ref:`genindex`
-* :ref:`modindex`

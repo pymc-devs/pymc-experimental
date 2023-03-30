@@ -60,7 +60,7 @@ gev = GenExtremeRV()
 
 class GenExtreme(Continuous):
     r"""
-        Univariate Generalized Extreme Value log-likelihood
+    Univariate Generalized Extreme Value log-likelihood
 
     The cdf of this distribution is
 
@@ -119,13 +119,13 @@ class GenExtreme(Continuous):
 
     Parameters
     ----------
-    mu: float
+    mu : float
         Location parameter.
-    sigma: float
+    sigma : float
         Scale parameter (sigma > 0).
-    xi: float
+    xi : float
         Shape parameter
-    scipy: bool
+    scipy : bool
         Whether or not to use the Scipy interpretation of the shape parameter
         (defaults to `False`).
 
