@@ -28,10 +28,17 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(self, model_instance: ModelBuilder, model_config: dict, data: dict = None):
+    def build_model(
+        self,
+        model_instance: ModelBuilder,
+        model_config: dict,
+        data: dict = None,
+        sampler_config: dict = None,
+    ):
         model_instance.model_config = model_config
         model_instance.data = data
         self.model_config = model_config
+        self.sampler_config = sampler_config
         self.data = data
 
         with pm.Model() as model_instance.model:
