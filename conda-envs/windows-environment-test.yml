@@ -1,4 +1,4 @@
-name: pymc-test
+name: pymc-experimental-test
 channels:
 - conda-forge
 - defaults
