@@ -132,7 +132,7 @@ def test_predict():
     assert "y_model" in pred
     assert isinstance(pred, dict)
     assert len(prediction_data.input.values) == len(pred["y_model"])
-    assert isinstance(pred["y_model"][0], float)
+    assert isinstance(pred["y_model"][0], (np.float32, np.float64))
 
 
 def test_predict_posterior():

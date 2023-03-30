@@ -1,4 +1,4 @@
-name: pymc-test
+name: pymc-experimental-test
 channels:
 - conda-forge
 - defaults
@@ -9,4 +9,4 @@ dependencies:
 - dask
 - xhistogram
 - pip:
-  - "git+https://github.com/pymc-devs/pymc.git@main"
+  - pymc>=5.1.2  # CI was failing to resolve
