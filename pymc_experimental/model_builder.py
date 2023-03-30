@@ -59,6 +59,8 @@ class ModelBuilder:
         """
 
         super().__init__()
+        if sampler_config is None:
+            sampler_config = {}
         self.model_config = model_config  # parameters for priors etc.
         self.sampler_config = sampler_config  # parameters for sampling
         self.data = data
@@ -193,7 +195,7 @@ class ModelBuilder:
         if "sampler_config" in idata.attrs:
             sampler_config = json.loads(idata.attrs["sampler_config"])
         else:
-            sampler_config = None
+            sampler_config = {}
         model_builder = cls(
             model_config=json.loads(idata.attrs["model_config"]),
             sampler_config=sampler_config,
@@ -239,7 +241,7 @@ class ModelBuilder:
             self._data_setter(data)
 
         with self.model:
-            if self.sampler_config is not None:
+            if self.sampler_config:
                 self.idata = pm.sample(**self.sampler_config)
             else:
                 self.idata = pm.sample()
@@ -249,7 +251,7 @@ class ModelBuilder:
         self.idata.attrs["id"] = self.id
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
-        if self.sampler_config is not None:
+        if self.sampler_config:
             self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         self.idata.attrs["model_config"] = json.dumps(self.model_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
