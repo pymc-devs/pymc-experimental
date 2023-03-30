@@ -54,6 +54,7 @@ class MarginalModel(Model):
     Marginalize over a single variable
 
     .. code-block:: python
+
         import pymc as pm
         from pymc_experimental import MarginalModel
 
