@@ -59,7 +59,7 @@ jobs:
           miniforge-version: latest
           mamba-version: "*"
           activate-environment: pymc-experimental-test
-          channel-priority: strict
+          channel-priority: true
           environment-file: conda-envs/environment-test.yml
           python-version: ${{matrix.python-version}}
           use-mamba: true
@@ -124,7 +124,7 @@ jobs:
           miniforge-version: latest
           mamba-version: "*"
           activate-environment: pymc-experimental-test
-          channel-priority: strict
+          channel-priority: true
           environment-file: conda-envs/windows-environment-test.yml
           python-version: ${{matrix.python-version}}
           use-mamba: true
