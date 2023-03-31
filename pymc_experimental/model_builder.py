@@ -58,7 +58,6 @@ class ModelBuilder:
         >>> model = LinearModel(model_config, sampler_config)
         """
 
-        super().__init__()
         if sampler_config is None:
             sampler_config = {}
         if model_config is None:
