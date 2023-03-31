@@ -12,7 +12,6 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-
 import hashlib
 import sys
 import tempfile
@@ -29,26 +28,39 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(self, model_config, data=None):
-        if data is not None:
-            x = pm.MutableData("x", data["input"].values)
-            y_data = pm.MutableData("y_data", data["output"].values)
+    def build_model(
+        self,
+        model_instance: ModelBuilder,
+        model_config: dict,
+        data: dict = None,
+        sampler_config: dict = None,
+    ):
+        model_instance.model_config = model_config
+        model_instance.data = data
+        self.model_config = model_config
+        self.sampler_config = sampler_config
+        self.data = data
 
-        # prior parameters
-        a_loc = model_config["a_loc"]
-        a_scale = model_config["a_scale"]
-        b_loc = model_config["b_loc"]
-        b_scale = model_config["b_scale"]
-        obs_error = model_config["obs_error"]
+        with pm.Model() as model_instance.model:
+            if data is not None:
+                x = pm.MutableData("x", data["input"].values)
+                y_data = pm.MutableData("y_data", data["output"].values)
 
-        # priors
-        a = pm.Normal("a", a_loc, sigma=a_scale)
-        b = pm.Normal("b", b_loc, sigma=b_scale)
-        obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
+            # prior parameters
+            a_loc = model_config["a_loc"]
+            a_scale = model_config["a_scale"]
+            b_loc = model_config["b_loc"]
+            b_scale = model_config["b_scale"]
+            obs_error = model_config["obs_error"]
 
-        # observed data
-        if data is not None:
-            y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
+            # priors
+            a = pm.Normal("a", a_loc, sigma=a_scale)
+            b = pm.Normal("b", b_loc, sigma=b_scale)
+            obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
+
+            # observed data
+            if data is not None:
+                y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
 
     def _data_setter(self, data: pd.DataFrame):
         with self.model:
@@ -57,7 +69,7 @@ class test_ModelBuilder(ModelBuilder):
                 pm.set_data({"y_data": data["output"].values})
 
     @classmethod
-    def create_sample_input(cls):
+    def create_sample_input(self):
         x = np.linspace(start=0, stop=1, num=100)
         y = 5 * x + 3
         y = y + np.random.normal(0, 1, len(x))
@@ -81,14 +93,14 @@ class test_ModelBuilder(ModelBuilder):
         return data, model_config, sampler_config
 
     @staticmethod
-    def initial_build_and_fit(check_idata=True):
+    def initial_build_and_fit(check_idata=True) -> ModelBuilder:
         data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-        model = test_ModelBuilder(model_config, sampler_config, data)
-        model.fit()
+        model_builder = test_ModelBuilder(model_config, sampler_config, data)
+        model_builder.idata = model_builder.fit(data=data)
         if check_idata:
-            assert model.idata is not None
-            assert "posterior" in model.idata.groups()
-        return model
+            assert model_builder.idata is not None
+            assert "posterior" in model_builder.idata.groups()
+        return model_builder
 
 
 def test_fit():
@@ -105,16 +117,16 @@ def test_fit():
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
 def test_save_load():
-    model = test_ModelBuilder.initial_build_and_fit(False)
+    test_builder = test_ModelBuilder.initial_build_and_fit()
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
-    model.save(temp.name)
-    model2 = test_ModelBuilder.load(temp.name)
-    assert model.idata.groups() == model2.idata.groups()
+    test_builder.save(temp.name)
+    test_builder2 = test_ModelBuilder.load(temp.name)
+    assert test_builder.idata.groups() == test_builder2.idata.groups()
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred1 = model.predict(prediction_data)
-    pred2 = model2.predict(prediction_data)
+    pred1 = test_builder.predict(prediction_data)
+    pred2 = test_builder2.predict(prediction_data)
     assert pred1["y_model"].shape == pred2["y_model"].shape
     temp.close()
 
