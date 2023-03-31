@@ -69,18 +69,6 @@ class ModelBuilder:
             None  # inference data object placeholder, idata is generated during build execution
         )
 
-    def build(self) -> None:
-        """
-        Builds the defined model.
-        """
-
-        self.build_model(
-            model_instance=self,
-            data=self.data,
-            model_config=self.model_config,
-            sampler_config=self.sampler_config,
-        )
-
     @abstractmethod
     def _data_setter(
         self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]], x_only: bool = True
@@ -236,10 +224,17 @@ class ModelBuilder:
         Initializing NUTS using jitter+adapt_diag...
         """
 
+        # If a new data was provided, assign it to the model
         if data is not None:
             self.data = data
-            self.build()
-            self._data_setter(data)
+
+        self.build_model(
+            model_instance=self,
+            data=self.data,
+            model_config=self.model_config,
+            sampler_config=self.sampler_config,
+        )
+        self._data_setter(data)
 
         with self.model:
             self.idata = pm.sample(**self.sampler_config)
