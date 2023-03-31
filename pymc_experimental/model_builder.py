@@ -191,7 +191,7 @@ class ModelBuilder:
             data=idata.fit_data.to_dataframe(),
         )
         model_builder.idata = idata
-        model_builder.build_model()
+        model_builder.build()
         if model_builder.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
@@ -228,7 +228,7 @@ class ModelBuilder:
         if data is not None:
             self.data = data
 
-        self.build_model()
+        self.build()
         self._data_setter(data)
 
         with self.model:

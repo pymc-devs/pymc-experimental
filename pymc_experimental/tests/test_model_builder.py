@@ -28,7 +28,7 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(self):
+    def build(self):
 
         with pm.Model() as self.model:
             if self.data is not None:
