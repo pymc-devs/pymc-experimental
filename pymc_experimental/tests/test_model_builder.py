@@ -31,15 +31,13 @@ class test_ModelBuilder(ModelBuilder):
     def build_model(
         self,
         model_instance: ModelBuilder,
+        data: dict,
         model_config: dict,
-        data: dict = None,
-        sampler_config: dict = None,
+        sampler_config: dict,
     ):
         model_instance.model_config = model_config
         model_instance.data = data
-        self.model_config = model_config
-        self.sampler_config = sampler_config
-        self.data = data
+        model_instance.sampler_config = sampler_config
 
         with pm.Model() as model_instance.model:
             if data is not None:
@@ -95,12 +93,34 @@ class test_ModelBuilder(ModelBuilder):
     @staticmethod
     def initial_build_and_fit(check_idata=True) -> ModelBuilder:
         data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-        model_builder = test_ModelBuilder(model_config, sampler_config, data)
+        model_builder = test_ModelBuilder(
+            model_config=model_config, sampler_config=sampler_config, data=data
+        )
         model_builder.idata = model_builder.fit(data=data)
         if check_idata:
             assert model_builder.idata is not None
             assert "posterior" in model_builder.idata.groups()
         return model_builder
+
+
+def test_empty_model_config():
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    sampler_config = {}
+    model_builder = test_ModelBuilder(
+        model_config=model_config, sampler_config=sampler_config, data=data
+    )
+    model_builder.idata = model_builder.fit(data=data)
+    assert model_builder.idata is not None
+    assert "posterior" in model_builder.idata.groups()
+
+
+def test_empty_model_config():
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    model_config = {}
+    model_builder = test_ModelBuilder(
+        model_config=model_config, sampler_config=sampler_config, data=data
+    )
+    assert model_builder.model_config == {}
 
 
 def test_fit():
@@ -175,7 +195,7 @@ def test_extract_samples():
 
 def test_id():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config, sampler_config, data)
+    model = test_ModelBuilder(model_config=model_config, sampler_config=sampler_config, data=data)
 
     expected_id = hashlib.sha256(
         str(model_config.values()).encode() + model.version.encode() + model._model_type.encode()

@@ -36,8 +36,8 @@ class ModelBuilder:
 
     def __init__(
         self,
-        model_config: Dict,
         data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]],
+        model_config: Dict = None,
         sampler_config: Dict = None,
     ):
         """
@@ -61,6 +61,8 @@ class ModelBuilder:
         super().__init__()
         if sampler_config is None:
             sampler_config = {}
+        if model_config is None:
+            model_config = {}
         self.model_config = model_config  # parameters for priors etc.
         self.sampler_config = sampler_config  # parameters for sampling
         self.data = data
@@ -73,7 +75,12 @@ class ModelBuilder:
         Builds the defined model.
         """
 
-        self.build_model(self, self.model_config, self.data)
+        self.build_model(
+            model_instance=self,
+            data=self.data,
+            model_config=self.model_config,
+            sampler_config=self.sampler_config,
+        )
 
     @abstractmethod
     def _data_setter(
@@ -102,7 +109,6 @@ class ModelBuilder:
 
         raise NotImplementedError
 
-    # need a discussion if it's really needed.
     @staticmethod
     @abstractmethod
     def create_sample_input():
@@ -192,13 +198,9 @@ class ModelBuilder:
 
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
-        if "sampler_config" in idata.attrs:
-            sampler_config = json.loads(idata.attrs["sampler_config"])
-        else:
-            sampler_config = {}
         model_builder = cls(
             model_config=json.loads(idata.attrs["model_config"]),
-            sampler_config=sampler_config,
+            sampler_config=json.loads(idata.attrs["sampler_config"]),
             data=idata.fit_data.to_dataframe(),
         )
         model_builder.idata = idata
@@ -241,18 +243,14 @@ class ModelBuilder:
             self._data_setter(data)
 
         with self.model:
-            if self.sampler_config:
-                self.idata = pm.sample(**self.sampler_config)
-            else:
-                self.idata = pm.sample()
+            self.idata = pm.sample(**self.sampler_config)
             self.idata.extend(pm.sample_prior_predictive())
             self.idata.extend(pm.sample_posterior_predictive(self.idata))
 
         self.idata.attrs["id"] = self.id
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
-        if self.sampler_config:
-            self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
+        self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         self.idata.attrs["model_config"] = json.dumps(self.model_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
