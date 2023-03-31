@@ -28,28 +28,19 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(
-        self,
-        model_instance: ModelBuilder,
-        data: dict,
-        model_config: dict,
-        sampler_config: dict,
-    ):
-        model_instance.model_config = model_config
-        model_instance.data = data
-        model_instance.sampler_config = sampler_config
+    def build_model(self):
 
-        with pm.Model() as model_instance.model:
-            if data is not None:
-                x = pm.MutableData("x", data["input"].values)
-                y_data = pm.MutableData("y_data", data["output"].values)
+        with pm.Model() as self.model:
+            if self.data is not None:
+                x = pm.MutableData("x", self.data["input"].values)
+                y_data = pm.MutableData("y_data", self.data["output"].values)
 
             # prior parameters
-            a_loc = model_config["a_loc"]
-            a_scale = model_config["a_scale"]
-            b_loc = model_config["b_loc"]
-            b_scale = model_config["b_scale"]
-            obs_error = model_config["obs_error"]
+            a_loc = self.model_config["a_loc"]
+            a_scale = self.model_config["a_scale"]
+            b_loc = self.model_config["b_loc"]
+            b_scale = self.model_config["b_scale"]
+            obs_error = self.model_config["obs_error"]
 
             # priors
             a = pm.Normal("a", a_loc, sigma=a_scale)
@@ -57,7 +48,7 @@ class test_ModelBuilder(ModelBuilder):
             obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
 
             # observed data
-            if data is not None:
+            if self.data is not None:
                 y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
 
     def _data_setter(self, data: pd.DataFrame):
