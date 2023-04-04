@@ -29,7 +29,7 @@
 import os
 import sys
 
-from pymc_experimental import __version__
+from pymc_experimental.version import __version__
 
 sys.path.insert(0, os.path.abspath("../"))
 

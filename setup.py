@@ -19,6 +19,8 @@ from os.path import dirname, join, realpath
 
 from setuptools import find_packages, setup
 
+from pymc_experimental.version import __version__
+
 DISTNAME = "pymc-experimental"
 DESCRIPTION = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
 AUTHOR = "PyMC Developers"
@@ -55,18 +57,6 @@ with open(REQUIREMENTS_FILE) as f:
 with open(DEV_REQUIREMENTS_FILE) as f:
     dev_install_reqs = f.read().splitlines()
 
-
-def get_version():
-    VERSIONFILE = join("pymc_experimental", "__init__.py")
-    lines = open(VERSIONFILE).readlines()
-    version_regex = r"^__version__ = ['\"]([^'\"]*)['\"]"
-    for line in lines:
-        mo = re.search(version_regex, line, re.M)
-        if mo:
-            return mo.group(1)
-    raise RuntimeError(f"Unable to find version in {VERSIONFILE}.")
-
-
 extras_require = dict(
     dask_histogram=["dask[complete]", "xhistogram"],
     histogram=["xhistogram"],
@@ -78,7 +68,7 @@ extras_require["dev"] = dev_install_reqs
 if __name__ == "__main__":
     setup(
         name=DISTNAME,
-        version=get_version(),
+        version=__version__,
         maintainer=AUTHOR,
         maintainer_email=AUTHOR_EMAIL,
         description=DESCRIPTION,
