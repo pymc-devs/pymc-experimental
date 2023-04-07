@@ -14,8 +14,8 @@ def _psivar2musigma(psi: pt.TensorVariable, var: pt.TensorVariable):
 
 def _R2D2M2CP_beta(
     name: str,
-    variance: pt.TensorVariable,
-    param_sigma: pt.TensorVariable,
+    output_sigma: pt.TensorVariable,
+    input_sigma: pt.TensorVariable,
     r2: pt.TensorVariable,
     phi: pt.TensorVariable,
     psi: pt.TensorVariable,
@@ -26,9 +26,9 @@ def _R2D2M2CP_beta(
     """R2D2M2CP_beta prior.
     name: str
         Name for the distribution
-    variance: tensor
+    output_sigma: tensor
         standard deviation of the outcome
-    param_sigma: tensor
+    input_sigma: tensor
         standard deviation of the explanatory variables
     r2: tensor
         expected R2 for the linear regression
@@ -38,21 +38,21 @@ def _R2D2M2CP_beta(
         probability of a coefficients to be positive
     """
     tau2 = r2 / (1 - r2)
-    explained_variance = phi * tau2 * pt.expand_dims(variance, -1)
+    explained_variance = phi * tau2 * pt.expand_dims(output_sigma**2, -1)
     mu_param, std_param = _psivar2musigma(psi, explained_variance)
     if not centered:
         with pm.Model(name):
             raw = pm.Normal("raw", dims=dims)
-        beta = pm.Deterministic(name, (raw * std_param + mu_param) / param_sigma, dims=dims)
+        beta = pm.Deterministic(name, (raw * std_param + mu_param) / input_sigma, dims=dims)
     else:
-        beta = pm.Normal(name, mu_param / param_sigma, std_param / param_sigma, dims=dims)
+        beta = pm.Normal(name, mu_param / input_sigma, std_param / input_sigma, dims=dims)
     return beta
 
 
 def R2D2M2CP(
     name,
-    variance,
-    param_sigma,
+    output_sigma,
+    input_sigma,
     *,
     dims,
     r2,
@@ -69,16 +69,16 @@ def R2D2M2CP(
     ----------
     name : str
         Name for the distribution
-    variance : tensor
-        Output variance
-    param_sigma : tensor
+    output_sigma : tensor
+        Output standard deviation
+    input_sigma : tensor
         Input standard deviation
     dims : Union[str, Sequence[str]]
         Dims for the distribution
     r2 : tensor
         :math:`R^2` estimate
     variables_importance : tensor, optional
-        Optional estimate for variables importance, positive, , by default None
+        Optional estimate for variables importance, positive, by default None
     variance_explained : tensor, optional
         Alternative estimate for variables importance which is point estimate of
         variance explained, should sum up to one, by default None
@@ -93,8 +93,8 @@ def R2D2M2CP(
 
     Returns
     -------
-    residual_variance, coefficients
-        Output variance is split in residual variance and explained variance.
+    residual_sigma, coefficients
+        Output variance (sigma squared) is split in residual variance and explained variance.
 
     Raises
     ------
@@ -109,8 +109,8 @@ def R2D2M2CP(
     if not isinstance(dims, (list, tuple)):
         dims = (dims,)
     *hierarchy, dim = dims
-    param_sigma = pt.as_tensor(param_sigma)
-    variance = pt.as_tensor(variance)
+    input_sigma = pt.as_tensor(input_sigma)
+    output_sigma = pt.as_tensor(output_sigma)
     with pm.Model(name) as model:
         if variables_importance is not None and len(model.coords[dim]) > 1:
             if variance_explained is not None:
@@ -132,7 +132,7 @@ def R2D2M2CP(
         else:
             psi = pt.as_tensor(positive_probs)
     beta = _R2D2M2CP_beta(
-        name, variance, param_sigma, r2, phi, psi, dims=hierarchy + [dim], centered=centered
+        name, output_sigma, input_sigma, r2, phi, psi, dims=hierarchy + [dim], centered=centered
     )
-    variance_resid = (1 - r2) * variance
-    return variance_resid, beta
+    resid_sigma = (1 - r2) ** 0.5 * output_sigma
+    return resid_sigma, beta
