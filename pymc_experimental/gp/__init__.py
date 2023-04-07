@@ -13,7 +13,4 @@
 #   limitations under the License.
 
 
-from pymc_experimental.gp.latent_approx import (
-    KarhunenLoeveExpansion,
-    ProjectedProcess,
-)
+from pymc_experimental.gp.latent_approx import KarhunenLoeveExpansion, ProjectedProcess
