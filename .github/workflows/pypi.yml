@@ -21,7 +21,7 @@ jobs:
       - name: Build the sdist and the wheel
         run: |
           pip install build
-          python -m build
+          python3 -m build
       - name: Check the sdist installs and imports
         run: |
           mkdir -p test-sdist
