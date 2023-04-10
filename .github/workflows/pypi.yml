@@ -29,7 +29,7 @@ jobs:
           python -m venv venv-sdist
           venv-sdist/bin/python -m pip install ../dist/pymc-experimental*.tar.gz
           echo "Checking import and version number (on release)"
-          venv-sdist/bin/python -c "import pymc_experimental as pme; assert pme.__version__ == '${{  github.ref_name }}' if '${{ github.ref_type }}' == 'tag' else pme.__version__; print(pme.__version__)"
+          venv-sdist/bin/python -c "import pymc_experimental as pmx; assert pmx.__version__ == '${{  github.ref_name }}' if '${{ github.ref_type }}' == 'tag' else pmx.__version__; print(pmx.__version__)"
           cd ..
       - name: Check the bdist installs and imports
         run: |
@@ -38,7 +38,7 @@ jobs:
           python -m venv venv-bdist
           venv-bdist/bin/python -m pip install ../dist/pymc_experimental*.whl
           echo "Checking import and version number (on release)"
-          venv-bdist/bin/python -c "import pymc_experimental as pme; assert pme.__version__ == '${{  github.ref_name }}' if '${{ github.ref_type }}' == 'tag' else pme.__version__; print(pme.__version__)"
+          venv-bdist/bin/python -c "import pymc_experimental as pmx; assert pmx.__version__ == '${{  github.ref_name }}' if '${{ github.ref_type }}' == 'tag' else pmx.__version__; print(pmx.__version__)"
           cd ..
       - uses: actions/upload-artifact@v3
         with:

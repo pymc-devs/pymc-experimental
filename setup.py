@@ -57,6 +57,9 @@ with open(REQUIREMENTS_FILE) as f:
 with open(DEV_REQUIREMENTS_FILE) as f:
     dev_install_reqs = f.read().splitlines()
 
+# Add numpy to the list of required packages
+install_reqs.append("numpy")
+
 extras_require = dict(
     dask_histogram=["dask[complete]", "xhistogram"],
     histogram=["xhistogram"],
