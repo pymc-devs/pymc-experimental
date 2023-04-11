@@ -53,6 +53,7 @@ DEV_REQUIREMENTS_FILE = join(PROJECT_ROOT, "requirements-dev.txt")
 
 with open(REQUIREMENTS_FILE) as f:
     install_reqs = f.read().splitlines()
+install_reqs += ["numpy"]
 
 with open(DEV_REQUIREMENTS_FILE) as f:
     dev_install_reqs = f.read().splitlines()
