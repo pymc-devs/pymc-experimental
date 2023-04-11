@@ -1,4 +1,4 @@
-#   Copyright 2022 The PyMC Developers
+#   Copyright 2020 The PyMC Developers
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
@@ -13,19 +13,6 @@
 #   limitations under the License.
 
 
-__version__ = "0.0.2"
+from pymc_experimental.dp.dp import DirichletProcess
 
-import logging
-
-_log = logging.getLogger("pmx")
-
-if not logging.root.handlers:
-    _log.setLevel(logging.INFO)
-    if len(_log.handlers) == 0:
-        handler = logging.StreamHandler()
-        _log.addHandler(handler)
-
-
-from pymc_experimental import distributions, dp, gp, utils
-from pymc_experimental.inference.fit import fit
-from pymc_experimental.marginal_model import MarginalModel
+__all__ = ["DirichletProcess"]
