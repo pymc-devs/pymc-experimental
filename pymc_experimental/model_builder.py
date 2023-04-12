@@ -213,8 +213,8 @@ class ModelBuilder:
 
     def fit(
         self,
-        progressbar: bool,
-        random_seed: RandomState,
+        progressbar: bool = True,
+        random_seed: RandomState = None,
         data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
         *args: Any,
         **kwargs: Any,
@@ -243,16 +243,12 @@ class ModelBuilder:
 
         if data is not None:
             self.data = data
-        self.create_sample_input(data)
-        self.build()
+        self.data["model_data"], self.model_config = self.create_sample_input(data=data)
+        self.build_model(self.model_config, self.data["model_data"])
         self._data_setter(data)
 
         with self.model:
-            if self.sampler_config["random_seed"] is not None:
-                random_seed = self.sampler_config["random_seed"]
-            if self.sampler_config["progressbar"] is not None:
-                progressbar = self.sampler_config["progressbar"]
-            self.idata = pm.sample(progressbar=progressbar, random_seer=random_seed)
+            self.idata = pm.sample(progressbar=progressbar, random_seer=random_seed, **kwargs)
             self.idata.extend(pm.sample_prior_predictive())
             self.idata.extend(pm.sample_posterior_predictive(self.idata, *args, **kwargs))
 
