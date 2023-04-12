@@ -12,7 +12,6 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import platform
 import sys
 
 import numpy as np
@@ -22,7 +21,6 @@ import pytest
 import pymc_experimental as pmx
 
 
-@pytest.mark.skipif(platform.machine() != "x86_64", reason="Test requires x86_64 architecture")
 @pytest.mark.skipif(sys.platform == "win32", reason="JAX not supported on windows.")
 def test_pathfinder():
     # Data of the Eight Schools Model
