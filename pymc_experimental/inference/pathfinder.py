@@ -138,7 +138,7 @@ def fit_pathfinder(
 
     dims = {
         var_name: [dim for dim in dims if dim is not None]
-        for var_name, dims in model.RV_dims.items()
+        for var_name, dims in model.named_vars_to_dims.items()
     }
 
     idata = convert_flat_trace_to_idata(
