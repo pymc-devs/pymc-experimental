@@ -17,12 +17,13 @@ import hashlib
 import json
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict, Union
+from typing import Any, Dict, Union
 
 import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+from pymc.util import RandomState
 
 
 class ModelBuilder:
@@ -211,7 +212,12 @@ class ModelBuilder:
         return model_builder
 
     def fit(
-        self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None
+        self,
+        progressbar: bool,
+        random_seed: RandomState,
+        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> az.InferenceData:
         """
         Fit a model using the data passed as a parameter.
@@ -237,16 +243,18 @@ class ModelBuilder:
 
         if data is not None:
             self.data = data
-            self.build()
-            self._data_setter(data)
+        self.create_sample_input(data)
+        self.build()
+        self._data_setter(data)
 
         with self.model:
-            if self.sampler_config:
-                self.idata = pm.sample(**self.sampler_config)
-            else:
-                self.idata = pm.sample()
+            if self.sampler_config["random_seed"] is not None:
+                random_seed = self.sampler_config["random_seed"]
+            if self.sampler_config["progressbar"] is not None:
+                progressbar = self.sampler_config["progressbar"]
+            self.idata = pm.sample(progressbar=progressbar, random_seer=random_seed)
             self.idata.extend(pm.sample_prior_predictive())
-            self.idata.extend(pm.sample_posterior_predictive(self.idata))
+            self.idata.extend(pm.sample_posterior_predictive(self.idata, *args, **kwargs))
 
         self.idata.attrs["id"] = self.id
         self.idata.attrs["model_type"] = self._model_type
