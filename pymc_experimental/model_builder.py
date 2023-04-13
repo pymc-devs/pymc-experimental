@@ -315,7 +315,7 @@ class ModelBuilder:
         >>> pred_mean = model.predict(prediction_data)
         """
         posterior_predictive_samples = self.predict_posterior(data_prediction, extend_idata)
-        posterior_means = posterior_predictive_samples.mean(dim=["chain", "draw"])
+        posterior_means = posterior_predictive_samples.mean(dim=["chain", "draw"], keep_attrs=True)
         return posterior_means
 
     @property
