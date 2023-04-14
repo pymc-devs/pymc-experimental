@@ -151,16 +151,17 @@ def test_predict():
     assert np.issubdtype(pred["y_model"].dtype, np.floating)
 
 
-def test_predict_posterior():
+@pytest.mark.parametrize("combined", [True, False])
+def test_predict_posterior(combined):
     model = test_ModelBuilder.initial_build_and_fit()
     n_pred = 100
     x_pred = np.random.uniform(low=0, high=1, size=n_pred)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.predict_posterior(prediction_data)
+    pred = model.predict_posterior(prediction_data, combined=combined)
     chains = model.idata.sample_stats.dims["chain"]
     draws = model.idata.sample_stats.dims["draw"]
-    assert "y_model" in pred
-    assert pred["y_model"].shape == (chains, draws, n_pred)
+    expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
+    assert pred["y_model"].shape == expected_shape
     assert np.issubdtype(pred["y_model"].dtype, np.floating)
 
 

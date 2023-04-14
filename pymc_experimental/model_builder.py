@@ -245,47 +245,6 @@ class ModelBuilder:
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
-    def predict_posterior(
-        self,
-        data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
-        extend_idata: bool = True,
-    ) -> xr.Dataset:
-        """
-        Generate posterior predictive samples on unseen data.
-
-        Parameters
-        ---------
-        data_prediction : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
-            It is the data we need to make prediction on using the model.
-        extend_idata : Boolean determining whether the predictions should be added to inference data object.
-            Defaults to True.
-
-        Returns
-        -------
-        returns posterior predictive samples
-
-        Examples
-        --------
-        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
-        >>> model = LinearModel(model_config, sampler_config)
-        >>> idata = model.fit(data)
-        >>> x_pred = []
-        >>> prediction_data = pd.DataFrame({'input': x_pred})
-        >>> pred_samples = model.predict_posterior(prediction_data)
-        """
-
-        if data_prediction is not None:  # set new input data
-            self._data_setter(data_prediction)
-
-        with self.model:  # sample with new input data
-            post_pred = pm.sample_posterior_predictive(self.idata)
-            if extend_idata:
-                self.idata.extend(post_pred)
-
-        posterior_predictive_samples = az.extract(post_pred, "posterior_predictive", combined=False)
-
-        return posterior_predictive_samples
-
     def predict(
         self,
         data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
@@ -317,6 +276,52 @@ class ModelBuilder:
         posterior_predictive_samples = self.predict_posterior(data_prediction, extend_idata)
         posterior_means = posterior_predictive_samples.mean(dim=["chain", "draw"], keep_attrs=True)
         return posterior_means
+
+    def predict_posterior(
+        self,
+        data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        extend_idata: bool = True,
+        combined: bool = False,
+    ) -> xr.Dataset:
+        """
+        Generate posterior predictive samples on unseen data.
+
+        Parameters
+        ---------
+        data_prediction : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
+            It is the data we need to make prediction on using the model.
+        extend_idata : Boolean determining whether the predictions should be added to inference data object.
+            Defaults to True.
+        combined: Combine chain and draw dims into sample. Won’t work if a dim named sample already exists.
+            Defaults to False.
+
+        Returns
+        -------
+        returns posterior predictive samples
+
+        Examples
+        --------
+        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
+        >>> model = LinearModel(model_config, sampler_config)
+        >>> idata = model.fit(data)
+        >>> x_pred = []
+        >>> prediction_data = pd.DataFrame({'input': x_pred})
+        >>> pred_samples = model.predict_posterior(prediction_data)
+        """
+
+        if data_prediction is not None:  # set new input data
+            self._data_setter(data_prediction)
+
+        with self.model:  # sample with new input data
+            post_pred = pm.sample_posterior_predictive(self.idata)
+            if extend_idata:
+                self.idata.extend(post_pred)
+
+        posterior_predictive_samples = az.extract(
+            post_pred, "posterior_predictive", combined=combined
+        )
+
+        return posterior_predictive_samples
 
     @property
     def id(self) -> str:
