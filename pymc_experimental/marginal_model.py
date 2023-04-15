@@ -6,8 +6,8 @@ import pytensor.tensor as pt
 from pymc import SymbolicRandomVariable
 from pymc.distributions.discrete import Bernoulli, Categorical, DiscreteUniform
 from pymc.distributions.transforms import Chain
+from pymc.logprob import factorized_joint_logprob
 from pymc.logprob.abstract import _get_measurable_outputs, _logprob
-from pymc.logprob.joint_logprob import factorized_joint_logprob
 from pymc.logprob.transforms import IntervalTransform
 from pymc.model import Model
 from pymc.pytensorf import constant_fold, inputvars

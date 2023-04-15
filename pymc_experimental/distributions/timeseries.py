@@ -6,13 +6,14 @@ import pytensor
 import pytensor.tensor as pt
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Distribution, SymbolicRandomVariable
-from pymc.distributions.logprob import ignore_logprob, logp
 from pymc.distributions.shape_utils import (
     _change_dist_size,
     change_dist_size,
     get_support_shape_1d,
 )
 from pymc.logprob.abstract import _logprob
+from pymc.logprob.basic import logp
+from pymc.logprob.utils import ignore_logprob
 from pymc.pytensorf import intX
 from pymc.util import check_dist_not_registered
 from pytensor.graph.basic import Node
