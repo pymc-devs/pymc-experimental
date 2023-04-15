@@ -47,6 +47,13 @@ class TestDiscreteMarkovRV:
         with pytest.raises(ParameterValueError):
             pm.logp(chain, np.zeros((3,))).eval()
 
+    def test_high_dimensional_P(self):
+        P = pm.Dirichlet.dist(a=pt.ones(3), size=(3, 3, 3))
+        n_lags = 3
+        chain = DiscreteMarkovChain.dist(P=P, steps=10, n_lags=n_lags)
+        draws = pm.draw(chain, 10)
+        logp = pm.logp(chain, draws)
+
     def test_default_init_dist_warns_user(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
 
@@ -158,6 +165,18 @@ class TestDiscreteMarkovRV:
             )
 
         assert chain.eval().shape == (3, 3)
+
+    def test_mutiple_dims_with_data(self):
+        coords = {"steps": [1, 2, 3], "mc_chains": [1, 2, 3]}
+
+        with pm.Model(coords=coords):
+            P = pt.full((3, 3, 3), 1 / 3)
+            x0 = pm.Categorical.dist(p=[0.1, 0.1, 0.8], size=2)
+            data = pm.draw(x0, 100)
+
+            chain = DiscreteMarkovChain("chain", P=P, init_dist=x0, n_lags=2, observed=data)
+
+        assert chain.eval().shape == (100, 2)
 
     def test_random_draws(self):
         transition_probabiility_tests(steps=3, n_states=2, n_lags=1, n_draws=2500, atol=0.05)

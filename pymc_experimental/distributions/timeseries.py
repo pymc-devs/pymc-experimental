@@ -110,8 +110,7 @@ class DiscreteMarkovChain(Distribution):
 
     rv_type = DiscreteMarkovChainRV
 
-    def __new__(cls, *args, steps=None, n_lags=1, initval="prior", **kwargs):
-
+    def __new__(cls, *args, steps=None, n_lags=1, **kwargs):
         steps = get_support_shape_1d(
             support_shape=steps,
             shape=None,
@@ -125,7 +124,7 @@ class DiscreteMarkovChain(Distribution):
     @classmethod
     def dist(cls, P=None, logit_P=None, steps=None, init_dist=None, n_lags=1, **kwargs):
         steps = get_support_shape_1d(
-            support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=1
+            support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=n_lags
         )
 
         if steps is None:
@@ -186,7 +185,6 @@ class DiscreteMarkovChain(Distribution):
             )
 
         init_dist = change_dist_size(init_dist, (n_lags, *batch_size))
-
         init_dist_ = init_dist.type()
         P_ = P.type()
         steps_ = steps.type()
