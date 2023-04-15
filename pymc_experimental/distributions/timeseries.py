@@ -1,11 +1,17 @@
 import warnings
+from typing import List, Union
 
 import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 from pymc.distributions.dist_math import check_parameters
-from pymc.distributions.distribution import Distribution, SymbolicRandomVariable
+from pymc.distributions.distribution import (
+    Distribution,
+    SymbolicRandomVariable,
+    _moment,
+    moment,
+)
 from pymc.distributions.shape_utils import (
     _change_dist_size,
     change_dist_size,
@@ -19,6 +25,31 @@ from pymc.util import check_dist_not_registered
 from pytensor.graph.basic import Node
 from pytensor.tensor import TensorVariable
 from pytensor.tensor.random.op import RandomVariable
+
+
+def _make_outputs_info(n_lags: int, init_dist: Distribution) -> List[Union[Distribution, dict]]:
+    """
+    Two cases are needed for outputs_info in the scans used by DiscreteMarkovRv. If n_lags = 1, we need to throw away
+    the first dimension of init_dist_ or else markov_chain will have shape (steps, 1, *batch_size) instead of
+    desired (steps, *batch_size)
+
+    Parameters
+    ----------
+    n_lags: int
+        Number of lags the Markov Chain considers when transitioning to the next state
+    init_dist: RandomVariable
+        Distribution over initial states
+
+    Returns
+    -------
+    taps: list
+        Lags to be fed into pytensor.scan when drawing a markov chain
+    """
+
+    if n_lags > 1:
+        return [{"initial": init_dist, "taps": list(range(-n_lags, 0))}]
+    else:
+        return [init_dist[0]]
 
 
 class DiscreteMarkovChainRV(SymbolicRandomVariable):
@@ -91,7 +122,6 @@ class DiscreteMarkovChain(Distribution):
 
     @classmethod
     def dist(cls, P=None, logit_P=None, steps=None, init_dist=None, n_lags=1, **kwargs):
-
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=1
         )
@@ -117,6 +147,7 @@ class DiscreteMarkovChain(Distribution):
                     f"Init dist must be a distribution created via the `.dist()` API, "
                     f"got {type(init_dist)}"
                 )
+
             check_dist_not_registered(init_dist)
             if init_dist.owner.op.ndim_supp > 1:
                 raise ValueError(
@@ -164,11 +195,7 @@ class DiscreteMarkovChain(Distribution):
         markov_chain, state_updates = pytensor.scan(
             transition,
             non_sequences=[P_, state_rng],
-            # If n_lags = 1, we need to throw away the first dimension of init_dist_ or else
-            # markov_chain will have shape (steps, 1, *batch_size) instead of desired (steps, *batch_size)
-            outputs_info=[{"initial": init_dist_, "taps": list(range(-n_lags, 0))}]
-            if n_lags > 1
-            else [init_dist_[0]],
+            outputs_info=_make_outputs_info(n_lags, init_dist_),
             n_steps=steps_,
             strict=True,
         )
@@ -195,6 +222,27 @@ def change_mc_size(op, dist, new_size, expand=False):
         new_size = tuple(new_size) + tuple(old_size)
 
     return DiscreteMarkovChain.rv_op(*dist.owner.inputs[:-1], size=new_size, n_lags=op.n_lags)
+
+
+@_moment.register(DiscreteMarkovChainRV)
+def discrete_mc_moment(op, rv, P, steps, init_dist, state_rng):
+    init_dist_moment = moment(init_dist)
+    n_lags = op.n_lags
+
+    def greedy_transition(*args):
+        *states, transition_probs, old_rng = args
+        p = transition_probs[tuple(states)]
+        return pt.argmax(p)
+
+    chain_moment, moment_updates = pytensor.scan(
+        greedy_transition,
+        non_sequences=[P, state_rng],
+        outputs_info=_make_outputs_info(n_lags, init_dist),
+        n_steps=steps,
+        strict=True,
+    )
+    chain_moment = pt.concatenate([init_dist_moment, chain_moment])
+    return chain_moment
 
 
 @_logprob.register(DiscreteMarkovChainRV)

@@ -53,6 +53,12 @@ class TestDiscreteMarkovRV:
         with pytest.warns(UserWarning):
             DiscreteMarkovChain.dist(P=P, steps=3)
 
+    def test_init_dist_must_be_categorical(self):
+        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        init_dist = pm.Poisson.dist(mu=1, size=3)
+        with pytest.raises(ValueError):
+            DiscreteMarkovChain.dist(P=P, init_dist=init_dist)
+
     def test_logp_shape(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
 
@@ -84,6 +90,27 @@ class TestDiscreteMarkovRV:
 
         logp = pm.logp(chain, [0, 1, 2]).eval()
         assert logp == np.log(0.2 * 0.5 * 0.3)
+
+    def test_moment_function(self):
+        P_np = np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]])
+
+        x0_np = np.array([0.2, 0.6, 0.2])
+
+        P = pt.as_tensor_variable(P_np)
+        x0 = pm.Categorical.dist(p=x0_np.tolist())
+        n_steps = 3
+
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=n_steps)
+
+        chain_np = np.empty(shape=n_steps + 1, dtype="int8")
+        chain_np[0] = np.argmax(x0_np)
+        for i in range(n_steps):
+            state = chain_np[i]
+            chain_np[i + 1] = np.argmax(P_np[state])
+
+        dmc_chain = pm.distributions.distribution.moment(chain).eval()
+
+        assert np.allclose(dmc_chain, chain_np)
 
     def test_define_steps_via_shape_arg(self):
         P = pt.full((3, 3), 1 / 3)
