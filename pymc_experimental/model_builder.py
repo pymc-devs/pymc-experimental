@@ -23,6 +23,8 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+from pymc.util import RandomState
+from traitlets import Any
 
 
 class ModelBuilder:
@@ -191,7 +193,7 @@ class ModelBuilder:
             data=idata.fit_data.to_dataframe(),
         )
         model_builder.idata = idata
-        model_builder.build()
+        model_builder.build_model()
         if model_builder.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
@@ -200,7 +202,12 @@ class ModelBuilder:
         return model_builder
 
     def fit(
-        self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None
+        self,
+        progressbar: bool = True,
+        random_seed: RandomState = None,
+        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> az.InferenceData:
         """
         Fit a model using the data passed as a parameter.
@@ -227,9 +234,9 @@ class ModelBuilder:
         # If a new data was provided, assign it to the model
         if data is not None:
             self.data = data
-
-        self.build()
-        self._data_setter(data)
+        self.model_data, self.model_config = self.create_sample_input(data=self.data)
+        self.build_model(self.model_data, self.model_config)
+        self._data_setter(self.data)
 
         with self.model:
             self.idata = pm.sample(**self.sampler_config)
@@ -240,7 +247,7 @@ class ModelBuilder:
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
         self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
-        self.idata.attrs["model_config"] = json.dumps(self.model_config)
+        self.idata.attrs["model_config"] = json.dumps(self.serializable_model_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
