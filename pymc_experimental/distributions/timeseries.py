@@ -24,7 +24,6 @@ from pymc.pytensorf import intX
 from pymc.util import check_dist_not_registered
 from pytensor.graph.basic import Node
 from pytensor.tensor import TensorVariable
-from pytensor.tensor.random.basic import CategoricalRV
 from pytensor.tensor.random.op import RandomVariable
 
 
@@ -86,9 +85,8 @@ class DiscreteMarkovChain(Distribution):
     init_dist : unnamed distribution, optional
         Vector distribution for initial values. Unnamed refers to distributions
         created with the ``.dist()`` API. Distribution should have shape n_states.
-        If not, it will be automatically resized. Defaults to pm.Categorical.dist(p=np.full(n_states, 1/n_states)).
+        If not, it will be automatically resized.
         .. warning:: init_dist will be cloned, rendering it independent of the one passed as input.
-        .. warning:: Currently only pm.Categorical.dist is accepted for the init_dist
 
     Notes
     -----
@@ -147,11 +145,6 @@ class DiscreteMarkovChain(Distribution):
                 raise ValueError(
                     f"Init dist must be a distribution created via the `.dist()` API, "
                     f"got {type(init_dist)}"
-                )
-
-            if not isinstance(init_dist.owner.op, CategoricalRV):
-                raise NotImplementedError(
-                    f"Currently only Categorical distributions are supported for init_dist"
                 )
 
             check_dist_not_registered(init_dist)
