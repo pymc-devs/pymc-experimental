@@ -29,6 +29,7 @@ Distributions
    :toctree: generated/
 
    GenExtreme
+   GeneralizedPoisson
    histogram_utils.histogram_approximation
    DiscreteMarkovChain
 
