@@ -69,8 +69,9 @@ class DiscreteMarkovChain(Distribution):
     r"""
     A Discrete Markov Chain is a sequence of random variables
     .. math::
+
         \{x_t\}_{t=0}^T
-    Where transition probability P(x_t | x_{t-1}) depends only on the state of the system at x_{t-1}.
+    Where transition probability :math:`P(x_t | x_{t-1})` depends only on the state of the system at :math:`x_{t-1}`.
 
     Parameters
     ----------
