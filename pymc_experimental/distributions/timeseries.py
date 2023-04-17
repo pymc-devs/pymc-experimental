@@ -89,6 +89,7 @@ class DiscreteMarkovChain(Distribution):
         Vector distribution for initial values. Unnamed refers to distributions
         created with the ``.dist()`` API. Distribution should have shape n_states.
         If not, it will be automatically resized.
+
         .. warning:: init_dist will be cloned, rendering it independent of the one passed as input.
 
     Notes
