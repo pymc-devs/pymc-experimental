@@ -17,14 +17,13 @@ import hashlib
 import json
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict, Union
+from typing import Any, Dict, Union
 
 import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
 from pymc.util import RandomState
-from traitlets import Any
 
 
 class ModelBuilder:
