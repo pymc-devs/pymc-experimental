@@ -106,7 +106,7 @@ class TestDiscreteMarkovRV:
     def test_moment_function(self):
         P_np = np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]])
 
-        x0_np = np.array([0.2, 0.6, 0.2])
+        x0_np = np.array([0, 1, 0])
 
         P = pt.as_tensor_variable(P_np)
         x0 = pm.Categorical.dist(p=x0_np.tolist())
