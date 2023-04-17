@@ -13,13 +13,10 @@
 #   limitations under the License.
 
 import itertools
-import re
 from codecs import open
 from os.path import dirname, join, realpath
 
 from setuptools import find_packages, setup
-
-from pymc_experimental.version import __version__
 
 DISTNAME = "pymc-experimental"
 DESCRIPTION = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
@@ -43,6 +40,10 @@ classifiers = [
 ]
 
 PROJECT_ROOT = dirname(realpath(__file__))
+version_file = join(PROJECT_ROOT, "pymc_experimental/version.txt")
+__version__ = ""
+with open(version_file, encoding="utf-8") as buff:
+    __version__ = buff.read().splitlines()[0]
 
 # Get the long description from the README file
 with open(join(PROJECT_ROOT, "README.md"), encoding="utf-8") as buff:
@@ -53,13 +54,11 @@ DEV_REQUIREMENTS_FILE = join(PROJECT_ROOT, "requirements-dev.txt")
 
 with open(REQUIREMENTS_FILE) as f:
     install_reqs = f.read().splitlines()
-install_reqs += ["numpy"]
+
 
 with open(DEV_REQUIREMENTS_FILE) as f:
     dev_install_reqs = f.read().splitlines()
 
-# Add numpy to the list of required packages
-install_reqs.append("numpy")
 
 extras_require = dict(
     dask_histogram=["dask[complete]", "xhistogram"],
