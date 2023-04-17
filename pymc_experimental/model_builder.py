@@ -266,9 +266,8 @@ class ModelBuilder:
         )
         self.build_model(self.model_data, self.model_config)
         self._data_setter(self.model_data)
-
         with self.model:
-            self.idata = pm.sample(**self.sampler_config)
+            self.idata = pm.sample(**self.sampler_config, **kwargs)
             self.idata.extend(pm.sample_prior_predictive())
             self.idata.extend(pm.sample_posterior_predictive(self.idata))
 
@@ -277,7 +276,7 @@ class ModelBuilder:
         self.idata.attrs["version"] = self.version
         self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         self.idata.attrs["model_config"] = json.dumps(self.serializable_model_config)
-        self.idata.add_groups(fit_data=self.model_data.to_xarray())
+        self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
     def predict(
