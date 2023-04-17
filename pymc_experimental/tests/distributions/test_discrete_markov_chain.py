@@ -10,9 +10,13 @@ from pymc.logprob.utils import ParameterValueError
 from pymc_experimental.distributions.timeseries import DiscreteMarkovChain
 
 
-def transition_probabiility_tests(steps, n_states, n_lags, n_draws, atol):
+def transition_probability_tests(steps, n_states, n_lags, n_draws, atol):
     P = np.full((n_states,) * (n_lags + 1), 1 / n_states)
-    chain = DiscreteMarkovChain.dist(P=pt.as_tensor_variable(P), steps=steps, n_lags=n_lags)
+    x0 = pm.Categorical.dist(p=np.ones(n_states) / n_states)
+
+    chain = DiscreteMarkovChain.dist(
+        P=pt.as_tensor_variable(P), init_dist=x0, steps=steps, n_lags=n_lags
+    )
 
     draws = pm.draw(chain, n_draws)
 
@@ -37,20 +41,24 @@ def transition_probabiility_tests(steps, n_states, n_lags, n_draws, atol):
 class TestDiscreteMarkovRV:
     def test_fail_if_P_not_square(self):
         P = pt.eye(3, 2)
-        chain = DiscreteMarkovChain.dist(P=P, steps=3)
+        x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
         with pytest.raises(ParameterValueError):
             pm.logp(chain, np.zeros((3,))).eval()
 
     def test_fail_if_P_not_valid(self):
         P = pt.zeros((3, 3))
-        chain = DiscreteMarkovChain.dist(P=P, steps=3)
+        x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
         with pytest.raises(ParameterValueError):
             pm.logp(chain, np.zeros((3,))).eval()
 
     def test_high_dimensional_P(self):
         P = pm.Dirichlet.dist(a=pt.ones(3), size=(3, 3, 3))
         n_lags = 3
-        chain = DiscreteMarkovChain.dist(P=P, steps=10, n_lags=n_lags)
+        x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+        chain = DiscreteMarkovChain.dist(P=P, steps=10, init_dist=x0, n_lags=n_lags)
         draws = pm.draw(chain, 10)
         logp = pm.logp(chain, draws)
 
@@ -60,24 +68,19 @@ class TestDiscreteMarkovRV:
         with pytest.warns(UserWarning):
             DiscreteMarkovChain.dist(P=P, steps=3)
 
-    def test_init_dist_must_be_categorical(self):
-        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
-        init_dist = pm.Poisson.dist(mu=1, size=3)
-        with pytest.raises(ValueError):
-            DiscreteMarkovChain.dist(P=P, init_dist=init_dist)
-
     def test_logp_shape(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        x0 = pm.Categorical.dist(p=np.ones(3) / 3)
 
         # Test with steps
-        chain = DiscreteMarkovChain.dist(P=P, steps=3)
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
         draws = pm.draw(chain, 5)
         logp = pm.logp(chain, draws).eval()
 
         assert logp.shape == (5,)
 
         # Test with shape
-        chain = DiscreteMarkovChain.dist(P=P, shape=(3,))
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, shape=(3,))
         draws = pm.draw(chain, 5)
         logp = pm.logp(chain, draws).eval()
 
@@ -85,7 +88,9 @@ class TestDiscreteMarkovRV:
 
     def test_logp_with_default_init_dist(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
-        chain = DiscreteMarkovChain.dist(P=P, steps=3)
+        x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
 
         logp = pm.logp(chain, [0, 1, 2]).eval()
         assert logp == np.log((1 / 3) * 0.5 * 0.3)
@@ -121,10 +126,12 @@ class TestDiscreteMarkovRV:
 
     def test_define_steps_via_shape_arg(self):
         P = pt.full((3, 3), 1 / 3)
-        chain = DiscreteMarkovChain.dist(P=P, shape=(3,))
+        x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, shape=(3,))
         assert chain.eval().shape == (3,)
 
-        chain = DiscreteMarkovChain.dist(P=P, shape=(3, 2))
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, shape=(3, 2))
         assert chain.eval().shape == (3, 2)
 
     def test_define_steps_via_dim_arg(self):
@@ -132,7 +139,9 @@ class TestDiscreteMarkovRV:
 
         with pm.Model(coords=coords):
             P = pt.full((3, 3), 1 / 3)
-            chain = DiscreteMarkovChain("chain", P=P, dims=["steps"])
+            x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+
+            chain = DiscreteMarkovChain("chain", P=P, init_dist=x0, dims=["steps"])
 
         assert chain.eval().shape == (3,)
 
@@ -141,7 +150,9 @@ class TestDiscreteMarkovRV:
 
         with pm.Model(coords=coords):
             P = pt.full((3, 3), 1 / 3)
-            chain = DiscreteMarkovChain("chain", P=P, steps=3, dims=["steps"])
+            x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+
+            chain = DiscreteMarkovChain("chain", P=P, steps=3, init_dist=x0, dims=["steps"])
 
         assert chain.eval().shape == (4,)
 
@@ -150,7 +161,11 @@ class TestDiscreteMarkovRV:
 
         with pm.Model(coords=coords):
             P = pt.full((3, 3), 1 / 3)
-            chain = DiscreteMarkovChain("chain", P=P, steps=2, dims=["steps", "mc_chains"])
+            x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+
+            chain = DiscreteMarkovChain(
+                "chain", P=P, steps=2, init_dist=x0, dims=["steps", "mc_chains"]
+            )
 
         assert chain.eval().shape == (3, 3)
 
@@ -177,12 +192,14 @@ class TestDiscreteMarkovRV:
         assert chain.eval().shape == (100, 2)
 
     def test_random_draws(self):
-        transition_probabiility_tests(steps=3, n_states=2, n_lags=1, n_draws=2500, atol=0.05)
-        transition_probabiility_tests(steps=3, n_states=2, n_lags=3, n_draws=7500, atol=0.05)
+        transition_probability_tests(steps=3, n_states=2, n_lags=1, n_draws=2500, atol=0.05)
+        transition_probability_tests(steps=3, n_states=2, n_lags=3, n_draws=7500, atol=0.05)
 
     def test_change_size_univariate(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
-        chain = DiscreteMarkovChain.dist(P=P, shape=(100, 5))
+        x0 = pm.Categorical.dist(p=np.ones(3) / 3)
+
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, shape=(100, 5))
 
         new_rw = change_dist_size(chain, new_size=(7,))
         assert tuple(new_rw.shape.eval()) == (7, 5)
