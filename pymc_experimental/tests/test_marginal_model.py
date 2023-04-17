@@ -170,7 +170,7 @@ def test_nested_marginalized_rvs():
         sigma = pm.HalfNormal("sigma")
 
         idx = pm.Bernoulli("idx", p=0.75)
-        dep = pm.Normal("dep", mu=pt.switch(pt.eq(idx, 0), -1000, 1000), sigma=sigma)
+        dep = pm.Normal("dep", mu=pt.switch(pt.eq(idx, 0), -1000.0, 1000.0), sigma=sigma)
 
         sub_idx = pm.Bernoulli("sub_idx", p=pt.switch(pt.eq(idx, 0), 0.15, 0.95), shape=(5,))
         sub_dep = pm.Normal("sub_dep", mu=dep + sub_idx * 100, sigma=sigma, shape=(5,))
@@ -296,6 +296,8 @@ def test_not_supported_marginalized():
 
 @pytest.mark.filterwarnings("error")
 def test_marginalized_deterministic_and_potential():
+    rng = np.random.default_rng(299)
+
     with MarginalModel() as m:
         x = pm.Bernoulli("x", p=0.7)
         y = pm.Normal("y", x)
@@ -306,7 +308,7 @@ def test_marginalized_deterministic_and_potential():
     with pytest.warns(UserWarning, match="There are multiple dependent variables"):
         m.marginalize([x])
 
-    y_draw, z_draw, det_draw, pot_draw = pm.draw([y, z, det, pot], draws=5)
+    y_draw, z_draw, det_draw, pot_draw = pm.draw([y, z, det, pot], draws=5, random_seed=rng)
     np.testing.assert_almost_equal(y_draw + z_draw, det_draw)
     np.testing.assert_almost_equal(det_draw, pot_draw - 1)
 

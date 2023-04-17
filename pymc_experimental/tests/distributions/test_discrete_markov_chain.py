@@ -166,7 +166,7 @@ class TestDiscreteMarkovRV:
 
         assert chain.eval().shape == (3, 3)
 
-    def test_mutiple_lags_with_data(self):
+    def test_multiple_lags_with_data(self):
         with pm.Model():
             P = pt.full((3, 3, 3), 1 / 3)
             x0 = pm.Categorical.dist(p=[0.1, 0.1, 0.8], size=2)

@@ -21,7 +21,7 @@ import pytest
 import scipy.stats.distributions as sp
 
 # test support imports from pymc
-from pymc.tests.distributions.util import (
+from pymc.testing import (
     BaseTestDistributionRandom,
     Domain,
     R,
@@ -30,8 +30,8 @@ from pymc.tests.distributions.util import (
     check_logcdf,
     check_logp,
     seeded_scipy_distribution_builder,
+    select_by_precision,
 )
-from pymc.tests.helpers import select_by_precision
 
 # the distributions to be tested
 from pymc_experimental.distributions import GenExtreme
