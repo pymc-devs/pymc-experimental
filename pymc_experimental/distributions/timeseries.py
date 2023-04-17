@@ -71,7 +71,7 @@ class DiscreteMarkovChain(Distribution):
 
     .. math::
 
-    \{x_t\}_{t=0}^T
+        \{x_t\}_{t=0}^T
 
     Where transition probability :math:`P(x_t | x_{t-1})` depends only on the state of the system at :math:`x_{t-1}`.
 
@@ -98,15 +98,13 @@ class DiscreteMarkovChain(Distribution):
 
     Examples
     --------
-     Create a Markov Chain of length 100 with 3 states
+     Create a Markov Chain of length 100 with 3 states. The number of states is given by the shape of P,
+     3 in this case.
 
     >>> with pm.Model() as markov_chain:
-    >>>     # The transition probability matrix should be square with rows that sum to 1
-    >>>     # The number of states in the markov chain is given by the shape of P, 3 in this example
     >>>     P = pm.Dirichlet("P", a=[1, 1, 1], size=(3,))
-    >>>     # The initial state probabilities should have size = n_states, or 3 in this case.
-    >>>     init = pm.Categorical.dist(p = np.full(3, 1 / 3))
-    >>>     markov_chain = pm.DiscreteMarkovChain("markov_chain", P=P, init_dist=init, shape=(100,))
+    >>>     init_dist = pm.Categorical.dist(p = np.full(3, 1 / 3))
+    >>>     markov_chain = pm.DiscreteMarkovChain("markov_chain", P=P, init_dist=init_dist, shape=(100,))
 
     """
 
