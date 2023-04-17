@@ -102,7 +102,7 @@ class ModelBuilder:
     @abstractmethod
     def create_sample_input():
         """
-        Needs to be implemented by the user in the inherited class.
+        Needs to be implemented by the user in the child class.
         Returns examples for data, model_config, sampler_config.
         This is useful for understanding the required
         data structures for the user model.
@@ -116,12 +116,15 @@ class ModelBuilder:
         >>>    data = pd.DataFrame({'input': x, 'output': y})
 
         >>>    model_config = {
-        >>>       'a_loc': 7,
-        >>>       'a_scale': 3,
-        >>>       'b_loc': 5,
-        >>>       'b_scale': 3,
-        >>>       'obs_error': 2,
-        >>>    }
+        >>>          'a' : {
+        >>>              'a_loc': 7,
+        >>>              'a_scale' : 3
+        >>>           },
+        >>>          'b' : {
+        >>>              'b_loc': 3,
+        >>>              'b_scale': 5
+        >>>          }
+        >>>          'obs_error': 2
 
         >>>    sampler_config = {
         >>>       'draws': 1_000,
@@ -132,6 +135,31 @@ class ModelBuilder:
         >>>    return data, model_config, sampler_config
         """
 
+        raise NotImplementedError
+
+    @abstractmethod
+    def build_model(
+        model_data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]],
+        model_config: Dict[str, Union[int, float, Dict]],
+    ) -> None:
+        """
+        Needs to be implemented by the user in the child class.
+        Creates an instance of pm.Model based on provided model_data and model_config, and
+        attaches it to self.
+
+        Required Parameters
+        ----------
+        model_data - preformated data that is going to be used in the model.
+        For efficiency reasons it should contain only the necesary data columns, not entire available
+        dataset since it's going to be encoded into data used to recreate the model.
+        model_config - dictionary where keys are strings representing names of parameters of the model, values are
+        dictionaries of parameters needed for creating model parameters (see example in create_model_input)
+
+        Returns:
+        ----------
+        None
+
+        """
         raise NotImplementedError
 
     def save(self, fname: str) -> None:
@@ -193,7 +221,7 @@ class ModelBuilder:
             data=idata.fit_data.to_dataframe(),
         )
         model_builder.idata = idata
-        model_builder.build_model()
+        model_builder.idata = model_builder.fit()
         if model_builder.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
@@ -234,9 +262,11 @@ class ModelBuilder:
         # If a new data was provided, assign it to the model
         if data is not None:
             self.data = data
-        self.model_data, self.model_config = self.create_sample_input(data=self.data)
+        self.model_data, self.model_config, self.sampler_config = self.create_sample_input(
+            data=self.data
+        )
         self.build_model(self.model_data, self.model_config)
-        self._data_setter(self.data)
+        self._data_setter(self.model_data)
 
         with self.model:
             self.idata = pm.sample(**self.sampler_config)
@@ -248,7 +278,7 @@ class ModelBuilder:
         self.idata.attrs["version"] = self.version
         self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         self.idata.attrs["model_config"] = json.dumps(self.serializable_model_config)
-        self.idata.add_groups(fit_data=self.data.to_xarray())
+        self.idata.add_groups(fit_data=self.model_data.to_xarray())
         return self.idata
 
     def predict(
