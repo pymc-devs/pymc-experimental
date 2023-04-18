@@ -29,7 +29,7 @@
 import os
 import sys
 
-from pymc_experimental.version import __version__
+import pymc_experimental  # isort:skip
 
 sys.path.insert(0, os.path.abspath("../"))
 
@@ -40,9 +40,9 @@ copyright = "2022, pymc-devs"
 author = "pymc-devs"
 
 # The short X.Y version
-version = __version__
+version = pymc_experimental.__version__
 # The full version, including alpha/beta/rc tags
-release = __version__
+release = version
 
 
 # -- General configuration ---------------------------------------------------
