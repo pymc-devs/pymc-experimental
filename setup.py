@@ -18,6 +18,8 @@ from os.path import dirname, join, realpath
 
 from setuptools import find_packages, setup
 
+import versioneer
+
 DISTNAME = "pymc-experimental"
 DESCRIPTION = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
 AUTHOR = "PyMC Developers"
@@ -40,10 +42,6 @@ classifiers = [
 ]
 
 PROJECT_ROOT = dirname(realpath(__file__))
-version_file = join(PROJECT_ROOT, "pymc_experimental/version.txt")
-__version__ = ""
-with open(version_file, encoding="utf-8") as buff:
-    __version__ = buff.read().splitlines()[0]
 
 # Get the long description from the README file
 with open(join(PROJECT_ROOT, "README.md"), encoding="utf-8") as buff:
@@ -71,7 +69,8 @@ extras_require["dev"] = dev_install_reqs
 if __name__ == "__main__":
     setup(
         name=DISTNAME,
-        version=__version__,
+        version=versioneer.get_version(),
+        cmdclass=versioneer.get_cmdclass(),
         maintainer=AUTHOR,
         maintainer_email=AUTHOR_EMAIL,
         description=DESCRIPTION,

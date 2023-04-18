@@ -21,7 +21,8 @@ if not logging.root.handlers:
         handler = logging.StreamHandler()
         _log.addHandler(handler)
 
-from pymc_experimental import distributions, gp, utils
+from pymc_experimental import _version, distributions, gp, utils
 from pymc_experimental.inference.fit import fit
 from pymc_experimental.marginal_model import MarginalModel
-from pymc_experimental.version import __version__
+
+__version__ = _version.get_versions()["version"]
