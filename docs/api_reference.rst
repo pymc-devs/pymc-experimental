@@ -32,6 +32,18 @@ Distributions
    GeneralizedPoisson
    histogram_utils.histogram_approximation
    DiscreteMarkovChain
+   R2D2M2CP
+   histogram_approximation
+
+
+Gaussian Processess
+===================
+
+.. currentmodule:: pymc_experimental.gp
+.. autosummary::
+   :toctree: generated/
+
+   latent_approx.HSGP
 
 
 Utils
