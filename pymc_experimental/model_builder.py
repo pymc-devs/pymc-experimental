@@ -180,9 +180,11 @@ class ModelBuilder:
         >>> name = './mymodel.nc'
         >>> model.save(name)
         """
-
-        file = Path(str(fname))
-        self.idata.to_netcdf(file)
+        if self.idata is not None and "fit_data" in self.idata:
+            file = Path(str(fname))
+            self.idata.to_netcdf(file)
+        else:
+            raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
     @classmethod
     def load(cls, fname: str):
@@ -220,7 +222,7 @@ class ModelBuilder:
             data=idata.fit_data.to_dataframe(),
         )
         model_builder.idata = idata
-        model_builder.idata = model_builder.fit()
+        model_builder.build_model(model_builder.data, model_builder.model_config)
         if model_builder.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
@@ -261,11 +263,12 @@ class ModelBuilder:
         # If a new data was provided, assign it to the model
         if data is not None:
             self.data = data
-        self.model_data, self.model_config, self.sampler_config = self.create_sample_input(
-            data=self.data
-        )
+        self.model_data, model_config, sampler_config = self.create_sample_input(data=self.data)
+        if self.model_config is None:
+            self.model_config = model_config
+        if self.sampler_config is None:
+            self.sampler_config = sampler_config
         self.build_model(self.model_data, self.model_config)
-        self._data_setter(self.model_data)
         with self.model:
             self.idata = pm.sample(**self.sampler_config, **kwargs)
             self.idata.extend(pm.sample_prior_predictive())
@@ -275,7 +278,7 @@ class ModelBuilder:
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
         self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
-        self.idata.attrs["model_config"] = json.dumps(self.serializable_model_config)
+        self.idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
@@ -385,6 +388,19 @@ class ModelBuilder:
             post_pred_dict[key] = post_pred.posterior_predictive[key].to_numpy()[0]
 
         return post_pred_dict
+
+    @property
+    @abstractmethod
+    def _serializable_model_config(self) -> Dict[str, Union[int, float, Dict]]:
+        """
+        Converts non-serializable values from model_config to their serializable reversable equivalent.
+        Data types like pandas DataFrame, Series or datetime aren't JSON serializable,
+        so in order to save the model they need to be formatted.
+
+        Returns
+        -------
+        model_config: dict
+        """
 
     @property
     def id(self) -> str:

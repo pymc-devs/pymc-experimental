@@ -57,7 +57,7 @@ class test_ModelBuilder(ModelBuilder):
                 pm.set_data({"y_data": data["output"].values})
 
     @property
-    def serializable_model_config(self):
+    def _serializable_model_config(self):
         return self.model_config
 
     @classmethod
@@ -95,7 +95,16 @@ class test_ModelBuilder(ModelBuilder):
         return model_builder
 
 
-def test_empty_model_config():
+def test_save_without_fit_raises_runtime_error():
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    model_builder = test_ModelBuilder(
+        model_config=model_config, sampler_config=sampler_config, data=data
+    )
+    with pytest.raises(RuntimeError):
+        model_builder.save("saved_model")
+
+
+def test_empty_sampler_config_fit():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     sampler_config = {}
     model_builder = test_ModelBuilder(
@@ -106,7 +115,7 @@ def test_empty_model_config():
     assert "posterior" in model_builder.idata.groups()
 
 
-def test_empty_model_config():
+def test_empty_model_config_fit():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model_config = {}
     model_builder = test_ModelBuilder(
