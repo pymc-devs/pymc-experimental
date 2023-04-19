@@ -116,12 +116,12 @@ class ModelBuilder:
 
         >>>    model_config = {
         >>>          'a' : {
-        >>>              'a_loc': 7,
-        >>>              'a_scale' : 3
+        >>>              'loc': 7,
+        >>>              'scale' : 3
         >>>           },
         >>>          'b' : {
-        >>>              'b_loc': 3,
-        >>>              'b_scale': 5
+        >>>              'loc': 3,
+        >>>              'scale': 5
         >>>          }
         >>>          'obs_error': 2
 
