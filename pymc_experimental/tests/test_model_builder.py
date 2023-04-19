@@ -28,19 +28,18 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build(self):
-
+    def build_model(self, model_data, model_config):
         with pm.Model() as self.model:
-            if self.data is not None:
-                x = pm.MutableData("x", self.data["input"].values)
-                y_data = pm.MutableData("y_data", self.data["output"].values)
+            if model_data is not None:
+                x = pm.MutableData("x", model_data["input"].values)
+                y_data = pm.MutableData("y_data", model_data["output"].values)
 
             # prior parameters
-            a_loc = self.model_config["a_loc"]
-            a_scale = self.model_config["a_scale"]
-            b_loc = self.model_config["b_loc"]
-            b_scale = self.model_config["b_scale"]
-            obs_error = self.model_config["obs_error"]
+            a_loc = model_config["a"]["loc"]
+            a_scale = model_config["a"]["scale"]
+            b_loc = model_config["b"]["loc"]
+            b_scale = model_config["b"]["scale"]
+            obs_error = model_config["obs_error"]
 
             # priors
             a = pm.Normal("a", a_loc, sigma=a_scale)
@@ -48,7 +47,7 @@ class test_ModelBuilder(ModelBuilder):
             obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
 
             # observed data
-            if self.data is not None:
+            if model_data is not None:
                 y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
 
     def _data_setter(self, data: pd.DataFrame):
@@ -57,18 +56,20 @@ class test_ModelBuilder(ModelBuilder):
             if "output" in data.columns:
                 pm.set_data({"y_data": data["output"].values})
 
+    @property
+    def _serializable_model_config(self):
+        return self.model_config
+
     @classmethod
-    def create_sample_input(self):
+    def create_sample_input(self, data=None):
         x = np.linspace(start=0, stop=1, num=100)
         y = 5 * x + 3
         y = y + np.random.normal(0, 1, len(x))
         data = pd.DataFrame({"input": x, "output": y})
 
         model_config = {
-            "a_loc": 0,
-            "a_scale": 10,
-            "b_loc": 0,
-            "b_scale": 10,
+            "a": {"loc": 0, "scale": 10},
+            "b": {"loc": 0, "scale": 10},
             "obs_error": 2,
         }
 
@@ -94,7 +95,16 @@ class test_ModelBuilder(ModelBuilder):
         return model_builder
 
 
-def test_empty_model_config():
+def test_save_without_fit_raises_runtime_error():
+    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
+    model_builder = test_ModelBuilder(
+        model_config=model_config, sampler_config=sampler_config, data=data
+    )
+    with pytest.raises(RuntimeError):
+        model_builder.save("saved_model")
+
+
+def test_empty_sampler_config_fit():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     sampler_config = {}
     model_builder = test_ModelBuilder(
@@ -105,7 +115,7 @@ def test_empty_model_config():
     assert "posterior" in model_builder.idata.groups()
 
 
-def test_empty_model_config():
+def test_empty_model_config_fit():
     data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     model_config = {}
     model_builder = test_ModelBuilder(
