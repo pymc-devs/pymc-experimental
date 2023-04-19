@@ -1,13 +1,28 @@
+#   Copyright 2022 The PyMC Developers
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+
 from typing import Sequence, Union
 
 import pymc as pm
 import pytensor.tensor as pt
 
 
-def _psivar2musigma(psi: pt.TensorVariable, var: pt.TensorVariable):
+def _psivar2musigma(psi: pt.TensorVariable, explained_var: pt.TensorVariable):
     pi = pt.erfinv(2 * psi - 1)
     f = (1 / (2 * pi**2 + 1)) ** 0.5
-    sigma = pt.expand_dims(var, -1) ** 0.5 * f
+    sigma = explained_var**0.5 * f
     mu = sigma * pi * 2**0.5
     return mu, sigma
 
@@ -38,7 +53,7 @@ def _R2D2M2CP_beta(
         probability of a coefficients to be positive
     """
     tau2 = r2 / (1 - r2)
-    explained_variance = phi * tau2 * pt.expand_dims(output_sigma**2, -1)
+    explained_variance = phi * pt.expand_dims(tau2 * output_sigma**2, -1)
     mu_param, std_param = _psivar2musigma(psi, explained_variance)
     if not centered:
         with pm.Model(name):
@@ -103,6 +118,8 @@ def R2D2M2CP(
 
     Notes
     -----
+    The R2D2M2CP prior is a modification of R2D2M2 prior.
+
     - ``(R2D2M2)``CP is taken from https://arxiv.org/abs/2208.07132
     - R2D2M2``(CP)``, (Correlation Probability) is proposed and implemented by Max Kochurov (@ferrine)
     """
@@ -116,7 +133,7 @@ def R2D2M2CP(
             if variance_explained is not None:
                 raise TypeError("Can't use variable importance with variance explained")
             phi = pm.Dirichlet("phi", pt.as_tensor(variables_importance), dims=hierarchy + [dim])
-        elif variance_explained:
+        elif variance_explained is not None:
             phi = pt.as_tensor(variance_explained)
         else:
             phi = 1 / len(model.coords[dim])
