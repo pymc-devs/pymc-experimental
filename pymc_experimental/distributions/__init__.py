@@ -20,6 +20,7 @@ Experimental probability distributions for stochastic nodes in PyMC.
 from pymc_experimental.distributions.continuous import GenExtreme
 from pymc_experimental.distributions.discrete import GeneralizedPoisson
 from pymc_experimental.distributions.timeseries import DiscreteMarkovChain
+from pymc_experimental.distributions.histogram_utils import histogram_approximation
 from pymc_experimental.distributions.multivatiate import R2D2M2CP
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "GeneralizedPoisson",
     "GenExtreme",
     "R2D2M2CP",
+    "histogram_approximation",
 ]
