@@ -23,8 +23,8 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
-from pymc.util import RandomState
 import xarray as xr
+from pymc.util import RandomState
 
 
 class ModelBuilder:
