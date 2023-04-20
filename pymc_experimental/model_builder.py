@@ -131,9 +131,15 @@ class ModelBuilder:
         >>>       'chains': 1,
         >>>       'target_accept': 0.95,
         >>>    }
-        >>>    return data, model_config, sampler_config
+        Returns
+        -------
+        data : dict
+            The data we want to train the model on
+        model_config : dict
+            A set of parameters for predictor distributions that allow to save and recreate the model
+        sampler_config : dict
+            A set of default settings for sampler config, customization of contents of sampler_config allows introducing new settings to the sampler
         """
-
         raise NotImplementedError
 
     @abstractmethod
@@ -148,11 +154,17 @@ class ModelBuilder:
 
         Required Parameters
         ----------
-        model_data - preformated data that is going to be used in the model.
-        For efficiency reasons it should contain only the necesary data columns, not entire available
-        dataset since it's going to be encoded into data used to recreate the model.
-        model_config - dictionary where keys are strings representing names of parameters of the model, values are
-        dictionaries of parameters needed for creating model parameters (see example in create_model_input)
+        model_data : dict
+            Preformated data that is going to be used in the model. For efficiency reasons it should contain only the necesary data columns,
+            not entire available dataset since it's going to be encoded into data used to recreate the model.
+        model_config : dict
+            Dictionary where keys are strings representing names of parameters of the model, values are dictionaries of parameters
+            needed for creating model parameters
+
+        See Also
+        --------
+        create_model_input : Creates all required input for the model builder based on the data given. Shows the examples of data structures on which the specific
+        inherited version of model builder operates on.
 
         Returns:
         ----------
@@ -232,10 +244,9 @@ class ModelBuilder:
 
     def fit(
         self,
+        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
         progressbar: bool = True,
         random_seed: RandomState = None,
-        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
-        *args: Any,
         **kwargs: Any,
     ) -> az.InferenceData:
         """
@@ -244,8 +255,15 @@ class ModelBuilder:
 
         Parameter
         ---------
-        data : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
-            It is the data we need to train the model on.
+        data : dict
+            Dictionary of string and either of numpy array, pandas dataframe or pandas Series. It is the data we need to train the model on.
+        progressbar : bool
+            Specifies whether the fit progressbar should be displayed
+        random_seed : RandomState
+            Provides sampler with initial random seed for obtaining reproducible samples
+        **kwargs : Any
+            Custom sampler settings can be provided in form of keyword arguments. The recommended way is to add custom settings to sampler_config provided by
+            create_sample_input, because arguments provided in the form of kwargs will not be saved into the model, therefore will not be available after loading the model
 
         Returns
         -------
