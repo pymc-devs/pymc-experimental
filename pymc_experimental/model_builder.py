@@ -235,7 +235,6 @@ class ModelBuilder:
         progressbar: bool = True,
         random_seed: RandomState = None,
         data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
-        *args: Any,
         **kwargs: Any,
     ) -> az.InferenceData:
         """
@@ -269,6 +268,10 @@ class ModelBuilder:
         if self.sampler_config is None:
             self.sampler_config = sampler_config
         self.build_model(self.model_data, self.model_config)
+
+        sampler_config["progressbar"] = progressbar
+        sampler_config["random_seed"] = random_seed
+
         with self.model:
             self.idata = pm.sample(**self.sampler_config, **kwargs)
             self.idata.extend(pm.sample_prior_predictive())
