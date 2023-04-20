@@ -30,6 +30,7 @@ Distributions
 
    GenExtreme
    histogram_utils.histogram_approximation
+   DiscreteMarkovChain
 
 
 Gaussian Processess
