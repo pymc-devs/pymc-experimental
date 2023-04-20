@@ -33,16 +33,6 @@ Distributions
    DiscreteMarkovChain
 
 
-Gaussian Processess
-===================
-
-.. currentmodule:: pymc_experimental.gp
-.. autosummary::
-   :toctree: generated/
-
-   latent_approx.HSGP
-
-
 Utils
 =====
 
