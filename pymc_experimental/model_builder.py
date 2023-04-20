@@ -23,6 +23,7 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+import xarray as xr
 from pymc.util import RandomState
 
 
@@ -286,7 +287,7 @@ class ModelBuilder:
         self,
         data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
         extend_idata: bool = True,
-    ) -> dict:
+    ) -> xr.Dataset:
         """
         Uses model to predict on unseen data and return point prediction of all the samples
 
@@ -299,7 +300,7 @@ class ModelBuilder:
 
         Returns
         -------
-        returns dictionary of sample's mean of posterior predict.
+        returns posterior mean of predictive samples
 
         Examples
         --------
@@ -308,31 +309,20 @@ class ModelBuilder:
         >>> idata = model.fit(data)
         >>> x_pred = []
         >>> prediction_data = pd.DataFrame({'input':x_pred})
-        # point predict
         >>> pred_mean = model.predict(prediction_data)
         """
-
-        if data_prediction is not None:  # set new input data
-            self._data_setter(data_prediction)
-
-        with self.model:  # sample with new input data
-            post_pred = pm.sample_posterior_predictive(self.idata)
-            if extend_idata:
-                self.idata.extend(post_pred)
-        # reshape output
-        post_pred = self._extract_samples(post_pred)
-        for key in post_pred:
-            post_pred[key] = post_pred[key].mean(axis=0)
-
-        return post_pred
+        posterior_predictive_samples = self.predict_posterior(data_prediction, extend_idata)
+        posterior_means = posterior_predictive_samples.mean(dim=["chain", "draw"], keep_attrs=True)
+        return posterior_means
 
     def predict_posterior(
         self,
         data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
         extend_idata: bool = True,
-    ) -> Dict[str, np.array]:
+        combined: bool = False,
+    ) -> xr.Dataset:
         """
-        Uses model to predict samples on unseen data.
+        Generate posterior predictive samples on unseen data.
 
         Parameters
         ---------
@@ -340,10 +330,12 @@ class ModelBuilder:
             It is the data we need to make prediction on using the model.
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
             Defaults to True.
+        combined: Combine chain and draw dims into sample. Won’t work if a dim named sample already exists.
+            Defaults to False.
 
         Returns
         -------
-        returns dictionary of sample's posterior predict.
+        returns posterior predictive samples
 
         Examples
         --------
@@ -352,8 +344,7 @@ class ModelBuilder:
         >>> idata = model.fit(data)
         >>> x_pred = []
         >>> prediction_data = pd.DataFrame({'input': x_pred})
-        # samples
-        >>> pred_mean = model.predict_posterior(prediction_data)
+        >>> pred_samples = model.predict_posterior(prediction_data)
         """
 
         if data_prediction is not None:  # set new input data
@@ -364,30 +355,11 @@ class ModelBuilder:
             if extend_idata:
                 self.idata.extend(post_pred)
 
-        # reshape output
-        post_pred = self._extract_samples(post_pred)
+        posterior_predictive_samples = az.extract(
+            post_pred, "posterior_predictive", combined=combined
+        )
 
-        return post_pred
-
-    @staticmethod
-    def _extract_samples(post_pred: az.data.inference_data.InferenceData) -> Dict[str, np.array]:
-        """
-        This method can be used to extract samples from posterior predict.
-
-        Parameters
-        ----------
-        post_pred: arviz InferenceData object
-
-        Returns
-        -------
-        Dictionary of numpy arrays from InferenceData object
-        """
-
-        post_pred_dict = dict()
-        for key in post_pred.posterior_predictive:
-            post_pred_dict[key] = post_pred.posterior_predictive[key].to_numpy()[0]
-
-        return post_pred_dict
+        return posterior_predictive_samples
 
     @property
     @abstractmethod
