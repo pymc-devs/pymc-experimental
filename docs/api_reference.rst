@@ -39,8 +39,8 @@ Gaussian Processess
 .. autosummary::
    :toctree: generated/
 
-   latent_approx.HSGP
-
+   latent_approx.ProjectedProcess
+   latent_approx.KarhunenLoeveExpansion
 
 Utils
 =====
