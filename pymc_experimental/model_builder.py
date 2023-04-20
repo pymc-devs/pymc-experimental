@@ -131,6 +131,8 @@ class ModelBuilder:
         >>>       'chains': 1,
         >>>       'target_accept': 0.95,
         >>>    }
+        >>>    return data, model_config, sampler_config
+
         Returns
         -------
         data : dict
