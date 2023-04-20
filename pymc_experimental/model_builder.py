@@ -17,12 +17,13 @@ import hashlib
 import json
 from abc import abstractmethod
 from pathlib import Path
-from typing import Dict, Union
+from typing import Any, Dict, Union
 
 import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+from pymc.util import RandomState
 import xarray as xr
 
 
@@ -101,7 +102,7 @@ class ModelBuilder:
     @abstractmethod
     def create_sample_input():
         """
-        Needs to be implemented by the user in the inherited class.
+        Needs to be implemented by the user in the child class.
         Returns examples for data, model_config, sampler_config.
         This is useful for understanding the required
         data structures for the user model.
@@ -115,12 +116,15 @@ class ModelBuilder:
         >>>    data = pd.DataFrame({'input': x, 'output': y})
 
         >>>    model_config = {
-        >>>       'a_loc': 7,
-        >>>       'a_scale': 3,
-        >>>       'b_loc': 5,
-        >>>       'b_scale': 3,
-        >>>       'obs_error': 2,
-        >>>    }
+        >>>          'a' : {
+        >>>              'loc': 7,
+        >>>              'scale' : 3
+        >>>           },
+        >>>          'b' : {
+        >>>              'loc': 3,
+        >>>              'scale': 5
+        >>>          }
+        >>>          'obs_error': 2
 
         >>>    sampler_config = {
         >>>       'draws': 1_000,
@@ -131,6 +135,31 @@ class ModelBuilder:
         >>>    return data, model_config, sampler_config
         """
 
+        raise NotImplementedError
+
+    @abstractmethod
+    def build_model(
+        model_data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]],
+        model_config: Dict[str, Union[int, float, Dict]],
+    ) -> None:
+        """
+        Needs to be implemented by the user in the child class.
+        Creates an instance of pm.Model based on provided model_data and model_config, and
+        attaches it to self.
+
+        Required Parameters
+        ----------
+        model_data - preformated data that is going to be used in the model.
+        For efficiency reasons it should contain only the necesary data columns, not entire available
+        dataset since it's going to be encoded into data used to recreate the model.
+        model_config - dictionary where keys are strings representing names of parameters of the model, values are
+        dictionaries of parameters needed for creating model parameters (see example in create_model_input)
+
+        Returns:
+        ----------
+        None
+
+        """
         raise NotImplementedError
 
     def save(self, fname: str) -> None:
@@ -152,9 +181,11 @@ class ModelBuilder:
         >>> name = './mymodel.nc'
         >>> model.save(name)
         """
-
-        file = Path(str(fname))
-        self.idata.to_netcdf(file)
+        if self.idata is not None and "fit_data" in self.idata:
+            file = Path(str(fname))
+            self.idata.to_netcdf(file)
+        else:
+            raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
     @classmethod
     def load(cls, fname: str):
@@ -192,7 +223,7 @@ class ModelBuilder:
             data=idata.fit_data.to_dataframe(),
         )
         model_builder.idata = idata
-        model_builder.build()
+        model_builder.build_model(model_builder.data, model_builder.model_config)
         if model_builder.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
@@ -201,7 +232,12 @@ class ModelBuilder:
         return model_builder
 
     def fit(
-        self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None
+        self,
+        progressbar: bool = True,
+        random_seed: RandomState = None,
+        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> az.InferenceData:
         """
         Fit a model using the data passed as a parameter.
@@ -228,12 +264,14 @@ class ModelBuilder:
         # If a new data was provided, assign it to the model
         if data is not None:
             self.data = data
-
-        self.build()
-        self._data_setter(data)
-
+        self.model_data, model_config, sampler_config = self.create_sample_input(data=self.data)
+        if self.model_config is None:
+            self.model_config = model_config
+        if self.sampler_config is None:
+            self.sampler_config = sampler_config
+        self.build_model(self.model_data, self.model_config)
         with self.model:
-            self.idata = pm.sample(**self.sampler_config)
+            self.idata = pm.sample(**self.sampler_config, **kwargs)
             self.idata.extend(pm.sample_prior_predictive())
             self.idata.extend(pm.sample_posterior_predictive(self.idata))
 
@@ -241,7 +279,7 @@ class ModelBuilder:
         self.idata.attrs["model_type"] = self._model_type
         self.idata.attrs["version"] = self.version
         self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
-        self.idata.attrs["model_config"] = json.dumps(self.model_config)
+        self.idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
@@ -322,6 +360,19 @@ class ModelBuilder:
         )
 
         return posterior_predictive_samples
+
+    @property
+    @abstractmethod
+    def _serializable_model_config(self) -> Dict[str, Union[int, float, Dict]]:
+        """
+        Converts non-serializable values from model_config to their serializable reversable equivalent.
+        Data types like pandas DataFrame, Series or datetime aren't JSON serializable,
+        so in order to save the model they need to be formatted.
+
+        Returns
+        -------
+        model_config: dict
+        """
 
     @property
     def id(self) -> str:
