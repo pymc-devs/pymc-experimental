@@ -93,7 +93,7 @@ class TestDiscreteMarkovRV:
         chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
 
         logp = pm.logp(chain, [0, 1, 2]).eval()
-        assert logp == np.log((1 / 3) * 0.5 * 0.3)
+        assert logp == pytest.approx(np.log((1 / 3) * 0.5 * 0.3), rel=1e-6)
 
     def test_logp_with_user_defined_init_dist(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
