@@ -29,16 +29,19 @@ repos:
   rev: v2.14.5
   hooks:
     - id: pylint
+      exclude: versioneer.py
       args: [--rcfile=.pylintrc]
       files: ^pymc_experimental/
 - repo: https://github.com/MarcoGorelli/madforhooks
   rev: 0.3.0
   hooks:
     - id: no-print-statements
+      exclude: _version.py
       files: ^pymc_experimental/
 - repo: local
   hooks:
     - id: no-relative-imports
+      exclude: versioneer.py
       name: No relative imports
       entry: from \.[\.\w]* import
       types: [python]
