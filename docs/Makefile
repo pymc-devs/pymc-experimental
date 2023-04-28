@@ -2,9 +2,9 @@
 #
 
 # You can set these variables from the command line.
-SPHINXOPTS    = # "-W" treats warnings as errors
-SPHINXBUILD   ?= sphinx-multiversion
-SOURCEDIR     = .
+SPHINXOPTS    =
+SPHINXBUILD   = sphinx-build
+SOURCEDIR     = source
 BUILDDIR      ?= _build
 
 # Put it first so that "make" without argument is like "make help".
@@ -24,3 +24,8 @@ local:
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 %: Makefile
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+
+doctest:
+	$(SPHINXBUILD) -b doctest $(SOURCEDIR) $(BUILDDIR)/doctest
+	@echo "Testing of doctests in the sources finished, look at the " \
+		"results in $(BUILDDIR)/doctest/output.txt"
