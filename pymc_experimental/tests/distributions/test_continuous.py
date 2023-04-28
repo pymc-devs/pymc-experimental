@@ -11,6 +11,7 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
+import platform
 
 import numpy as np
 import pymc as pm
@@ -50,6 +51,12 @@ class TestGenExtremeClass:
         reason="PyMC underflows earlier than scipy on float32",
     )
     def test_logp(self):
+        def ref_logp(value, mu, sigma, xi):
+            if 1 + xi * (value - mu) / sigma > 0:
+                return sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma)
+            else:
+                return -np.inf
+
         check_logp(
             GenExtreme,
             R,
@@ -58,15 +65,23 @@ class TestGenExtremeClass:
                 "sigma": Rplusbig,
                 "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1]),
             },
-            lambda value, mu, sigma, xi: sp.genextreme.logpdf(value, c=-xi, loc=mu, scale=sigma)
-            if 1 + xi * (value - mu) / sigma > 0
-            else -np.inf,
+            ref_logp,
         )
 
         if pytensor.config.floatX == "float32":
             raise Exception("Flaky test: It passed this time, but XPASS is not allowed.")
 
+    @pytest.mark.skipif(
+        (pytensor.config.floatX == "float32" and platform.system() == "Windows"),
+        reason="Scipy gives different results on Windows and does not match with desired accuracy",
+    )
     def test_logcdf(self):
+        def ref_logcdf(value, mu, sigma, xi):
+            if 1 + xi * (value - mu) / sigma > 0:
+                return sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma)
+            else:
+                return -np.inf
+
         check_logcdf(
             GenExtreme,
             R,
@@ -75,9 +90,7 @@ class TestGenExtremeClass:
                 "sigma": Rplusbig,
                 "xi": Domain([-1, -0.99, -0.5, 0, 0.5, 0.99, 1]),
             },
-            lambda value, mu, sigma, xi: sp.genextreme.logcdf(value, c=-xi, loc=mu, scale=sigma)
-            if 1 + xi * (value - mu) / sigma > 0
-            else -np.inf,
+            ref_logcdf,
             decimal=select_by_precision(float64=6, float32=2),
         )
 
