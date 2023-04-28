@@ -34,8 +34,7 @@ def test_pathfinder():
         tau = pm.HalfCauchy("tau", 5.0)
 
         theta = pm.Normal("theta", mu=0, sigma=1, shape=J)
-        theta_1 = mu + tau * theta
-        obs = pm.Normal("obs", mu=theta, sigma=sigma, shape=J, observed=y)
+        obs = pm.Normal("obs", mu=mu + tau * theta, sigma=sigma, shape=J, observed=y)
 
         idata = pmx.fit(method="pathfinder", iterations=100)
 
