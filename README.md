@@ -5,6 +5,10 @@
     alt="Contribute with Gitpod"
   />
 </a>
+<img
+  src="https://codecov.io/gh/pymc-devs/pymc-experimental/branch/main/graph/badge.svg"
+  alt="Codecov Badge"
+/>
 
 As PyMC continues to mature and expand its functionality to accommodate more domains of application, we increasingly see cutting-edge methodologies, highly specialized statistical distributions, and complex models appear.
 While this adds to the functionality and relevance of the project, it can also introduce instability and impose a burden on testing and quality control.
