@@ -176,6 +176,33 @@ class ModelBuilder:
         """
         raise NotImplementedError
 
+    def sample_model(self, **kwargs):
+
+        if self.model is None:
+            raise RuntimeError(
+                "The model hasn't been built yet, call .build_model() first or call .fit() instead."
+            )
+
+        with self.model:
+            sampler_args = {**self.sampler_config, **kwargs}
+            idata = pm.sample(**sampler_args)
+            idata.extend(pm.sample_prior_predictive())
+            idata.extend(pm.sample_posterior_predictive(idata))
+
+        self.set_idata_attrs(idata)
+        return idata
+
+    def set_idata_attrs(self, idata=None):
+        if idata is None:
+            idata = self.idata
+        if idata is None:
+            raise RuntimeError("No idata provided to set attrs on.")
+        idata.attrs["id"] = self.id
+        idata.attrs["model_type"] = self._model_type
+        idata.attrs["version"] = self.version
+        idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
+        idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
+
     def save(self, fname: str) -> None:
         """
         Saves inference data of the model.
@@ -195,7 +222,7 @@ class ModelBuilder:
         >>> name = './mymodel.nc'
         >>> model.save(name)
         """
-        if self.idata is not None and "fit_data" in self.idata:
+        if self.idata is not None and "posterior" in self.idata:
             file = Path(str(fname))
             self.idata.to_netcdf(file)
         else:
@@ -232,9 +259,9 @@ class ModelBuilder:
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
         model_builder = cls(
+            data=idata.fit_data.to_dataframe(),
             model_config=json.loads(idata.attrs["model_config"]),
             sampler_config=json.loads(idata.attrs["sampler_config"]),
-            data=idata.fit_data.to_dataframe(),
         )
         model_builder.idata = idata
         model_builder.build_model(model_builder.data, model_builder.model_config)
@@ -294,16 +321,7 @@ class ModelBuilder:
         sampler_config["progressbar"] = progressbar
         sampler_config["random_seed"] = random_seed
 
-        with self.model:
-            self.idata = pm.sample(**self.sampler_config, **kwargs)
-            self.idata.extend(pm.sample_prior_predictive())
-            self.idata.extend(pm.sample_posterior_predictive(self.idata))
-
-        self.idata.attrs["id"] = self.id
-        self.idata.attrs["model_type"] = self._model_type
-        self.idata.attrs["version"] = self.version
-        self.idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
-        self.idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
+        self.idata = self.sample_model(**sampler_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
