@@ -1,4 +1,3 @@
-
 #   Copyright 2023 The PyMC Developers
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,19 +17,19 @@ import sys
 import tempfile
 
 import numpy as np
-import xarray as xr
 import pytest
+import xarray as xr
 
 from pymc_experimental.bayesian_estimator_linearmodel import LinearModel
 
 try:
-    from sklearn.pipeline import Pipeline
     from sklearn.compose import TransformedTargetRegressor
+    from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
+
     sklearn_available = True
 except ImportError:
     sklearn_available = False
-
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +40,7 @@ def sample_input():
 
 @pytest.fixture(scope="module")
 def fitted_linear_model_instance(sample_input):
-    sampler_config={
+    sampler_config = {
         "draws": 500,
         "tune": 300,
         "chains": 2,
@@ -119,12 +118,12 @@ def test_sample_prior_predictive(samples, combined, sample_input):
     x, y = sample_input
     model = LinearModel()
     prior_pred = model.sample_prior_predictive(x, samples, combined=combined)[model.output_var]
-    draws = model.sampler_config['draws'] if samples is None else samples
+    draws = model.sampler_config["draws"] if samples is None else samples
     chains = 1
     expected_shape = (len(x), chains * draws) if combined else (chains, draws, len(x))
     assert prior_pred.shape == expected_shape
     # TODO: check that extend_idata has the expected effect
-    
+
 
 def test_id(sample_input):
     x, y = sample_input
@@ -133,7 +132,7 @@ def test_id(sample_input):
         "slope": {"loc": 0, "scale": 10},
         "obs_error": 2,
     }
-    sampler_config={
+    sampler_config = {
         "draws": 1_000,
         "tune": 1_000,
         "chains": 3,
@@ -148,9 +147,7 @@ def test_id(sample_input):
     assert model.id == expected_id
 
 
-@pytest.mark.skipif(
-    not sklearn_available, reason="scikit-learn package is not available."
-)
+@pytest.mark.skipif(not sklearn_available, reason="scikit-learn package is not available.")
 def test_pipeline_integration(sample_input):
     model_config = {
         "intercept": {"loc": 0, "scale": 2},
@@ -158,11 +155,15 @@ def test_pipeline_integration(sample_input):
         "obs_error": 1,
         "default_output_var": "y_hat",
     }
-    model = Pipeline([
-        ('input_scaling', StandardScaler()),
-        ('linear_model', TransformedTargetRegressor(LinearModel(model_config),
-                                                    transformer=StandardScaler()),)
-    ])
+    model = Pipeline(
+        [
+            ("input_scaling", StandardScaler()),
+            (
+                "linear_model",
+                TransformedTargetRegressor(LinearModel(model_config), transformer=StandardScaler()),
+            ),
+        ]
+    )
     x, y = sample_input
     model.fit(x, y)
 
