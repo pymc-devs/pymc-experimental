@@ -13,6 +13,8 @@
 #   limitations under the License.
 import logging
 
+import versioneer
+
 _log = logging.getLogger("pmx")
 
 if not logging.root.handlers:
@@ -25,4 +27,4 @@ from pymc_experimental import _version, distributions, gp, utils
 from pymc_experimental.inference.fit import fit
 from pymc_experimental.marginal_model import MarginalModel
 
-__version__ = _version.get_versions()["version"]
+__version__ = versioneer.get_version()
