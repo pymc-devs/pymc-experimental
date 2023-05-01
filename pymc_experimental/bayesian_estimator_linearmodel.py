@@ -60,8 +60,8 @@ class BayesianEstimator(ModelBuilder):
 
     def __init__(
         self,
-        model_config: Dict,
-        sampler_config: Dict,
+        model_config: Dict = None,
+        sampler_config: Dict = None,
     ):
         """
         Initializes model configuration and sampler configuration for the model
@@ -73,11 +73,28 @@ class BayesianEstimator(ModelBuilder):
         sampler_config : dict
             Parameters that initialise sampler configuration
         """
-        self.model_config = model_config  # parameters for priors etc.
-        self.sampler_config = sampler_config  # parameters for sampling
-        self.model = None
-        self.idata = None  # inference data object placeholder, idata is generated during fitting
+        if model_config is None:
+            model_config = self.default_model_config
+        self.model_config = model_config
+
+        if sampler_config is None:
+            sampler_config = self.default_sampler_config
+        self.sampler_config = sampler_config
+
+        self.model = None  # Set by build_model
+        self.output_var = None  # Set by build_model
+        self.idata = None  # idata is generated during fitting
         self.is_fitted_ = False
+
+    @property
+    @abstractmethod
+    def default_model_config(self):
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def default_sampler_config(self):
+        raise NotImplementedError
 
     def _validate_data(self, X, y=None):
         if y is not None:
@@ -390,27 +407,22 @@ class LinearModel(BayesianEstimator):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def __init__(
-        self,
-        model_config: Dict = None,
-        sampler_config: Dict = None,
-    ):
-        if model_config is None:
-            model_config = {
-                "intercept": {"loc": 0, "scale": 10},
-                "slope": {"loc": 0, "scale": 10},
-                "obs_error": 2,
-                "default_output_var": "y_hat",
-            }
-        if sampler_config is None:
-            sampler_config = {
-                "draws": 1_000,
-                "tune": 1_000,
-                "chains": 3,
-                "target_accept": 0.95,
-            }
-        super().__init__(model_config, sampler_config)
-        self.output_var = "y_hat"
+    @property
+    def default_model_config(self):
+        return {
+            "intercept": {"loc": 0, "scale": 10},
+            "slope": {"loc": 0, "scale": 10},
+            "obs_error": 2,
+        }
+
+    @property
+    def default_sampler_config(self):
+        return {
+            "draws": 1_000,
+            "tune": 1_000,
+            "chains": 3,
+            "target_accept": 0.95,
+        }
 
     def build_model(self):
         cfg = self.model_config
@@ -434,6 +446,7 @@ class LinearModel(BayesianEstimator):
 
             # observed data
             y_hat = pm.Normal("y_hat", y_model + obs_error, shape=x.shape, observed=y_data)
+            self.output_var = "y_hat"
 
     def _data_setter(self, X, y=None):
         with self.model:
