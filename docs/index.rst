@@ -41,4 +41,4 @@ See the `GitHub contributor page <https://github.com/pymc-devs/pymc-experimental
 .. toctree::
    :hidden:
 
-   api_reference
+   api_reference <https://www.pymc.io/projects/experimental/en/latest/api_reference.html>
