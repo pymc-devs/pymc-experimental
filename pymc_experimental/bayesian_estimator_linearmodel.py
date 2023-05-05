@@ -265,7 +265,7 @@ class BayesianEstimator(ModelBuilder):
         combined: bool = False,
     ) -> xr.DataArray:
         """Alias for `predict_posterior`, for consistency with scikit-learn probabilistic estimators."""
-        return self.predict_posterior(self, X_pred, extend_idata, combined)
+        return self.predict_posterior(X_pred, extend_idata, combined)
 
     def sample_prior_predictive(
         self, X_pred, samples: int = None, extend_idata: bool = False, combined: bool = True
@@ -431,8 +431,8 @@ class LinearModel(BayesianEstimator):
         # Actual data will be set by _data_setter when fitting or evaluating the model.
         # Data array size can change but number of dimensions must stay the same.
         with pm.Model() as self.model:
-            x = pm.MutableData("x", np.zeros((1,)))
-            y_data = pm.MutableData("y_data", np.zeros((1,)))
+            x = pm.MutableData("x", np.zeros((1,)), dims='observation')
+            y_data = pm.MutableData("y_data", np.zeros((1,)), dims='observation')
 
             # priors
             intercept = pm.Normal(
@@ -442,15 +442,15 @@ class LinearModel(BayesianEstimator):
             obs_error = pm.HalfNormal("σ_model_fmc", cfg["obs_error"])
 
             # Model
-            y_model = pm.Deterministic("y_model", intercept + slope * x)
+            y_model = pm.Deterministic("y_model", intercept + slope * x, dims='observation')
 
             # observed data
-            y_hat = pm.Normal("y_hat", y_model + obs_error, shape=x.shape, observed=y_data)
+            y_hat = pm.Normal("y_hat", y_model, sigma=obs_error, shape=x.shape, observed=y_data, dims='observation')
             self.output_var = "y_hat"
 
     def _data_setter(self, X, y=None):
         with self.model:
-            pm.set_data({"x": X.squeeze()})
+            pm.set_data({"x": X[:, 0]})
             if y is not None:
                 pm.set_data({"y_data": y.squeeze()})
 
