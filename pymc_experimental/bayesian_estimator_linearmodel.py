@@ -431,8 +431,8 @@ class LinearModel(BayesianEstimator):
         # Actual data will be set by _data_setter when fitting or evaluating the model.
         # Data array size can change but number of dimensions must stay the same.
         with pm.Model() as self.model:
-            x = pm.MutableData("x", np.zeros((1,)), dims='observation')
-            y_data = pm.MutableData("y_data", np.zeros((1,)), dims='observation')
+            x = pm.MutableData("x", np.zeros((1,)), dims="observation")
+            y_data = pm.MutableData("y_data", np.zeros((1,)), dims="observation")
 
             # priors
             intercept = pm.Normal(
@@ -442,10 +442,17 @@ class LinearModel(BayesianEstimator):
             obs_error = pm.HalfNormal("σ_model_fmc", cfg["obs_error"])
 
             # Model
-            y_model = pm.Deterministic("y_model", intercept + slope * x, dims='observation')
+            y_model = pm.Deterministic("y_model", intercept + slope * x, dims="observation")
 
             # observed data
-            y_hat = pm.Normal("y_hat", y_model, sigma=obs_error, shape=x.shape, observed=y_data, dims='observation')
+            y_hat = pm.Normal(
+                "y_hat",
+                y_model,
+                sigma=obs_error,
+                shape=x.shape,
+                observed=y_data,
+                dims="observation",
+            )
             self.output_var = "y_hat"
 
     def _data_setter(self, X, y=None):
