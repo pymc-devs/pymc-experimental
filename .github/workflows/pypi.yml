@@ -20,7 +20,6 @@ jobs:
           python-version: 3.8
       - name: Build the sdist and the wheel
         run: |
-          pip install numpy
           pip install build
           python3 -m build
       - name: Check the sdist installs and imports
@@ -28,6 +27,7 @@ jobs:
           mkdir -p test-sdist
           cd test-sdist
           python -m venv venv-sdist
+          venv-sdist/bin/python -m pip install numpy
           venv-sdist/bin/python -m pip install ../dist/pymc-experimental*.tar.gz
           echo "Checking import and version number (on release)"
           venv-sdist/bin/python -c "import pymc_experimental as pmx; assert pmx.__version__ == '${{  github.ref_name }}' if '${{ github.ref_type }}' == 'tag' else pmx.__version__; print(pmx.__version__)"
@@ -37,6 +37,7 @@ jobs:
           mkdir -p test-bdist
           cd test-bdist
           python -m venv venv-bdist
+          venv-bdist/bin/python -m pip install numpy
           venv-bdist/bin/python -m pip install ../dist/pymc_experimental*.whl
           echo "Checking import and version number (on release)"
           venv-bdist/bin/python -c "import pymc_experimental as pmx; assert pmx.__version__ == '${{  github.ref_name }}' if '${{ github.ref_type }}' == 'tag' else pmx.__version__; print(pmx.__version__)"
