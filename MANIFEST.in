@@ -1,4 +1,4 @@
 include requirements*.txt
 include *.md *.rst
 include LICENSE
-include versioneer.py
+include version.txt
