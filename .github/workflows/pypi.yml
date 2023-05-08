@@ -20,6 +20,7 @@ jobs:
           python-version: 3.8
       - name: Build the sdist and the wheel
         run: |
+          pip install numpy
           pip install build
           python3 -m build
       - name: Check the sdist installs and imports
