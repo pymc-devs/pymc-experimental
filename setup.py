@@ -78,6 +78,7 @@ if __name__ == "__main__":
         description=DESCRIPTION,
         license=LICENSE,
         url=URL,
+        download_url="https://github.com/pymc-devs/pymc-experimental/releases",
         long_description=LONG_DESCRIPTION,
         long_description_content_type="text/markdown",
         packages=find_packages(),
@@ -89,4 +90,16 @@ if __name__ == "__main__":
         python_requires=">=3.8",
         install_requires=install_reqs,
         extras_require=extras_require,
+        project_urls={
+            "Bug Tracker": "https://github.com/pymc-devs/pymc-experimental/issues",
+            "Documentation": "https://pymc-experimental.readthedocs.io/en/latest/",
+            "Source Code": "https://github.com/pymc-devs/pymc-experimental",
+        },
+        keywords=["pymc", "probability", "statistics", "modeling"],
+        platforms=["any"],
+        entry_points={
+            "console_scripts": [
+                "pymc-experimental = pymc_experimental.cli:main",
+            ],
+        },
     )

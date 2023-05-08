@@ -28,6 +28,7 @@ jobs:
           cd test-sdist
           python -m venv venv-sdist
           venv-sdist/bin/python -m pip install numpy
+          venv-sdist/bin/python -m pip install -r requirements.txt
           venv-sdist/bin/python -m pip install ../dist/pymc-experimental*.tar.gz
           echo "Checking import and version number (on release)"
           venv-sdist/bin/python -c "import pymc_experimental as pmx; assert pmx.__version__ == '${{  github.ref_name }}' if '${{ github.ref_type }}' == 'tag' else pmx.__version__; print(pmx.__version__)"
