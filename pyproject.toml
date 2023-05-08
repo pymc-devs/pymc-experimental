@@ -1,21 +1,56 @@
-[tool.pytest.ini_options]
-minversion = "6.0"
-xfail_strict=true
+[build-system]
+requires = ["setuptools>=58.2.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.poetry]
+name = "pymc-experimental"
+version = "0.1.0"
+description = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
+authors = ["PyMC Developers <pymc.devs@gmail.com>"]
+license = "Apache-2.0"
+homepage = "http://github.com/pymc-devs/pymc-experimental"
+repository = "https://github.com/pymc-devs/pymc-experimental.git"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+numpy = "*"
+pymc = ">=5.2.0"
+
+[tool.poetry.extras]
+complete = ["dask[complete]", "xhistogram"]
+dev = ["black", "flake8", "pytest", "pytest-cov"]
+dask_histogram = ["dask[complete]", "xhistogram"]
+histogram = ["xhistogram"]
+
+[tool.poetry.dev-dependencies]
+black = "^21.10b0"
+flake8 = "^4.1.2"
+pytest = "^6.2.5"
+pytest-cov = "^3.0.0"
 
 [tool.black]
-line-length = 100
-
-[tool.coverage.report]
-exclude_lines = [
-  "pragma: nocover",
-  "raise NotImplementedError",
-  "if TYPE_CHECKING:",
-]
+line-length = 88
+target-version = ["py38"]
 
 [tool.isort]
 profile = "black"
 
-[tool.nbqa.mutate]
-isort = 1
-black = 1
-pyupgrade = 1
+[metadata]
+name = "pymc-experimental"
+version = "0.1.0"
+description = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
+license = "Apache-2.0"
+url = "http://github.com/pymc-devs/pymc-experimental"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Operating System :: OS Independent",
+]
