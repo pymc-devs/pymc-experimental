@@ -65,10 +65,6 @@ extras_require["dev"] = dev_install_reqs
 
 import os
 
-here = os.path.dirname(os.path.realpath(__file__))
-
-import os
-
 from setuptools import find_packages, setup
 
 
