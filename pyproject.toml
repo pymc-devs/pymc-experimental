@@ -2,6 +2,28 @@
 requires = ["setuptools>=58.2.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "pymc-experimental"
+version = "0.1.0"
+description = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
+license = "Apache-2.0"
+urls = [
+    "Source Code = https://github.com/pymc-devs/pymc-experimental",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Operating System :: OS Independent",
+]
+
 [tool.poetry]
 name = "pymc-experimental"
 version = "0.1.0"
