@@ -18,7 +18,7 @@ from os.path import dirname, join, realpath
 
 from setuptools import find_packages, setup
 
-import versioneer
+from pymc_experimental.version import __version__
 
 DISTNAME = "pymc-experimental"
 DESCRIPTION = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
@@ -69,8 +69,7 @@ extras_require["dev"] = dev_install_reqs
 if __name__ == "__main__":
     setup(
         name=DISTNAME,
-        version=versioneer.get_version(),
-        cmdclass=versioneer.get_cmdclass(),
+        version=__version__,
         maintainer=AUTHOR,
         maintainer_email=AUTHOR_EMAIL,
         description=DESCRIPTION,

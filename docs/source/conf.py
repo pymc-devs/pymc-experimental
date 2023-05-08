@@ -76,6 +76,9 @@ templates_path = ["_templates"]
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
+# The full version, including alpha/beta/rc tags.
+release = pymc_marketing.__version__
+
 # The master toctree document.
 master_doc = "index"
 
