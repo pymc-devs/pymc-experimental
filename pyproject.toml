@@ -35,6 +35,14 @@ target-version = ["py38"]
 [tool.isort]
 profile = "black"
 
+[tool.setuptools]
+packages = [
+    "pymc_experimental",
+    "pymc_experimental.distribitions",
+    "pymc_experimental.gp",
+    "pymc_experimental.inference"
+]
+
 [metadata]
 name = "pymc-experimental"
 version = "0.1.0"
