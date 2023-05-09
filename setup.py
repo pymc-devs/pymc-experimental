@@ -18,8 +18,6 @@ from os.path import dirname, join, realpath
 
 from setuptools import find_packages, setup
 
-import versioneer
-
 DISTNAME = "pymc-experimental"
 DESCRIPTION = "A home for new additions to PyMC, which may include unusual probability distribitions, advanced model fitting algorithms, or any code that may be inappropriate to include in the pymc repository, but may want to be made available to users."
 AUTHOR = "PyMC Developers"
@@ -65,12 +63,23 @@ extras_require = dict(
 extras_require["complete"] = sorted(set(itertools.chain.from_iterable(extras_require.values())))
 extras_require["dev"] = dev_install_reqs
 
+import os
+
+from setuptools import find_packages, setup
+
+
+def read_version():
+    here = os.path.abspath(os.path.dirname(__file__))
+    with open(os.path.join(here, "pymc_experimental", "version.txt")) as f:
+        version = f.read().strip()
+    return version
+
 
 if __name__ == "__main__":
+
     setup(
-        name=DISTNAME,
-        version=versioneer.get_version(),
-        cmdclass=versioneer.get_cmdclass(),
+        name="pymc-experimental",
+        version=read_version(),
         maintainer=AUTHOR,
         maintainer_email=AUTHOR_EMAIL,
         description=DESCRIPTION,
