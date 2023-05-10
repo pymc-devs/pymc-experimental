@@ -34,7 +34,7 @@ except ImportError:
 
 @pytest.fixture(scope="module")
 def sample_input():
-    x, y = LinearModel.create_sample_input()
+    x, y = LinearModel.generate_model_data()
     return x, y
 
 
@@ -53,7 +53,7 @@ def fitted_linear_model_instance(sample_input):
 
 
 def test_save_without_fit_raises_runtime_error():
-    x, y = LinearModel.create_sample_input()
+    x, y = LinearModel.generate_model_data()
     test_model = LinearModel()
     with pytest.raises(RuntimeError):
         test_model.save("saved_model")

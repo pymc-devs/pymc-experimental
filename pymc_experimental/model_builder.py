@@ -182,11 +182,10 @@ class ModelBuilder:
         model_config: Dict[str, Union[int, float, Dict]] = None,
     ) -> None:
         """
-        Needs to be implemented by the user in the child class.
         Creates an instance of pm.Model based on provided model_data and model_config, and
         attaches it to self.
 
-        Required Parameters
+        Parameters
         ----------
         model_data : dict
             Preformated data that is going to be used in the model. For efficiency reasons it should contain only the necesary data columns,

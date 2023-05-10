@@ -60,6 +60,7 @@ class BayesianEstimator(ModelBuilder):
 
     def __init__(
         self,
+        data: Union[np.ndarray, pd.DataFrame, pd.Series] = None,
         model_config: Dict = None,
         sampler_config: Dict = None,
     ):
@@ -75,16 +76,9 @@ class BayesianEstimator(ModelBuilder):
         """
         if model_config is None:
             model_config = self.default_model_config
-        self.model_config = model_config
-
         if sampler_config is None:
             sampler_config = self.default_sampler_config
-        self.sampler_config = sampler_config
-
-        self.model = None  # Set by build_model
-        self.output_var = None  # Set by build_model
-        self.idata = None  # idata is generated during fitting
-        self.is_fitted_ = False
+        super().__init__(data=data, model_config=model_config, sampler_config=sampler_config)
 
     @property
     @abstractmethod
@@ -103,16 +97,11 @@ class BayesianEstimator(ModelBuilder):
             return check_array(X, accept_sparse=False)
 
     @abstractmethod
-    def build_model(self) -> None:
-        """
-        Build the PYMC model. The model is built with placeholder data.
-        Actual data will be set by _data_setter when fitting or evaluating the model.
-        Data array size can change but number of dimensions must stay the same.
+    def build_model(
+        model_data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        model_config: Dict[str, Union[int, float, Dict]] = None,
+    ) -> None:
 
-        Returns:
-        ----------
-        None
-        """
         raise NotImplementedError
 
     @abstractmethod
@@ -462,7 +451,7 @@ class LinearModel(BayesianEstimator):
                 pm.set_data({"y_data": y.squeeze()})
 
     @classmethod
-    def create_sample_input(cls, nsamples=100):
+    def generate_model_data(cls, nsamples=100, data=None):
         x = np.linspace(start=0, stop=1, num=nsamples)
         y = 5 * x + 3
         y = y + np.random.normal(0, 1, len(x))
