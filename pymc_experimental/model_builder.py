@@ -55,9 +55,9 @@ class ModelBuilder:
             dictionary of parameters that initialise sampler configuration. Class-default defined by the user default_sampler_config method.
         Examples
         --------
-        >>> class LinearModel(ModelBuilder):
+        >>> class MyModel(ModelBuilder):
         >>>     ...
-        >>> model = LinearModel(model_config, sampler_config)
+        >>> model = MyModel(model_config, sampler_config)
         """
 
         if sampler_config is None:
@@ -159,6 +159,12 @@ class ModelBuilder:
     ) -> pd.DataFrame:
         """
         Returns a default dataset for a class, can be used as a hint to data formatting required for the class
+        If data is not None, dataset will be created from it's content.
+
+        Parameters:
+        data : Union[np.ndarray, pd.DataFrame, pd.Series], optional
+            dataset that will replace the default sample data
+
 
         Examples
         --------
@@ -178,16 +184,16 @@ class ModelBuilder:
 
     @abstractmethod
     def build_model(
-        model_data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
         model_config: Dict[str, Union[int, float, Dict]] = None,
     ) -> None:
         """
-        Creates an instance of pm.Model based on provided model_data and model_config, and
+        Creates an instance of pm.Model based on provided data and model_config, and
         attaches it to self.
 
         Parameters
         ----------
-        model_data : dict
+        data : dict
             Preformated data that is going to be used in the model. For efficiency reasons it should contain only the necesary data columns,
             not entire available dataset since it's going to be encoded into data used to recreate the model.
             If not provided uses data from self.data
@@ -207,7 +213,34 @@ class ModelBuilder:
         raise NotImplementedError
 
     def sample_model(self, **kwargs):
+        """
+        Sample from the PyMC model.
 
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments to pass to the PyMC sampler.
+
+        Returns
+        -------
+        xarray.Dataset
+            The PyMC3 samples dataset.
+
+        Raises
+        ------
+        RuntimeError
+            If the PyMC model hasn't been built yet.
+
+        Examples
+        --------
+        >>> self.build_model()
+        >>> idata = self.sample_model(draws=100, tune=10)
+        >>> assert isinstance(idata, xr.Dataset)
+        >>> assert "posterior" in idata
+        >>> assert "prior" in idata
+        >>> assert "observed_data" in idata
+        >>> assert "log_likelihood" in idata
+        """
         if self.model is None:
             raise RuntimeError(
                 "The model hasn't been built yet, call .build_model() first or call .fit() instead."
@@ -223,6 +256,34 @@ class ModelBuilder:
         return idata
 
     def set_idata_attrs(self, idata=None):
+        """
+        Set attributes on an InferenceData object.
+
+        Parameters
+        ----------
+        idata : arviz.InferenceData, optional
+            The InferenceData object to set attributes on.
+
+        Raises
+        ------
+        RuntimeError
+            If no InferenceData object is provided.
+
+        Returns
+        -------
+        None
+
+        Examples
+        --------
+        >>> model = MyModel(ModelBuilder)
+        >>> idata = az.InferenceData(your_dataset)
+        >>> model.set_idata_attrs(idata=idata)
+        >>> assert "id" in idata.attrs #this and the following lines are part of doctest, not user manual
+        >>> assert "model_type" in idata.attrs
+        >>> assert "version" in idata.attrs
+        >>> assert "sampler_config" in idata.attrs
+        >>> assert "model_config" in idata.attrs
+        """
         if idata is None:
             idata = self.idata
         if idata is None:
@@ -235,22 +296,33 @@ class ModelBuilder:
 
     def save(self, fname: str) -> None:
         """
-        Saves inference data of the model.
+        Save the model's inference data to a file.
 
         Parameters
         ----------
-        fname : string
-            This denotes the name with path from where idata should be saved.
+        fname : str
+            The name and path of the file to save the inference data with model parameters.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        RuntimeError
+            If the model hasn't been fit yet (no inference data available).
 
         Examples
         --------
-        >>> class LinearModel(ModelBuilder):
-        >>>     ...
-        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
-        >>> model = LinearModel(model_config, sampler_config)
-        >>> idata = model.fit(data)
-        >>> name = './mymodel.nc'
-        >>> model.save(name)
+        This method is meant to be overridden and implemented by subclasses.
+        It should not be called directly on the base abstract class or its instances.
+
+        >>> class MyModel(ModelBuilder):
+        >>>     def __init__(self):
+        >>>         super().__init__()
+        >>> model = MyModel()
+        >>> model.fit(data)
+        >>> model.save('model_results.nc')  # This will call the overridden method in MyModel
         """
         if self.idata is not None and "posterior" in self.idata:
             file = Path(str(fname))
@@ -259,33 +331,32 @@ class ModelBuilder:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
     @classmethod
-    def load(cls, fname: str):
+    def load(cls, fname: str) -> "ModelBuilder":
         """
-        Creates a ModelBuilder instance from a file,
-        Loads inference data for the model.
+        Create a ModelBuilder instance from a file and load inference data for the model.
 
         Parameters
         ----------
-        fname : string
-            This denotes the name with path from where idata should be loaded from.
+        fname : str
+            The name and path from which the inference data should be loaded.
 
         Returns
         -------
-        Returns an instance of ModelBuilder.
+        ModelBuilder
+            An instance of the ModelBuilder class.
 
         Raises
         ------
         ValueError
-            If the inference data that is loaded doesn't match with the model.
+            If the loaded inference data does not match the model.
 
         Examples
         --------
-        >>> class LinearModel(ModelBuilder):
+        >>> class MyModel(ModelBuilder):
         >>>     ...
         >>> name = './mymodel.nc'
-        >>> imported_model = LinearModel.load(name)
+        >>> imported_model = MyModel.load(name)
         """
-
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
         model_builder = cls(
@@ -297,7 +368,7 @@ class ModelBuilder:
         model_builder.build_model(model_builder.data, model_builder.model_config)
         if model_builder.id != idata.attrs["id"]:
             raise ValueError(
-                f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
+                f"The file '{fname}' does not contain inference data of the same model or configuration as '{cls._model_type}'"
             )
 
         return model_builder
@@ -331,8 +402,7 @@ class ModelBuilder:
 
         Examples
         --------
-        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
-        >>> model = LinearModel(model_config, sampler_config)
+        >>> model = MyModel()
         >>> idata = model.fit(data)
         Auto-assigning NUTS sampler...
         Initializing NUTS using jitter+adapt_diag...
@@ -340,19 +410,19 @@ class ModelBuilder:
 
         # If a new data was provided, assign it to the model
         if data is not None:
-            self.data = data
-        self.model_data = self.generate_model_data(data=self.data)
+            self.data = self.generate_model_data(data=self.data)
+
         if self.model_config is None:
             self.model_config = self.default_model_config
         if self.sampler_config is None:
             self.sampler_config = self.default_sampler_config
         if self.model is None:
-            self.build_model(self.model_data, self.model_config)
+            self.build_model(self.data, self.model_config)
 
         self.sampler_config["progressbar"] = progressbar
         self.sampler_config["random_seed"] = random_seed
-
-        self.idata = self.sample_model(**self.sampler_config)
+        temp_sampler_config = {**self.sampler_config, **kwargs}
+        self.idata = self.sample_model(**temp_sampler_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 
@@ -377,8 +447,7 @@ class ModelBuilder:
 
         Examples
         --------
-        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
-        >>> model = LinearModel(model_config, sampler_config)
+        >>> model = MyModel()
         >>> idata = model.fit(data)
         >>> x_pred = []
         >>> prediction_data = pd.DataFrame({'input':x_pred})
@@ -398,7 +467,7 @@ class ModelBuilder:
         Generate posterior predictive samples on unseen data.
 
         Parameters
-        ---------
+        ----------
         data_prediction : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
             It is the data we need to make prediction on using the model.
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
@@ -412,8 +481,7 @@ class ModelBuilder:
 
         Examples
         --------
-        >>> data, model_config, sampler_config = LinearModel.create_sample_input()
-        >>> model = LinearModel(model_config, sampler_config)
+        >>> model = MyModel()
         >>> idata = model.fit(data)
         >>> x_pred = []
         >>> prediction_data = pd.DataFrame({'input': x_pred})
@@ -450,13 +518,22 @@ class ModelBuilder:
     @property
     def id(self) -> str:
         """
-        It creates a hash value to match the model version using last 16 characters of hash encoding.
+        Generate a unique hash value for the model.
+
+        The hash value is created using the last 16 characters of the SHA256 hash encoding, based on the model configuration,
+        version, and model type.
 
         Returns
         -------
-        Returns string of length 16 characters contains unique hash of the model
-        """
+        str
+            A string of length 16 characters containing a unique hash of the model.
 
+        Examples
+        --------
+        >>> model = MyModel()
+        >>> model.id
+        '0123456789abcdef'
+        """
         hasher = hashlib.sha256()
         hasher.update(str(self.model_config.values()).encode())
         hasher.update(self.version.encode())

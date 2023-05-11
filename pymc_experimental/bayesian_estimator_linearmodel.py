@@ -414,6 +414,25 @@ class LinearModel(BayesianEstimator):
         }
 
     def build_model(self):
+        """
+        Build the PyMC model.
+
+        Returns
+        -------
+        None
+
+        Examples
+        --------
+        >>> self.build_model()
+        >>> assert self.model is not None
+        >>> assert isinstance(self.model, pm.Model)
+        >>> assert "intercept" in self.model.named_vars
+        >>> assert "slope" in self.model.named_vars
+        >>> assert "σ_model_fmc" in self.model.named_vars
+        >>> assert "y_model" in self.model.named_vars
+        >>> assert "y_hat" in self.model.named_vars
+        >>> assert self.output_var == "y_hat"
+        """
         cfg = self.model_config
 
         # The model is built with placeholder data.
@@ -452,6 +471,30 @@ class LinearModel(BayesianEstimator):
 
     @classmethod
     def generate_model_data(cls, nsamples=100, data=None):
+        """
+        Generate model data for linear regression.
+
+        Parameters
+        ----------
+        nsamples : int, optional
+            The number of samples to generate. Default is 100.
+        data : np.ndarray, optional
+            An optional data array to add noise to.
+
+        Returns
+        -------
+        tuple
+            A tuple of two np.ndarrays representing the feature matrix and target vector, respectively.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> x, y = cls.generate_model_data()
+        >>> assert isinstance(x, np.ndarray)
+        >>> assert isinstance(y, np.ndarray)
+        >>> assert x.shape == (100, 1)
+        >>> assert y.shape == (100,)
+        """
         x = np.linspace(start=0, stop=1, num=nsamples)
         y = 5 * x + 3
         y = y + np.random.normal(0, 1, len(x))
