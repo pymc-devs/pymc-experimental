@@ -376,7 +376,8 @@ class ModelBuilder:
 
     def fit(
         self,
-        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        X: Union[np.ndarray, pd.DataFrame, pd.Series],
+        y: Union[np.ndarray, pd.DataFrame, pd.Series],
         progressbar: bool = True,
         random_seed: RandomState = None,
         **kwargs: Any,
@@ -385,22 +386,24 @@ class ModelBuilder:
         Fit a model using the data passed as a parameter.
         Sets attrs to inference data of the model.
 
-        Parameter
-        ---------
-        data : dict
-            Dictionary of string and either of numpy array, pandas dataframe or pandas Series. It is the data we need to train the model on.
+
+        Parameters
+        ----------
+        X : array-like if sklearn is available, otherwise array, shape (n_obs, n_features)
+            The training input samples.
+        y : array-like if sklearn is available, otherwise array, shape (n_obs,)
+            The target values (real numbers).
         progressbar : bool
             Specifies whether the fit progressbar should be displayed
         random_seed : RandomState
             Provides sampler with initial random seed for obtaining reproducible samples
         **kwargs : Any
-            Custom sampler settings can be provided in form of keyword arguments. The recommended way is to add custom settings to sampler_config provided by
-            create_sample_input, because arguments provided in the form of kwargs will not be saved into the model, therefore will not be available after loading the model
+            Custom sampler settings can be provided in form of keyword arguments.
 
         Returns
         -------
-        returns inference data of the fitted model.
-
+        self : az.InferenceData
+            returns inference data of the fitted model.
         Examples
         --------
         >>> model = MyModel()
@@ -409,21 +412,17 @@ class ModelBuilder:
         Initializing NUTS using jitter+adapt_diag...
         """
 
-        # If a new data was provided, assign it to the model
-        if data is not None:
-            self.data = self.generate_model_data(data=self.data)
+        X, y = X, y
 
-        if self.model_config is None:
-            self.model_config = self.default_model_config
-        if self.sampler_config is None:
-            self.sampler_config = self.default_sampler_config
-        if self.model is None:
-            self.build_model(self.data, self.model_config)
+        self.build_model()
+        self._data_setter(X, y)
 
-        self.sampler_config["progressbar"] = progressbar
-        self.sampler_config["random_seed"] = random_seed
-        temp_sampler_config = {**self.sampler_config, **kwargs}
-        self.idata = self.sample_model(**temp_sampler_config)
+        sampler_config = self.sampler_config.copy()
+        sampler_config["progressbar"] = progressbar
+        sampler_config["random_seed"] = random_seed
+        sampler_config.update(**kwargs)
+
+        self.idata = self.sample_model(**sampler_config)
         self.idata.add_groups(fit_data=self.data.to_xarray())
         return self.idata
 

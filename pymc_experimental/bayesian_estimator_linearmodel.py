@@ -1,12 +1,11 @@
 from abc import abstractmethod
-from typing import Any, Dict, Union
+from typing import Dict, Union
 
 import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
 import xarray as xr
-from pymc.util import RandomState
 
 from pymc_experimental.model_builder import ModelBuilder
 
@@ -120,51 +119,6 @@ class BayesianEstimator(ModelBuilder):
         """
 
         raise NotImplementedError
-
-    def fit(
-        self,
-        X: Union[np.ndarray, pd.DataFrame, pd.Series],
-        y: Union[np.ndarray, pd.DataFrame, pd.Series],
-        progressbar: bool = True,
-        random_seed: RandomState = None,
-        **kwargs: Any,
-    ) -> "BayesianEstimator":
-        """
-        Fit a model using the data passed as a parameter.
-        Sets attrs to inference data of the model.
-
-
-        Parameters
-        ----------
-        X : array-like if sklearn is available, otherwise array, shape (n_obs, n_features)
-            The training input samples.
-        y : array-like if sklearn is available, otherwise array, shape (n_obs,)
-            The target values (real numbers).
-        progressbar : bool
-            Specifies whether the fit progressbar should be displayed
-        random_seed : RandomState
-            Provides sampler with initial random seed for obtaining reproducible samples
-        **kwargs : Any
-            Custom sampler settings can be provided in form of keyword arguments.
-
-        Returns
-        -------
-        self : object
-            Returns self.
-        """
-
-        X, y = self._validate_data(X, y)
-
-        self.build_model()
-        self._data_setter(X, y)
-
-        sampler_config = self.sampler_config.copy()
-        sampler_config["progressbar"] = progressbar
-        sampler_config["random_seed"] = random_seed
-        sampler_config.update(**kwargs)
-
-        self.idata = self.sample_model(**sampler_config)
-        return self
 
     def predict(
         self,
