@@ -32,7 +32,10 @@ class test_ModelBuilder(ModelBuilder):
     def build_model(self, model_data=None, model_config=None):
 
         with pm.Model() as self.model:
-
+            if model_data is None:
+                model_data = test_ModelBuilder.generate_model_data()
+            if model_config is None:
+                model_config = self.default_model_config
             x = pm.MutableData("x", model_data["input"].values)
             y_data = pm.MutableData("y_data", model_data["output"].values)
 

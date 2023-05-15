@@ -331,25 +331,24 @@ class ModelBuilder:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
     @classmethod
-    def load(cls, fname: str) -> "ModelBuilder":
+    def load(cls, fname: str):
         """
-        Create a ModelBuilder instance from a file and load inference data for the model.
+        Creates a ModelBuilder instance from a file,
+        Loads inference data for the model.
 
         Parameters
         ----------
-        fname : str
-            The name and path from which the inference data should be loaded.
+        fname : string
+            This denotes the name with path from where idata should be loaded from.
 
         Returns
         -------
-        ModelBuilder
-            An instance of the ModelBuilder class.
+        Returns an instance of ModelBuilder.
 
         Raises
         ------
         ValueError
-            If the loaded inference data does not match the model.
-
+            If the inference data that is loaded doesn't match with the model.
         Examples
         --------
         >>> class MyModel(ModelBuilder):
@@ -359,19 +358,21 @@ class ModelBuilder:
         """
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
-        model_builder = cls(
+        model = cls(
             data=idata.fit_data.to_dataframe(),
             model_config=json.loads(idata.attrs["model_config"]),
             sampler_config=json.loads(idata.attrs["sampler_config"]),
         )
-        model_builder.idata = idata
-        model_builder.build_model(model_builder.data, model_builder.model_config)
-        if model_builder.id != idata.attrs["id"]:
+        model.idata = idata
+        model.build_model()
+        # All previously used data is in idata.
+
+        if model.id != idata.attrs["id"]:
             raise ValueError(
-                f"The file '{fname}' does not contain inference data of the same model or configuration as '{cls._model_type}'"
+                f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
             )
 
-        return model_builder
+        return model
 
     def fit(
         self,
