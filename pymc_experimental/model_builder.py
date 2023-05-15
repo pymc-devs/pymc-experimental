@@ -23,7 +23,6 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
-import xarray as xr
 from pymc.util import RandomState
 
 
@@ -428,22 +427,24 @@ class ModelBuilder:
 
     def predict(
         self,
-        data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
+        X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
         extend_idata: bool = True,
-    ) -> xr.Dataset:
+    ) -> np.ndarray:
         """
-        Uses model to predict on unseen data and return point prediction of all the samples
+        Uses model to predict on unseen data and return point prediction of all the samples. The point prediction
+        for each input row is the expected output value, computed as the mean of MCMC samples.
 
         Parameters
         ---------
-        data_prediction : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
-            It is the data we need to make prediction on using the model.
+        X_pred : array-like if sklearn is available, otherwise array, shape (n_pred, n_features)
+            The input data used for prediction.
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
             Defaults to True.
 
         Returns
         -------
-        returns posterior mean of predictive samples
+        y_pred : ndarray, shape (n_pred,)
+            Predicted output corresponding to input X_pred.
 
         Examples
         --------
@@ -453,43 +454,42 @@ class ModelBuilder:
         >>> prediction_data = pd.DataFrame({'input':x_pred})
         >>> pred_mean = model.predict(prediction_data)
         """
-        posterior_predictive_samples = self.predict_posterior(data_prediction, extend_idata)
-        posterior_means = posterior_predictive_samples.mean(dim=["chain", "draw"], keep_attrs=True)
-        return posterior_means
+        if not hasattr(self, "output_var"):
+            raise NotImplementedError(f"Subclasses of {__class__} should set self.output_var")
 
-    def predict_posterior(
-        self,
-        data_prediction: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
-        extend_idata: bool = True,
-        combined: bool = False,
-    ) -> xr.Dataset:
+        posterior_predictive_samples = self.sample_posterior_predictive(
+            X_pred, extend_idata, combined=False
+        )
+
+        if self.output_var not in posterior_predictive_samples:
+            raise KeyError(
+                f"Output variable {self.output_var} not found in posterior predictive samples."
+            )
+
+        posterior_means = posterior_predictive_samples[self.output_var].mean(
+            dim=["chain", "draw"], keep_attrs=True
+        )
+        return posterior_means.data
+
+    def sample_posterior_predictive(self, X_pred, extend_idata, combined):
         """
-        Generate posterior predictive samples on unseen data.
+        Sample from the model's posterior predictive distribution.
 
         Parameters
-        ----------
-        data_prediction : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
-            It is the data we need to make prediction on using the model.
+        ---------
+        X_pred : array, shape (n_pred, n_features)
+            The input data used for prediction using prior distribution..
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
-            Defaults to True.
-        combined: Combine chain and draw dims into sample. Won’t work if a dim named sample already exists.
             Defaults to False.
+        combined: Combine chain and draw dims into sample. Won't work if a dim named sample already exists.
+            Defaults to True.
 
         Returns
         -------
-        returns posterior predictive samples
-
-        Examples
-        --------
-        >>> model = MyModel()
-        >>> idata = model.fit(data)
-        >>> x_pred = []
-        >>> prediction_data = pd.DataFrame({'input': x_pred})
-        >>> pred_samples = model.predict_posterior(prediction_data)
+        posterior_predictive_samples : DataArray, shape (n_pred, samples)
+            Posterior predictive samples for each input X_pred
         """
-
-        if data_prediction is not None:  # set new input data
-            self._data_setter(data_prediction)
+        self._data_setter(X_pred)
 
         with self.model:  # sample with new input data
             post_pred = pm.sample_posterior_predictive(self.idata)

@@ -53,6 +53,7 @@ class test_ModelBuilder(ModelBuilder):
 
             # observed data
             y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
+            self.output_var = "y_model"
 
     def _data_setter(self, x: pd.Series, y: pd.Series = None):
         with self.model:
@@ -120,9 +121,10 @@ def test_fit():
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = model.predict(prediction_data["input"])
-    assert "y_model" in pred.keys()
-    post_pred = model.predict_posterior(prediction_data["input"])
-    assert "y_model" in post_pred.keys()
+    post_pred = model.sample_posterior_predictive(
+        prediction_data["input"], extend_idata=True, combined=True
+    )
+    post_pred.y_model.shape[0] == prediction_data.input.shape
 
 
 @pytest.mark.skipif(
@@ -139,7 +141,7 @@ def test_save_load():
     prediction_data = pd.DataFrame({"input": x_pred})
     pred1 = test_builder.predict(prediction_data["input"])
     pred2 = test_builder2.predict(prediction_data["input"])
-    assert pred1["y_model"].shape == pred2["y_model"].shape
+    assert pred1.shape == pred2.shape
     temp.close()
 
 
@@ -148,18 +150,20 @@ def test_predict():
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = model.predict(prediction_data["input"])
-    assert "y_model" in pred
-    assert len(prediction_data.input.values) == len(pred["y_model"])
-    assert np.issubdtype(pred["y_model"].dtype, np.floating)
+    # Perform elementwise comparison using numpy
+    assert type(pred) == np.ndarray
+    assert len(pred) > 0
 
 
 @pytest.mark.parametrize("combined", [True, False])
-def test_predict_posterior(combined):
+def test_sample_posterior_predictive(combined):
     model = test_ModelBuilder.initial_build_and_fit()
     n_pred = 100
     x_pred = np.random.uniform(low=0, high=1, size=n_pred)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.predict_posterior(prediction_data["input"], combined=combined)
+    pred = model.sample_posterior_predictive(
+        prediction_data["input"], combined=combined, extend_idata=True
+    )
     chains = model.idata.sample_stats.dims["chain"]
     draws = model.idata.sample_stats.dims["draw"]
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)

@@ -74,7 +74,7 @@ class BayesianEstimator(ModelBuilder):
             model_config = self.default_model_config
         if sampler_config is None:
             sampler_config = self.default_sampler_config
-        super().__init__(data=data, model_config=model_config, sampler_config=sampler_config)
+        super().__init__(model_config=model_config, sampler_config=sampler_config)
 
     @property
     @abstractmethod
@@ -119,46 +119,6 @@ class BayesianEstimator(ModelBuilder):
         """
 
         raise NotImplementedError
-
-    def predict(
-        self,
-        X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
-        extend_idata: bool = True,
-    ) -> np.ndarray:
-        """
-        Uses model to predict on unseen data and return point prediction of all the samples. The point prediction
-        for each input row is the expected output value, computed as the mean of MCMC samples.
-
-        Parameters
-        ---------
-        X_pred : array-like if sklearn is available, otherwise array, shape (n_pred, n_features)
-            The input data used for prediction.
-        extend_idata : Boolean determining whether the predictions should be added to inference data object.
-            Defaults to True.
-
-        Returns
-        -------
-        y_pred : ndarray, shape (n_pred,)
-            Predicted output corresponding to input X_pred.
-        """
-        if not hasattr(self, "output_var"):
-            raise NotImplementedError(f"Subclasses of {__class__} should set self.output_var")
-
-        X_pred = self._validate_data(X_pred)
-
-        posterior_predictive_samples = self.sample_posterior_predictive(
-            X_pred, extend_idata, combined=False
-        )
-
-        if self.output_var not in posterior_predictive_samples:
-            raise KeyError(
-                f"Output variable {self.output_var} not found in posterior predictive samples."
-            )
-
-        posterior_means = posterior_predictive_samples[self.output_var].mean(
-            dim=["chain", "draw"], keep_attrs=False
-        )
-        return posterior_means.data
 
     def predict_posterior(
         self,
