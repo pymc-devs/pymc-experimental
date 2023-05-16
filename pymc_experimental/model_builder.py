@@ -17,13 +17,26 @@ import hashlib
 import json
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, List, Union
 
 import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+import xarray as xr
 from pymc.util import RandomState
+
+# If scikit-learn is available, use its data validator
+try:
+    from sklearn.utils.validation import check_array, check_X_y
+# If scikit-learn is not available, return the data unchanged
+except ImportError:
+
+    def check_X_y(X, y, **kwargs):
+        return X, y
+
+    def check_array(X, **kwargs):
+        return X
 
 
 class ModelBuilder:
@@ -71,29 +84,40 @@ class ModelBuilder:
         self.idata = None  # idata is generated during fitting
         self.is_fitted_ = False
 
+    def _validate_data(self, X, y=None):
+        if y is not None:
+            return check_X_y(X, y, accept_sparse=False, y_numeric=True, multi_output=False)
+        else:
+            return check_array(X, accept_sparse=False)
+
     @abstractmethod
     def _data_setter(
-        self, data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]], x_only: bool = True
-    ):
+        self, X: Union[np.ndarray, pd.DataFrame], y: Union[np.ndarray, pd.DataFrame, List] = None
+    ) -> None:
         """
         Sets new data in the model.
 
         Parameters
         ----------
-        data : Dictionary of string and either of numpy array, pandas dataframe or pandas Series
-            It is the data we need to set as idata for the model
-        x_only : bool
-            if data only contains values of x and y is not present in the data
+        X : array, shape (n_obs, n_features)
+            The training input samples.
+        y : array, shape (n_obs,)
+            The target values (real numbers).
+
+        Returns:
+        ----------
+        None
 
         Examples
         --------
         >>> def _data_setter(self, data : pd.DataFrame):
         >>>     with self.model:
-        >>>         pm.set_data({'x': data['input'].values})
+        >>>         pm.set_data({'x': X['x'].values})
         >>>         try: # if y values in new data
-        >>>             pm.set_data({'y_data': data['output'].values})
+        >>>             pm.set_data({'y_data': y.values})
         >>>         except: # dummies otherwise
         >>>             pm.set_data({'y_data': np.zeros(len(data))})
+
         """
 
         raise NotImplementedError
@@ -471,6 +495,50 @@ class ModelBuilder:
         )
         return posterior_means.data
 
+    def sample_prior_predictive(
+        self, X_pred, samples: int = None, extend_idata: bool = False, combined: bool = True
+    ):
+        """
+        Sample from the model's prior predictive distribution.
+
+        Parameters
+        ---------
+        X_pred : array, shape (n_pred, n_features)
+            The input data used for prediction using prior distribution.
+        samples : int
+            Number of samples from the prior parameter distributions to generate.
+            If not set, uses sampler_config['draws'] if that is available, otherwise defaults to 500.
+        extend_idata : Boolean determining whether the predictions should be added to inference data object.
+            Defaults to False.
+        combined: Combine chain and draw dims into sample. Won't work if a dim named sample already exists.
+            Defaults to True.
+
+        Returns
+        -------
+        prior_predictive_samples : DataArray, shape (n_pred, samples)
+            Prior predictive samples for each input X_pred
+        """
+        if samples is None:
+            samples = self.sampler_config.get("draws", 500)
+
+        if self.model is None:
+            self.build_model()
+
+        self._data_setter(X_pred)
+
+        with self.model:  # sample with new input data
+            prior_pred = pm.sample_prior_predictive(samples)
+            self.set_idata_attrs(prior_pred)
+            if extend_idata:
+                if self.idata is not None:
+                    self.idata.extend(prior_pred)
+                else:
+                    self.idata = prior_pred
+
+        prior_predictive_samples = az.extract(prior_pred, "prior_predictive", combined=combined)
+
+        return prior_predictive_samples
+
     def sample_posterior_predictive(self, X_pred, extend_idata, combined):
         """
         Sample from the model's posterior predictive distribution.
@@ -502,6 +570,19 @@ class ModelBuilder:
 
         return posterior_predictive_samples
 
+    def get_params(self, deep=True):
+        """
+        Get all the model parameters needed to instantiate a copy of the model, not including training data.
+        """
+        return {"model_config": self.model_config, "sampler_config": self.sampler_config}
+
+    def set_params(self, **params):
+        """
+        Set all the model parameters needed to instantiate the model, not including training data.
+        """
+        self.model_config = params["model_config"]
+        self.sampler_config = params["sampler_config"]
+
     @property
     @abstractmethod
     def _serializable_model_config(self) -> Dict[str, Union[int, float, Dict]]:
@@ -514,6 +595,53 @@ class ModelBuilder:
         -------
         model_config: dict
         """
+
+    def predict_proba(
+        self,
+        X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
+        extend_idata: bool = True,
+        combined: bool = False,
+    ) -> xr.DataArray:
+        """Alias for `predict_posterior`, for consistency with scikit-learn probabilistic estimators."""
+        return self.predict_posterior(X_pred, extend_idata, combined)
+
+    def predict_posterior(
+        self,
+        X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
+        extend_idata: bool = True,
+        combined: bool = True,
+    ) -> xr.DataArray:
+        """
+        Generate posterior predictive samples on unseen data.
+
+        Parameters
+        ---------
+        X_pred : array-like if sklearn is available, otherwise array, shape (n_pred, n_features)
+            The input data used for prediction.
+        extend_idata : Boolean determining whether the predictions should be added to inference data object.
+            Defaults to True.
+        combined: Combine chain and draw dims into sample. Won't work if a dim named sample already exists.
+            Defaults to True.
+
+        Returns
+        -------
+        y_pred : DataArray, shape (n_pred, chains * draws) if combined is True, otherwise (chains, draws, n_pred)
+            Posterior predictive samples for each input X_pred
+        """
+        if not hasattr(self, "output_var"):
+            raise NotImplementedError(f"Subclasses of {__class__} should set self.output_var")
+
+        X_pred = self._validate_data(X_pred)
+        posterior_predictive_samples = self.sample_posterior_predictive(
+            X_pred, extend_idata, combined
+        )
+
+        if self.output_var not in posterior_predictive_samples:
+            raise KeyError(
+                f"Output variable {self.output_var} not found in posterior predictive samples."
+            )
+
+        return posterior_predictive_samples[self.output_var]
 
     @property
     def id(self) -> str:
