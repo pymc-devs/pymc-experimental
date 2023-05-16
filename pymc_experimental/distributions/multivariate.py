@@ -220,11 +220,15 @@ def R2D2M2CP(
     input_sigma = pt.as_tensor(input_sigma)
     output_sigma = pt.as_tensor(output_sigma)
     with pm.Model(name) as model:
-        if variables_importance is not None and len(model.coords[dim]) > 1:
+        if variables_importance is not None:
             if variance_explained is not None:
                 raise TypeError("Can't use variable importance with variance explained")
+            if len(model.coords[dim]) <= 1:
+                raise TypeError("Can't use variable importance with less than two variables")
             phi = pm.Dirichlet("phi", pt.as_tensor(variables_importance), dims=hierarchy + [dim])
         elif variance_explained is not None:
+            if len(model.coords[dim]) <= 1:
+                raise TypeError("Can't use variance explained with less than two variables")
             phi = pt.as_tensor(variance_explained)
         else:
             phi = 1 / len(model.coords[dim])
