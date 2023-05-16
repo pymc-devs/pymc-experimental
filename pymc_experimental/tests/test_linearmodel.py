@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from pymc_experimental.bayesian_estimator_linearmodel import LinearModel
+from pymc_experimental.linearmodel import LinearModel
 
 try:
     from sklearn.compose import TransformedTargetRegressor

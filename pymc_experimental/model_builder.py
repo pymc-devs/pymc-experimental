@@ -402,6 +402,7 @@ class ModelBuilder:
         X: Union[np.ndarray, pd.DataFrame, pd.Series],
         y: Union[np.ndarray, pd.DataFrame, pd.Series],
         progressbar: bool = True,
+        predictor_names: List[str] = None,
         random_seed: RandomState = None,
         **kwargs: Any,
     ) -> az.InferenceData:
@@ -418,6 +419,8 @@ class ModelBuilder:
             The target values (real numbers).
         progressbar : bool
             Specifies whether the fit progressbar should be displayed
+        predictor_names: List[str] = None,
+            Allows for custom naming of predictors given in a form of 2dArray, if not provided the predictors will be named like predictor1, predictor2...
         random_seed : RandomState
             Provides sampler with initial random seed for obtaining reproducible samples
         **kwargs : Any
@@ -446,7 +449,15 @@ class ModelBuilder:
         sampler_config.update(**kwargs)
 
         self.idata = self.sample_model(**sampler_config)
-        self.idata.add_groups(fit_data=self.data.to_xarray())
+        if type(X) is np.ndarray:
+            if predictor_names is not None:
+                X = pd.DataFrame(X, columns=predictor_names)
+            else:
+                X = pd.DataFrame(X, columns=[f"predictor{x}" for x in range(1, X.shape[1] + 1)])
+        if type(y) is np.ndarray:
+            y = pd.Series(y, name="target")
+        combined_data = pd.concat([X, y], axis=1)
+        self.idata.add_groups(fit_data=combined_data.to_xarray())
         return self.idata
 
     def predict(
