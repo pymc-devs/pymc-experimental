@@ -358,3 +358,14 @@ def clone_model(model: Model) -> Model:
 
     """
     return model_from_fgraph(fgraph_from_model(model)[0])
+
+
+def extract_dims(var) -> Tuple:
+    dims = ()
+    node = var.owner
+    if node and isinstance(node.op, ModelVar):
+        if isinstance(node.op, ModelValuedVar):
+            dims = node.inputs[2:]
+        else:
+            dims = node.inputs[1:]
+    return dims
