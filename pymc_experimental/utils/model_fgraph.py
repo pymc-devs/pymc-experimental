@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import pytensor
 from pymc.logprob.transforms import RVTransform
@@ -109,16 +109,19 @@ def local_remove_identity(fgraph, node):
 remove_identity_rewrite = out2in(local_remove_identity)
 
 
-def fgraph_from_model(model: Model) -> FunctionGraph:
+def fgraph_from_model(model: Model) -> Tuple[FunctionGraph, Dict[Variable, Variable]]:
     """Convert Model to FunctionGraph.
 
-    Create a FunctionGraph that includes a copy of model variables, wrapped in dummy `ModelVar` Ops.
-
-    PyTensor rewrites can be used to transform the FunctionGraph.
-
-    It should be possible to reconstruct a valid PyMC model using `model_from_fgraph`.
-
     See: model_from_fgraph
+
+    Returns
+    -------
+    fgraph: FunctionGraph
+        FunctionGraph that includes a copy of model variables, wrapped in dummy `ModelVar` Ops.
+        It should be possible to reconstruct a valid PyMC model using `model_from_fgraph`.
+
+    memo: Dict
+        A dictionary mapping original model variables to the equivalent nodes in the fgraph.
     """
 
     if any(v is not None for v in model.rvs_to_initial_values.values()):
@@ -202,7 +205,19 @@ def fgraph_from_model(model: Model) -> FunctionGraph:
             new_var = var
         new_vars.append(new_var)
 
-    toposort_replace(fgraph, tuple(zip(vars, new_vars)))
+    replacements = tuple(zip(vars, new_vars))
+    toposort_replace(fgraph, replacements)
+
+    # Reference model vars in memo
+    inverse_memo = {v: k for k, v in memo.items()}
+    for var, model_var in replacements:
+        if isinstance(
+            model_var.owner is not None and model_var.owner.op, (ModelDeterministic, ModelNamed)
+        ):
+            # Ignore extra identity that will be removed at the end
+            var = var.owner.inputs[0]
+        original_var = inverse_memo[var]
+        memo[original_var] = model_var
 
     # Remove value variable as outputs, now that they are graph inputs
     first_value_idx = len(fgraph.outputs) - len(value_vars)
@@ -212,7 +227,7 @@ def fgraph_from_model(model: Model) -> FunctionGraph:
     # Now that we have Deterministic dummy Ops, we remove the noisy `Identity`s from the graph
     remove_identity_rewrite.apply(fgraph)
 
-    return fgraph
+    return fgraph, memo
 
 
 def model_from_fgraph(fgraph: FunctionGraph) -> Model:
@@ -282,7 +297,7 @@ def model_from_fgraph(fgraph: FunctionGraph) -> Model:
     return model
 
 
-def clone_model(model: Model) -> Model:
+def clone_model(model: Model) -> Tuple[Model]:
     """Clone a PyMC model.
 
     Recreates a PyMC model with clones of the original variables.
@@ -310,4 +325,4 @@ def clone_model(model: Model) -> Model:
             z = pm.Deterministic("z", clone_x + 1)
 
     """
-    return model_from_fgraph(fgraph_from_model(model))
+    return model_from_fgraph(fgraph_from_model(model)[0])
