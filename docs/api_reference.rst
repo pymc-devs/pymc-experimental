@@ -35,6 +35,17 @@ Distributions
    histogram_approximation
 
 
+Model Transformations
+=====================
+
+.. currentmodule:: pymc_experimental.model_transform
+.. autosummary::
+   :toctree: generated/
+
+   conditioning.do
+   conditioning.observe
+
+
 Utils
 =====
 
