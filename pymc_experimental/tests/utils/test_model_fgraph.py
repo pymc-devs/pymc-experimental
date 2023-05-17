@@ -7,7 +7,11 @@ from pytensor.graph.rewriting.basic import in2out
 from pytensor.tensor.exceptions import NotScalarConstantError
 
 from pymc_experimental.utils.model_fgraph import (
+    ModelDeterministic,
     ModelFreeRV,
+    ModelNamed,
+    ModelObservedRV,
+    ModelPotential,
     ModelVar,
     fgraph_from_model,
     model_deterministic,
@@ -23,10 +27,16 @@ def test_basic():
         y = pm.Deterministic("y", x + 1)
         w = pm.HalfNormal("w", pm.math.exp(y))
         z = pm.Normal("z", y, w, observed=[0, 1, 2], dims=("test_dim",))
-        pm.Potential("pot", x * 2)
+        pot = pm.Potential("pot", x * 2)
 
-    m_fgraph = fgraph_from_model(m_old)
+    m_fgraph, memo = fgraph_from_model(m_old)
     assert isinstance(m_fgraph, FunctionGraph)
+
+    assert isinstance(memo[x].owner.op, ModelFreeRV)
+    assert isinstance(memo[y].owner.op, ModelDeterministic)
+    assert isinstance(memo[w].owner.op, ModelFreeRV)
+    assert isinstance(memo[z].owner.op, ModelObservedRV)
+    assert isinstance(memo[pot].owner.op, ModelPotential)
 
     m_new = model_from_fgraph(m_fgraph)
     assert isinstance(m_new, pm.Model)
@@ -79,7 +89,12 @@ def test_data():
         mu = pm.Deterministic("mu", b0 + b1 * x, dims=("test_dim",))
         obs = pm.Normal("obs", mu, sigma=1e-5, observed=y, dims=("test_dim",))
 
-    m_new = model_from_fgraph(fgraph_from_model(m_old))
+    m_fgraph, memo = fgraph_from_model(m_old)
+    assert isinstance(memo[x].owner.op, ModelNamed)
+    assert isinstance(memo[y].owner.op, ModelNamed)
+    assert isinstance(memo[b0].owner.op, ModelNamed)
+
+    m_new = model_from_fgraph(m_fgraph)
 
     # ConstantData is preserved
     assert m_new["b0"].data == m_old["b0"].data
@@ -125,7 +140,7 @@ def test_deterministics():
     assert m["y"].owner.inputs[3] is m["mu"]
     assert m["y"].owner.inputs[4] is not m["sigma"]
 
-    fg = fgraph_from_model(m)
+    fg, _ = fgraph_from_model(m)
 
     # Check that no Deterministics are in graph of x to y and y to z
     x, y, z, det_mu, det_sigma, det_y_, det_y__ = fg.outputs
@@ -173,7 +188,7 @@ def test_sub_model_error():
         with pm.Model() as sub_m:
             y = pm.Normal("y", x)
 
-    nodes = [v for v in fgraph_from_model(m).toposort() if not isinstance(v.op, ModelVar)]
+    nodes = [v for v in fgraph_from_model(m)[0].toposort() if not isinstance(v.op, ModelVar)]
     assert len(nodes) == 2
     assert isinstance(nodes[0].op, pm.Beta)
     assert isinstance(nodes[1].op, pm.Normal)
@@ -234,7 +249,7 @@ def test_fgraph_rewrite(non_centered_rewrite):
         subject_mean = pm.Normal("subject_mean", group_mean, group_std, dims=("subject",))
         obs = pm.Normal("obs", subject_mean, 1, observed=np.zeros(10), dims=("subject",))
 
-    fg = fgraph_from_model(m_old)
+    fg, _ = fgraph_from_model(m_old)
     non_centered_rewrite.apply(fg)
 
     m_new = model_from_fgraph(fg)
