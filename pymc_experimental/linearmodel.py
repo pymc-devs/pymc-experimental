@@ -30,7 +30,7 @@ class LinearModel(ModelBuilder):
             "target_accept": 0.95,
         }
 
-    def build_model(self):
+    def build_model(self, data=None):
         """
         Build the PyMC model.
 

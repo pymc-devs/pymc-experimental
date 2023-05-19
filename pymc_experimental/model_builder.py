@@ -454,7 +454,7 @@ class ModelBuilder:
 
         self.idata = self.sample_model(**sampler_config)
         if type(X) is np.ndarray:
-            if predictor_names is not None:
+            if len(predictor_names) > 0:
                 X = pd.DataFrame(X, columns=predictor_names)
             else:
                 X = pd.DataFrame(X, columns=[f"predictor{x}" for x in range(1, X.shape[1] + 1)])
