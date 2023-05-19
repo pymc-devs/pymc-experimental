@@ -29,15 +29,15 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(self, model_data=None, model_config=None):
+    def build_model(self, data=None, model_config=None):
 
         with pm.Model() as self.model:
-            if model_data is None:
-                model_data = test_ModelBuilder.generate_model_data()
+            if data is None:
+                data = test_ModelBuilder.generate_model_data()
             if model_config is None:
                 model_config = self.default_model_config
-            x = pm.MutableData("x", model_data["input"].values)
-            y_data = pm.MutableData("y_data", model_data["output"].values)
+            x = pm.MutableData("x", data["input"].values)
+            y_data = pm.MutableData("y_data", data["output"].values)
 
             # prior parameters
             a_loc = model_config["a"]["loc"]

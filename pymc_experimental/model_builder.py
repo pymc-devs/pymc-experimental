@@ -17,7 +17,7 @@ import hashlib
 import json
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -51,8 +51,8 @@ class ModelBuilder:
     def __init__(
         self,
         data: Union[np.ndarray, pd.DataFrame, pd.Series] = None,
-        model_config: Dict = None,
-        sampler_config: Dict = None,
+        model_config: Dict = {},
+        sampler_config: Dict = {},
     ):
         """
         Initializes model configuration and sampler configuration for the model
@@ -72,17 +72,17 @@ class ModelBuilder:
         >>> model = MyModel(model_config, sampler_config)
         """
 
-        if sampler_config is None:
+        if not sampler_config:
             sampler_config = self.default_sampler_config
         self.sampler_config = sampler_config
-        if model_config is None:
+        if not model_config:
             model_config = self.default_model_config
         self.model_config = model_config  # parameters for priors etc.
-        self.data = self.generate_model_data(data=data)
         self.model = None  # Set by build_model
-        self.output_var = None  # Set by build_model
-        self.idata = None  # idata is generated during fitting
+        self.output_var = ""  # Set by build_model
+        self.idata: Optional[az.InferenceData] = None  # idata is generated during fitting
         self.is_fitted_ = False
+        self.data = data
 
     def _validate_data(self, X, y=None):
         if y is not None:
@@ -92,7 +92,9 @@ class ModelBuilder:
 
     @abstractmethod
     def _data_setter(
-        self, X: Union[np.ndarray, pd.DataFrame], y: Union[np.ndarray, pd.DataFrame, List] = None
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+        y: Union[np.ndarray, pd.DataFrame, List] = None,
     ) -> None:
         """
         Sets new data in the model.
@@ -160,7 +162,7 @@ class ModelBuilder:
         Examples
         --------
         >>>     @classmethod
-        >>>     def default_model_config(self):
+        >>>     def default_sampler_config(self):
         >>>         Return {
         >>>             'draws': 1_000,
         >>>             'tune': 1_000,
@@ -175,10 +177,9 @@ class ModelBuilder:
         """
         raise NotImplementedError
 
-    @classmethod
     @abstractmethod
     def generate_model_data(
-        cls, data: Union[np.ndarray, pd.DataFrame, pd.Series] = None
+        self, data: Union[np.ndarray, pd.DataFrame, pd.Series] = None
     ) -> pd.DataFrame:
         """
         Returns a default dataset for a class, can be used as a hint to data formatting required for the class
@@ -207,8 +208,10 @@ class ModelBuilder:
 
     @abstractmethod
     def build_model(
-        data: Dict[str, Union[np.ndarray, pd.DataFrame, pd.Series]] = None,
-        model_config: Dict[str, Union[int, float, Dict]] = None,
+        self,
+        data: Union[np.ndarray, pd.DataFrame, pd.Series] = {},
+        model_config: Dict = {},
+        **kwargs,
     ) -> None:
         """
         Creates an instance of pm.Model based on provided data and model_config, and
@@ -349,7 +352,7 @@ class ModelBuilder:
         """
         if self.idata is not None and "posterior" in self.idata:
             file = Path(str(fname))
-            self.idata.to_netcdf(file)
+            self.idata.to_netcdf(str(file))
         else:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
@@ -400,9 +403,9 @@ class ModelBuilder:
     def fit(
         self,
         X: Union[np.ndarray, pd.DataFrame, pd.Series],
-        y: Union[np.ndarray, pd.DataFrame, pd.Series],
+        y: Union[np.ndarray, pd.Series],
         progressbar: bool = True,
-        predictor_names: List[str] = None,
+        predictor_names: List[str] = [],
         random_seed: RandomState = None,
         **kwargs: Any,
     ) -> az.InferenceData:
@@ -420,7 +423,8 @@ class ModelBuilder:
         progressbar : bool
             Specifies whether the fit progressbar should be displayed
         predictor_names: List[str] = None,
-            Allows for custom naming of predictors given in a form of 2dArray, if not provided the predictors will be named like predictor1, predictor2...
+            Allows for custom naming of predictors given in a form of 2dArray
+            allows for naming of predictors when given in a form of np.ndarray, if not provided the predictors will be named like predictor1, predictor2...
         random_seed : RandomState
             Provides sampler with initial random seed for obtaining reproducible samples
         **kwargs : Any
@@ -440,7 +444,7 @@ class ModelBuilder:
 
         X, y = X, y
 
-        self.build_model()
+        self.build_model(data=self.data)
         self._data_setter(X, y)
 
         sampler_config = self.sampler_config.copy()
@@ -457,8 +461,8 @@ class ModelBuilder:
         if type(y) is np.ndarray:
             y = pd.Series(y, name="target")
         combined_data = pd.concat([X, y], axis=1)
-        self.idata.add_groups(fit_data=combined_data.to_xarray())
-        return self.idata
+        self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
+        return self.idata  # type: ignore
 
     def predict(
         self,
@@ -489,8 +493,6 @@ class ModelBuilder:
         >>> prediction_data = pd.DataFrame({'input':x_pred})
         >>> pred_mean = model.predict(prediction_data)
         """
-        if not hasattr(self, "output_var"):
-            raise NotImplementedError(f"Subclasses of {__class__} should set self.output_var")
 
         posterior_predictive_samples = self.sample_posterior_predictive(
             X_pred, extend_idata, combined=False
@@ -507,7 +509,11 @@ class ModelBuilder:
         return posterior_means.data
 
     def sample_prior_predictive(
-        self, X_pred, samples: int = None, extend_idata: bool = False, combined: bool = True
+        self,
+        X_pred,
+        samples: Optional[int] = None,
+        extend_idata: bool = False,
+        combined: bool = True,
     ):
         """
         Sample from the model's prior predictive distribution.
@@ -536,15 +542,15 @@ class ModelBuilder:
             self.build_model()
 
         self._data_setter(X_pred)
-
-        with self.model:  # sample with new input data
-            prior_pred = pm.sample_prior_predictive(samples)
-            self.set_idata_attrs(prior_pred)
-            if extend_idata:
-                if self.idata is not None:
-                    self.idata.extend(prior_pred)
-                else:
-                    self.idata = prior_pred
+        if self.model is not None:
+            with self.model:  # sample with new input data
+                prior_pred: az.InferenceData = pm.sample_prior_predictive(samples)
+                self.set_idata_attrs(prior_pred)
+                if extend_idata:
+                    if self.idata is not None:
+                        self.idata.extend(prior_pred)
+                    else:
+                        self.idata = prior_pred
 
         prior_predictive_samples = az.extract(prior_pred, "prior_predictive", combined=combined)
 
@@ -585,7 +591,10 @@ class ModelBuilder:
         """
         Get all the model parameters needed to instantiate a copy of the model, not including training data.
         """
-        return {"model_config": self.model_config, "sampler_config": self.sampler_config}
+        return {
+            "model_config": self.model_config,
+            "sampler_config": self.sampler_config,
+        }
 
     def set_params(self, **params):
         """
@@ -639,8 +648,6 @@ class ModelBuilder:
         y_pred : DataArray, shape (n_pred, chains * draws) if combined is True, otherwise (chains, draws, n_pred)
             Posterior predictive samples for each input X_pred
         """
-        if not hasattr(self, "output_var"):
-            raise NotImplementedError(f"Subclasses of {__class__} should set self.output_var")
 
         X_pred = self._validate_data(X_pred)
         posterior_predictive_samples = self.sample_posterior_predictive(
