@@ -105,7 +105,7 @@ def fit_pathfinder(
     init_position_dict = model.initial_point()
     init_position = [init_position_dict[rv] for rv in rvs]
 
-    new_logprob, new_input = pm.aesaraf.join_nonshared_inputs(
+    new_logprob, new_input = pm.pytensorf.join_nonshared_inputs(
         init_position_dict, (model.logp(),), model.value_vars, ()
     )
 
@@ -138,7 +138,7 @@ def fit_pathfinder(
 
     dims = {
         var_name: [dim for dim in dims if dim is not None]
-        for var_name, dims in model.RV_dims.items()
+        for var_name, dims in model.named_vars_to_dims.items()
     }
 
     idata = convert_flat_trace_to_idata(

@@ -29,7 +29,7 @@
 import os
 import sys
 
-from pymc_experimental import __version__
+import pymc_experimental  # isort:skip
 
 sys.path.insert(0, os.path.abspath("../"))
 
@@ -40,9 +40,9 @@ copyright = "2022, pymc-devs"
 author = "pymc-devs"
 
 # The short X.Y version
-version = __version__
+version = pymc_experimental.__version__
 # The full version, including alpha/beta/rc tags
-release = __version__
+release = version
 
 
 # -- General configuration ---------------------------------------------------
@@ -56,16 +56,19 @@ release = __version__
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.doctest",
+    "sphinx.ext.autosummary",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "nbsphinx",
+    "matplotlib.sphinxext.plot_directive",
 ]
 
 nbsphinx_execute = "never"
 
 # Add any paths that contain templates here, relative to this directory.
-# templates_path = ["_templates"]
+templates_path = ["_templates"]
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
@@ -81,7 +84,7 @@ master_doc = "index"
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+# language = None
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -97,7 +100,7 @@ pygments_style = "sphinx"
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "pydata_sphinx_theme"
+html_theme = "pymc_sphinx_theme"
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -110,19 +113,22 @@ html_theme_options = {
     "show_toc_level": 2,
     "navigation_depth": 4,
     "search_bar_text": "Search the docs...",
-    "icon_links": [
-        {
-            "name": "GitHub",
-            "url": "https://github.com/pymc-devs/pymc-experimental",
-            "icon": "fab fa-github-square",
-        },
-    ],
+    "use_search_override": False,
+    "logo": {"text": project},
 }
+html_context = {
+    "github_user": "pymc-devs",
+    "github_repo": "pymc-experimental",
+    "github_version": "main",
+    "doc_path": "docs",
+    "default_mode": "light",
+}
+
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+html_static_path = ["../_static"]
 
 # -- Options for HTMLHelp output ---------------------------------------------
 

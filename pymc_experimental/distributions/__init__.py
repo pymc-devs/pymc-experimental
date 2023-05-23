@@ -18,7 +18,11 @@ Experimental probability distributions for stochastic nodes in PyMC.
 """
 
 from pymc_experimental.distributions.continuous import GenExtreme
+from pymc_experimental.distributions.discrete import GeneralizedPoisson
+from pymc_experimental.distributions.timeseries import DiscreteMarkovChain
 
 __all__ = [
+    "DiscreteMarkovChain",
+    "GeneralizedPoisson",
     "GenExtreme",
 ]

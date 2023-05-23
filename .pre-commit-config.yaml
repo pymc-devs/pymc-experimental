@@ -11,7 +11,7 @@ repos:
         args: [--branch, main]
     -   id: trailing-whitespace
 - repo: https://github.com/PyCQA/isort
-  rev: 5.10.1
+  rev: 5.12.0
   hooks:
     - id: isort
       name: isort
@@ -35,6 +35,7 @@ repos:
   rev: 0.3.0
   hooks:
     - id: no-print-statements
+      exclude: _version.py
       files: ^pymc_experimental/
 - repo: local
   hooks:

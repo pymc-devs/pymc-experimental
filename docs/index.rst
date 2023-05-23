@@ -21,7 +21,7 @@ Where we grow the next batch of cool PyMC features
 
 Dependencies
 ============
-PyMC experimental is tested on Python 3.8+ and depends on PyMC V4.
+PyMC experimental is tested on Python 3.8+ and depends on PyMC V5.
 
 Installation
 ============
@@ -38,16 +38,7 @@ Contributors
 ============
 See the `GitHub contributor page <https://github.com/pymc-devs/pymc-experimental/graphs/contributors>`_.
 
-Contents
-========
-
 .. toctree::
-   :maxdepth: 4
+   :hidden:
 
    api_reference
-
-Indices
-=======
-
-* :ref:`genindex`
-* :ref:`modindex`
