@@ -219,6 +219,20 @@ def R2D2M2CP(
             )
             intercept = y.mean()
             obs = pm.Normal("obs", intercept + X @ beta, eps, observed=y)
+
+    Notes
+    -----
+    To reference R2D2M2CP implementation, you can use the following bibtex entry:
+
+    .. code-block::
+
+        @misc{pymc-experimental-r2d2m2cp,
+            title = {pymc-devs/pymc-experimental: {P}ull {R}equest 137, {R2D2M2CP}},
+            url = {https://github.com/pymc-devs/pymc-experimental/pull/137},
+            author = {Max Kochurov},
+            howpublished = {GitHub},
+            year = {2023}
+        }
     """
     if not isinstance(dims, (list, tuple)):
         dims = (dims,)
