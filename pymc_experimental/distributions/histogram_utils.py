@@ -19,27 +19,21 @@ import numpy as np
 import pymc as pm
 from numpy.typing import ArrayLike
 
-try:
-    import dask.array
-    import dask.dataframe
-except ImportError:
-    dask = None
-
-try:
-    import xhistogram.core
-except ImportError:
-    xhistogram = None
-
-
 __all__ = ["quantile_histogram", "discrete_histogram", "histogram_approximation"]
 
 
 def quantile_histogram(
     data: ArrayLike, n_quantiles=1000, zero_inflation=False
 ) -> Dict[str, ArrayLike]:
-    if xhistogram is None:
-        raise RuntimeError("quantile_histogram requires xhistogram package")
-
+    try:
+        import xhistogram.core
+    except ImportError as e:
+        raise RuntimeError("quantile_histogram requires xhistogram package") from e
+    try:
+        import dask.array
+        import dask.dataframe
+    except ImportError:
+        dask = None
     if dask and isinstance(data, (dask.dataframe.Series, dask.dataframe.DataFrame)):
         data = data.to_dask_array(lengths=True)
     if zero_inflation:
@@ -74,8 +68,15 @@ def quantile_histogram(
 
 
 def discrete_histogram(data: ArrayLike, min_count=None) -> Dict[str, ArrayLike]:
-    if xhistogram is None:
-        raise RuntimeError("discrete_histogram requires xhistogram package")
+    try:
+        import xhistogram.core
+    except ImportError as e:
+        raise RuntimeError("discrete_histogram requires xhistogram package") from e
+    try:
+        import dask.array
+        import dask.dataframe
+    except ImportError:
+        dask = None
 
     if dask and isinstance(data, (dask.dataframe.Series, dask.dataframe.DataFrame)):
         data = data.to_dask_array(lengths=True)
@@ -147,6 +148,11 @@ def histogram_approximation(name, dist, *, observed, **h_kwargs):
     ...         observed=measurements, n_quantiles=50, zero_inflation=True
     ...     )
     """
+    try:
+        import dask.array
+        import dask.dataframe
+    except ImportError:
+        dask = None
     if dask and isinstance(observed, (dask.dataframe.Series, dask.dataframe.DataFrame)):
         observed = observed.to_dask_array(lengths=True)
     if np.issubdtype(observed.dtype, np.integer):

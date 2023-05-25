@@ -30,8 +30,9 @@ Distributions
 
    GenExtreme
    GeneralizedPoisson
-   histogram_utils.histogram_approximation
    DiscreteMarkovChain
+   R2D2M2CP
+   histogram_approximation
 
 
 Utils
