@@ -251,7 +251,7 @@ def R2D2M2CP(
     """
     if not isinstance(dims, (list, tuple)):
         dims = (dims,)
-    *hierarchy, dim = dims
+    *broadcast_dims, dim = dims
     input_sigma = pt.as_tensor(input_sigma)
     output_sigma = pt.as_tensor(output_sigma)
     with pm.Model(name) as model:
@@ -260,7 +260,9 @@ def R2D2M2CP(
                 raise TypeError("Can't use variable importance with variance explained")
             if len(model.coords[dim]) <= 1:
                 raise TypeError("Can't use variable importance with less than two variables")
-            phi = pm.Dirichlet("phi", pt.as_tensor(variables_importance), dims=hierarchy + [dim])
+            phi = pm.Dirichlet(
+                "phi", pt.as_tensor(variables_importance), dims=broadcast_dims + [dim]
+            )
         elif variance_explained is not None:
             if len(model.coords[dim]) <= 1:
                 raise TypeError("Can't use variance explained with less than two variables")
@@ -268,18 +270,25 @@ def R2D2M2CP(
         else:
             phi = 1 / len(model.coords[dim])
         if r2_std is not None:
-            r2 = pm.Beta("r2", mu=r2, sigma=r2_std, dims=hierarchy)
+            r2 = pm.Beta("r2", mu=r2, sigma=r2_std, dims=broadcast_dims)
         if positive_probs_std is not None:
             psi = pm.Beta(
                 "psi",
                 mu=pt.as_tensor(positive_probs),
                 sigma=pt.as_tensor(positive_probs_std),
-                dims=hierarchy + [dim],
+                dims=broadcast_dims + [dim],
             )
         else:
             psi = pt.as_tensor(positive_probs)
     beta = _R2D2M2CP_beta(
-        name, output_sigma, input_sigma, r2, phi, psi, dims=hierarchy + [dim], centered=centered
+        name,
+        output_sigma,
+        input_sigma,
+        r2,
+        phi,
+        psi,
+        dims=broadcast_dims + [dim],
+        centered=centered,
     )
     resid_sigma = (1 - r2) ** 0.5 * output_sigma
     return resid_sigma, beta
