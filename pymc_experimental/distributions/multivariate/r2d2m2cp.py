@@ -135,6 +135,7 @@ def R2D2M2CP(
 
         - make sure :math:`X` is centered around zero
         - intercept represents prior predictive mean when :math:`X` is centered
+        - setting named dims is required
 
     .. code-block:: python
 
