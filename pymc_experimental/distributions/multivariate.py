@@ -127,6 +127,13 @@ def R2D2M2CP(
     --------
     Here are arguments explained in a synthetic example
 
+    .. warning::
+
+        To use the prior in a linear regression
+
+        - make sure :math:`X` is centered around zero
+        - intercept represents prior predictive mean when :math:`X` is centered
+
     .. code-block:: python
 
         import pymc_experimental as pmx
@@ -168,8 +175,11 @@ def R2D2M2CP(
                 # NOTE: try both
                 centered=True
             )
+            # intercept prior centering should be around prior predictive mean
             intercept = y.mean()
-            obs = pm.Normal("obs", intercept + X @ beta, eps, observed=y)
+            # regressors should be centered around zero
+            Xc = X - X.mean(0)
+            obs = pm.Normal("obs", intercept + Xc @ beta, eps, observed=y)
 
     There can be special cases by choosing specific set of arguments
 
