@@ -40,7 +40,10 @@ def _R2D2M2CP_beta(
     dims: Union[str, Sequence[str]],
     centered=False,
 ):
-    """R2D2M2CP_beta prior.
+    """R2D2M2CP beta prior.
+
+    Parameters
+    ----------
     name: str
         Name for the distribution
     output_sigma: tensor
