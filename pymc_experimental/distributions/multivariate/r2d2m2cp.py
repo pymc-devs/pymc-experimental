@@ -18,6 +18,8 @@ from typing import Sequence, Union
 import pymc as pm
 import pytensor.tensor as pt
 
+__all__ = ["R2D2M2CP"]
+
 
 def _psivar2musigma(psi: pt.TensorVariable, explained_var: pt.TensorVariable):
     pi = pt.erfinv(2 * psi - 1)
@@ -201,8 +203,11 @@ def R2D2M2CP(
                 # if you do not know, leave as 0.5
                 centered=False
             )
+            # intercept prior centering should be around prior predictive mean
             intercept = y.mean()
-            obs = pm.Normal("obs", intercept + X @ beta, eps, observed=y)
+            # regressors should be centered around zero
+            Xc = X - X.mean(0)
+            obs = pm.Normal("obs", intercept + Xc @ beta, eps, observed=y)
 
 
     It is fine to leave some of the ``_std`` arguments unspecified.
