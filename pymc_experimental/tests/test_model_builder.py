@@ -15,6 +15,7 @@
 import hashlib
 import sys
 import tempfile
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -28,11 +29,15 @@ class test_ModelBuilder(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(self, model_data, model_config):
+    def build_model(self, data=None, model_config=None):
+
         with pm.Model() as self.model:
-            if model_data is not None:
-                x = pm.MutableData("x", model_data["input"].values)
-                y_data = pm.MutableData("y_data", model_data["output"].values)
+            if data is None:
+                data = test_ModelBuilder.generate_model_data()
+            if model_config is None:
+                model_config = self.default_model_config
+            x = pm.MutableData("x", data["input"].values)
+            y_data = pm.MutableData("y_data", data["output"].values)
 
             # prior parameters
             a_loc = model_config["a"]["loc"]
@@ -47,48 +52,49 @@ class test_ModelBuilder(ModelBuilder):
             obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
 
             # observed data
-            if model_data is not None:
-                y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
+            y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
+            self.output_var = "y_model"
 
-    def _data_setter(self, data: pd.DataFrame):
+    def _data_setter(self, x: pd.Series, y: pd.Series = None):
         with self.model:
-            pm.set_data({"x": data["input"].values})
-            if "output" in data.columns:
-                pm.set_data({"y_data": data["output"].values})
+            pm.set_data({"x": x.values})
+            if y is not None:
+                pm.set_data({"y_data": y.values})
 
     @property
     def _serializable_model_config(self):
         return self.model_config
 
     @classmethod
-    def create_sample_input(self, data=None):
+    def generate_model_data(cls, data=None):
         x = np.linspace(start=0, stop=1, num=100)
         y = 5 * x + 3
         y = y + np.random.normal(0, 1, len(x))
         data = pd.DataFrame({"input": x, "output": y})
+        return data
 
-        model_config = {
+    @property
+    def default_model_config(self) -> Dict:
+        return {
             "a": {"loc": 0, "scale": 10},
             "b": {"loc": 0, "scale": 10},
             "obs_error": 2,
         }
 
-        sampler_config = {
+    @property
+    def default_sampler_config(self) -> Dict:
+        return {
             "draws": 1_000,
             "tune": 1_000,
             "chains": 3,
             "target_accept": 0.95,
         }
 
-        return data, model_config, sampler_config
-
     @staticmethod
     def initial_build_and_fit(check_idata=True) -> ModelBuilder:
-        data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-        model_builder = test_ModelBuilder(
-            model_config=model_config, sampler_config=sampler_config, data=data
-        )
-        model_builder.idata = model_builder.fit(data=data)
+        data = test_ModelBuilder.generate_model_data()
+        model_builder = test_ModelBuilder()
+        model_builder.idata = model_builder.fit(X=data["input"], y=data["output"])
         if check_idata:
             assert model_builder.idata is not None
             assert "posterior" in model_builder.idata.groups()
@@ -96,42 +102,29 @@ class test_ModelBuilder(ModelBuilder):
 
 
 def test_save_without_fit_raises_runtime_error():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model_builder = test_ModelBuilder(
-        model_config=model_config, sampler_config=sampler_config, data=data
-    )
+    model_builder = test_ModelBuilder()
     with pytest.raises(RuntimeError):
         model_builder.save("saved_model")
 
 
 def test_empty_sampler_config_fit():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
     sampler_config = {}
-    model_builder = test_ModelBuilder(
-        model_config=model_config, sampler_config=sampler_config, data=data
-    )
-    model_builder.idata = model_builder.fit(data=data)
+    model_builder = test_ModelBuilder(sampler_config=sampler_config)
+    data = test_ModelBuilder.generate_model_data()
+    model_builder.idata = model_builder.fit(X=data["input"], y=data["output"])
     assert model_builder.idata is not None
     assert "posterior" in model_builder.idata.groups()
-
-
-def test_empty_model_config_fit():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model_config = {}
-    model_builder = test_ModelBuilder(
-        model_config=model_config, sampler_config=sampler_config, data=data
-    )
-    assert model_builder.model_config == {}
 
 
 def test_fit():
     model = test_ModelBuilder.initial_build_and_fit()
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.predict(prediction_data)
-    assert "y_model" in pred.keys()
-    post_pred = model.predict_posterior(prediction_data)
-    assert "y_model" in post_pred.keys()
+    pred = model.predict(prediction_data["input"])
+    post_pred = model.sample_posterior_predictive(
+        prediction_data["input"], extend_idata=True, combined=True
+    )
+    post_pred.y_model.shape[0] == prediction_data.input.shape
 
 
 @pytest.mark.skipif(
@@ -146,9 +139,9 @@ def test_save_load():
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred1 = test_builder.predict(prediction_data)
-    pred2 = test_builder2.predict(prediction_data)
-    assert pred1["y_model"].shape == pred2["y_model"].shape
+    pred1 = test_builder.predict(prediction_data["input"])
+    pred2 = test_builder2.predict(prediction_data["input"])
+    assert pred1.shape == pred2.shape
     temp.close()
 
 
@@ -156,19 +149,21 @@ def test_predict():
     model = test_ModelBuilder.initial_build_and_fit()
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.predict(prediction_data)
-    assert "y_model" in pred
-    assert len(prediction_data.input.values) == len(pred["y_model"])
-    assert np.issubdtype(pred["y_model"].dtype, np.floating)
+    pred = model.predict(prediction_data["input"])
+    # Perform elementwise comparison using numpy
+    assert type(pred) == np.ndarray
+    assert len(pred) > 0
 
 
 @pytest.mark.parametrize("combined", [True, False])
-def test_predict_posterior(combined):
+def test_sample_posterior_predictive(combined):
     model = test_ModelBuilder.initial_build_and_fit()
     n_pred = 100
     x_pred = np.random.uniform(low=0, high=1, size=n_pred)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.predict_posterior(prediction_data, combined=combined)
+    pred = model.sample_posterior_predictive(
+        prediction_data["input"], combined=combined, extend_idata=True
+    )
     chains = model.idata.sample_stats.dims["chain"]
     draws = model.idata.sample_stats.dims["draw"]
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
@@ -177,11 +172,11 @@ def test_predict_posterior(combined):
 
 
 def test_id():
-    data, model_config, sampler_config = test_ModelBuilder.create_sample_input()
-    model = test_ModelBuilder(model_config=model_config, sampler_config=sampler_config, data=data)
-
+    model = test_ModelBuilder()
     expected_id = hashlib.sha256(
-        str(model_config.values()).encode() + model.version.encode() + model._model_type.encode()
+        str(model.model_config.values()).encode()
+        + model.version.encode()
+        + model._model_type.encode()
     ).hexdigest()[:16]
 
     assert model.id == expected_id
