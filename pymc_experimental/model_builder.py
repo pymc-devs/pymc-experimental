@@ -51,8 +51,8 @@ class ModelBuilder:
     def __init__(
         self,
         data: Union[np.ndarray, pd.DataFrame, pd.Series] = None,
-        model_config: Dict = {},
-        sampler_config: Dict = {},
+        model_config: Dict = None,
+        sampler_config: Dict = None,
     ):
         """
         Initializes model configuration and sampler configuration for the model
@@ -71,12 +71,10 @@ class ModelBuilder:
         >>>     ...
         >>> model = MyModel(model_config, sampler_config)
         """
-
-        if not sampler_config:
-            sampler_config = self.default_sampler_config
+        sampler_config = self.default_sampler_config if sampler_config is None else sampler_config
         self.sampler_config = sampler_config
-        if not model_config:
-            model_config = self.default_model_config
+        model_config = self.default_model_config if model_config is None else model_config
+
         self.model_config = model_config  # parameters for priors etc.
         self.model = None  # Set by build_model
         self.output_var = ""  # Set by build_model
@@ -209,8 +207,8 @@ class ModelBuilder:
     @abstractmethod
     def build_model(
         self,
-        data: Union[np.ndarray, pd.DataFrame, pd.Series] = {},
-        model_config: Dict = {},
+        data: Union[np.ndarray, pd.DataFrame, pd.Series] = None,
+        model_config: Dict = None,
         **kwargs,
     ) -> None:
         """
@@ -405,7 +403,7 @@ class ModelBuilder:
         X: Union[np.ndarray, pd.DataFrame, pd.Series],
         y: Union[np.ndarray, pd.Series],
         progressbar: bool = True,
-        predictor_names: List[str] = [],
+        predictor_names: List[str] = None,
         random_seed: RandomState = None,
         **kwargs: Any,
     ) -> az.InferenceData:
@@ -441,6 +439,8 @@ class ModelBuilder:
         Auto-assigning NUTS sampler...
         Initializing NUTS using jitter+adapt_diag...
         """
+        if predictor_names is None:
+            predictor_names = []
 
         X, y = X, y
 
