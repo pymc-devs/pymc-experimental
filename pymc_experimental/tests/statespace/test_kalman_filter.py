@@ -23,6 +23,8 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
     nile_test_test_helper,
 )
 
+floatX = pytensor.config.floatX
+
 standard_inout = initialize_filter(StandardFilter())
 cholesky_inout = initialize_filter(CholeskyFilter())
 univariate_inout = initialize_filter(UnivariateFilter())
@@ -101,14 +103,14 @@ def test_output_shapes_when_some_states_are_deterministic(filter_func, output_id
 @pytest.fixture
 def f_standard_nd():
     ksmoother = KalmanSmoother()
-    data = pt.tensor(name="data", dtype=pytensor.config.floatX, shape=(None, None, 1))
-    a0 = pt.matrix(name="a0", dtype=pytensor.config.floatX)
-    P0 = pt.matrix(name="P0", dtype=pytensor.config.floatX)
-    Q = pt.tensor(name="Q", dtype=pytensor.config.floatX, shape=(None, None, None))
-    H = pt.tensor(name="H", dtype=pytensor.config.floatX, shape=(None, None, None))
-    T = pt.tensor(name="T", dtype=pytensor.config.floatX, shape=(None, None, None))
-    R = pt.tensor(name="R", dtype=pytensor.config.floatX, shape=(None, None, None))
-    Z = pt.tensor(name="Z", dtype=pytensor.config.floatX, shape=(None, None, None))
+    data = pt.tensor(name="data", dtype=floatX, shape=(None, None, 1))
+    a0 = pt.matrix(name="a0", dtype=floatX)
+    P0 = pt.matrix(name="P0", dtype=floatX)
+    Q = pt.tensor(name="Q", dtype=floatX, shape=(None, None, None))
+    H = pt.tensor(name="H", dtype=floatX, shape=(None, None, None))
+    T = pt.tensor(name="T", dtype=floatX, shape=(None, None, None))
+    R = pt.tensor(name="R", dtype=floatX, shape=(None, None, None))
+    Z = pt.tensor(name="Z", dtype=floatX, shape=(None, None, None))
 
     inputs = [data, a0, P0, T, Z, R, H, Q]
 
@@ -225,9 +227,7 @@ def test_last_smoother_is_last_filtered(filter_func, output_idx):
 @pytest.mark.parametrize("filter_func", filter_funcs[:-1], ids=filter_names[:-1])
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
 @pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
-@pytest.mark.skipif(
-    pytensor.config.floatX == "float32", reason="Tests are too sensitive for float32"
-)
+@pytest.mark.skipif(floatX == "float32", reason="Tests are too sensitive for float32")
 def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missing):
     fit_sm_mod, inputs = nile_test_test_helper(n_missing)
     outputs = filter_func(*inputs)

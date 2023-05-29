@@ -3,9 +3,11 @@ from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas.core.tools.datetimes
+import pytensor
 import pytensor.tensor as pt
 from pandas import DataFrame
 
+floatX = pytensor.config.floatX
 KeyLike = Union[Tuple[Union[str, int]], str]
 
 
@@ -127,7 +129,7 @@ class PytensorRepresentation:
                 setattr(self, name, matrix)
 
             else:
-                setattr(self, name, pt.zeros(shape))
+                setattr(self, name, pt.zeros(shape, dtype=floatX))
 
     def _validate_key(self, key: KeyLike) -> None:
         if key not in self.shapes:
@@ -213,7 +215,7 @@ class PytensorRepresentation:
         # Add a time dimension if one isn't provided
         if X.ndim == 2:
             X = X[..., None]
-        return pt.as_tensor(X, name=name)
+        return pt.as_tensor(X, name=name, dtype=floatX)
 
     def __getitem__(self, key: KeyLike) -> pt.TensorVariable:
         _type = self._validate_key_and_get_type(key)

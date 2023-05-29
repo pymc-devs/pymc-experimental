@@ -1,7 +1,10 @@
 import numpy as np
+import pytensor
 from numba import njit
 
 from pymc_experimental.statespace.utils.numba_linalg import numba_block_diagonal
+
+floatX = pytensor.config.floatX
 
 
 @njit
@@ -40,17 +43,17 @@ def simulate_statespace(T, Z, R, H, Q, n_steps, x0=None):
     k_posdef = R.shape[1]
     k_obs_noise = H.shape[0] * (1 - int(np.all(H == 0)))
 
-    state_noise = np.random.randn(n_steps, k_posdef)
+    state_noise = np.random.randn(n_steps, k_posdef).astype(floatX)
     state_chol = np.linalg.cholesky(Q)
     state_innovations = state_noise @ state_chol
 
     if k_obs_noise != 0:
-        obs_noise = np.random.randn(n_steps, k_obs_noise)
+        obs_noise = np.random.randn(n_steps, k_obs_noise).astype(floatX)
         obs_chol = np.linalg.cholesky(H)
         obs_innovations = obs_noise @ obs_chol
 
-    simulated_states = np.zeros((n_steps, n_states))
-    simulated_obs = np.zeros((n_steps, n_obs))
+    simulated_states = np.zeros((n_steps, n_states), dtype=floatX)
+    simulated_obs = np.zeros((n_steps, n_obs), dtype=floatX)
 
     if x0 is not None:
         simulated_states[0] = x0

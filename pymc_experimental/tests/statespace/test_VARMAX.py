@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytensor
 import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
@@ -14,6 +15,7 @@ from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace import BayesianVARMAX
 
+floatX = pytensor.config.floatX
 ROOT = Path(__file__).parent.absolute()
 sys.path.append(ROOT)
 
@@ -22,7 +24,7 @@ sys.path.append(ROOT)
 def data():
     return pd.read_csv(
         os.path.join(ROOT, "test_data/statsmodels_macrodata_processed.csv"), index_col=0
-    )
+    ).astype(floatX)
 
 
 ps = [0, 1, 2, 3]
