@@ -22,6 +22,7 @@ from pymc_experimental.statespace.utils.simulation import (
     unconditional_simulations,
 )
 
+floatX = pytensor.config.floatX
 FILTER_FACTORY = {
     "standard": StandardFilter,
     "univariate": UnivariateFilter,
@@ -239,9 +240,17 @@ class PyMCStateSpace:
 
         _, n, k, *_ = cond_prior.prior[f"{filter_output}_states"].values.squeeze().shape
 
-        mus = cond_prior.prior[f"{filter_output}_states"].values.squeeze().reshape(-1, n * k)
+        mus = (
+            cond_prior.prior[f"{filter_output}_states"]
+            .values.squeeze()
+            .reshape(-1, n * k)
+            .astype(floatX)
+        )
         covs = (
-            cond_prior.prior[f"{filter_output}_covariances"].values.squeeze().reshape(-1, n, k, k)
+            cond_prior.prior[f"{filter_output}_covariances"]
+            .values.squeeze()
+            .reshape(-1, n, k, k)
+            .astype(floatX)
         )
 
         simulations = conditional_simulation(mus, covs, n, k, n_simulations)
@@ -292,11 +301,13 @@ class PyMCStateSpace:
             trace.posterior[f"{filter_output}_states"]
             .values.squeeze()
             .reshape(-1, n * k)[resample_idxs]
+            .astype(floatX)
         )
         covs = (
             trace.posterior[f"{filter_output}_covariances"]
             .values.squeeze()
             .reshape(-1, n, k, k)[resample_idxs]
+            .astype(floatX)
         )
 
         simulations = conditional_simulation(mus, covs, n, k, n_simulations)

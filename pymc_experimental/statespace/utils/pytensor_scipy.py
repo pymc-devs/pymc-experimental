@@ -5,6 +5,8 @@ from pytensor.tensor import TensorVariable, as_tensor_variable
 from pytensor.tensor.nlinalg import matrix_dot
 from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
+floatX = pytensor.config.floatX
+
 
 class SolveDiscreteARE(at.Op):
     __props__ = ("enforce_Q_symmetric",)
@@ -29,7 +31,7 @@ class SolveDiscreteARE(at.Op):
 
         if self.enforce_Q_symmetric:
             Q = 0.5 * (Q + Q.T)
-        X[0] = scipy.linalg.solve_discrete_are(A, B, Q, R).astype(pytensor.config.floatX)
+        X[0] = scipy.linalg.solve_discrete_are(A, B, Q, R).astype(floatX)
 
     def infer_shape(self, fgraph, node, shapes):
         return [shapes[0]]
@@ -48,7 +50,7 @@ class SolveDiscreteARE(at.Op):
         A_tilde = A - B.dot(K)
 
         dX_symm = 0.5 * (dX + dX.T)
-        S = solve_discrete_lyapunov(A_tilde, dX_symm).astype(pytensor.config.floatX)
+        S = solve_discrete_lyapunov(A_tilde, dX_symm).astype(floatX)
 
         A_bar = 2 * matrix_dot(X, A_tilde, S)
         B_bar = -2 * matrix_dot(X, A_tilde, S, K.T)
