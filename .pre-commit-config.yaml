@@ -35,6 +35,7 @@ repos:
   rev: 0.3.0
   hooks:
     - id: no-print-statements
+      exclude: _version.py
       files: ^pymc_experimental/
 - repo: local
   hooks:

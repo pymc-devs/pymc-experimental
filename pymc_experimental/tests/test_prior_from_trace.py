@@ -163,3 +163,9 @@ def test_prior_from_idata(idata, user_param_cfg, coords, param_cfg):
         test_prior = pm.sample_prior_predictive(1)
     names = [p["name"] for p in param_cfg.values()]
     assert set(model.named_vars) == {"trace_prior_", *names}
+
+
+def test_empty(idata, coords):
+    with pm.Model(coords=coords):
+        priors = pmx.utils.prior.prior_from_idata(idata)
+        assert not priors

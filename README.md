@@ -5,6 +5,10 @@
     alt="Contribute with Gitpod"
   />
 </a>
+<img
+  src="https://codecov.io/gh/pymc-devs/pymc-experimental/branch/main/graph/badge.svg"
+  alt="Codecov Badge"
+/>
 
 As PyMC continues to mature and expand its functionality to accommodate more domains of application, we increasingly see cutting-edge methodologies, highly specialized statistical distributions, and complex models appear.
 While this adds to the functionality and relevance of the project, it can also introduce instability and impose a burden on testing and quality control.
@@ -54,7 +58,5 @@ For example, `pymc-experimental` may just include methods that are not fully dev
 This project is still young and many things have not been answered or implemented.
 Please get involved!
 
-* What are guidlines for organizing submodules?
+* What are guidelines for organizing submodules?
   * Proposal: No default imports of WIP/unstable submodules. By importing manually we can avoid breaking the package if a submodule breaks, for example because of an updated dependency.
-* How can we minimize the additional burden of additional project repositories?
-* ToDo: Setting up a basic CI pipeline
