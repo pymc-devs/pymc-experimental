@@ -8,6 +8,8 @@ dependencies:
 - pytest>=3.0
 - dask
 - xhistogram
+- statsmodels
+- numba
 - pip:
   - pymc>=5.2.0  # CI was failing to resolve
   - blackjax

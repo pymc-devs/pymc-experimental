@@ -1,2 +1,5 @@
 dask[all]
 blackjax
+
+# Used as benchmark for statespace models
+statsmodels
