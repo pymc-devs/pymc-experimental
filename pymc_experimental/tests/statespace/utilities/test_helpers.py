@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytensor
 import pytensor.tensor as pt
 
 from pymc_experimental.statespace.filters.kalman_smoother import KalmanSmoother
@@ -12,19 +13,19 @@ from pymc_experimental.tests.statespace.utilities.statsmodel_local_level import 
 
 ROOT = Path(__file__).parent.parent.absolute()
 nile_data = pd.read_csv(os.path.join(ROOT, "test_data/nile.csv"))
-nile_data["x"] = nile_data["x"].astype(float)
+nile_data["x"] = nile_data["x"].astype(pytensor.config.floatX)
 
 
 def initialize_filter(kfilter):
     ksmoother = KalmanSmoother()
-    data = pt.dtensor3(name="data")
-    a0 = pt.matrix(name="a0")
-    P0 = pt.matrix(name="P0")
-    Q = pt.matrix(name="Q")
-    H = pt.matrix(name="H")
-    T = pt.matrix(name="T")
-    R = pt.matrix(name="R")
-    Z = pt.matrix(name="Z")
+    data = pt.tensor(name="data", dtype=pytensor.config.floatX, shape=(None, None, 1))
+    a0 = pt.matrix(name="a0", dtype=pytensor.config.floatX)
+    P0 = pt.matrix(name="P0", dtype=pytensor.config.floatX)
+    Q = pt.matrix(name="Q", dtype=pytensor.config.floatX)
+    H = pt.matrix(name="H", dtype=pytensor.config.floatX)
+    T = pt.matrix(name="T", dtype=pytensor.config.floatX)
+    R = pt.matrix(name="R", dtype=pytensor.config.floatX)
+    Z = pt.matrix(name="Z", dtype=pytensor.config.floatX)
 
     inputs = [data, a0, P0, T, Z, R, H, Q]
 
@@ -62,18 +63,22 @@ def add_missing_data(data, n_missing):
 
 
 def make_test_inputs(p, m, r, n, missing_data=None, H_is_zero=False):
-    data = np.arange(n * p, dtype="float").reshape(-1, p, 1)
+    data = np.arange(n * p, dtype=pytensor.config.floatX).reshape(-1, p, 1)
     if missing_data is not None:
         data = add_missing_data(data, missing_data)
 
-    a0 = np.zeros((m, 1))
-    P0 = np.eye(m)
-    Q = np.eye(r)
-    H = np.zeros((p, p)) if H_is_zero else np.eye(p)
-    T = np.eye(m, k=-1)
+    a0 = np.zeros((m, 1), dtype=pytensor.config.floatX)
+    P0 = np.eye(m, dtype=pytensor.config.floatX)
+    Q = np.eye(r, dtype=pytensor.config.floatX)
+    H = (
+        np.zeros((p, p), dtype=pytensor.config.floatX)
+        if H_is_zero
+        else np.eye(p, dtype=pytensor.config.floatX)
+    )
+    T = np.eye(m, k=-1, dtype=pytensor.config.floatX)
     T[0, :] = 1 / m
-    R = np.eye(m)[:, :r]
-    Z = np.eye(m)[:p, :]
+    R = np.eye(m, dtype=pytensor.config.floatX)[:, :r]
+    Z = np.eye(m, dtype=pytensor.config.floatX)[:p, :]
 
     return data, a0, P0, T, Z, R, H, Q
 
@@ -110,15 +115,17 @@ def get_sm_state_from_output_name(res, name):
 
 
 def nile_test_test_helper(n_missing=0):
-    a0 = np.zeros((2, 1))
-    P0 = np.eye(2) * 1e6
-    Q = np.eye(2) * np.array([0.5, 0.01])
-    H = np.eye(1) * 0.8
-    T = np.array([[1.0, 1.0], [0.0, 1.0]])
-    R = np.eye(2)
-    Z = np.array([[1.0, 0.0]])
+    a0 = np.zeros((2, 1), dtype=pytensor.config.floatX)
+    P0 = np.eye(2, dtype=pytensor.config.floatX) * 1e6
+    Q = np.eye(2, dtype=pytensor.config.floatX) * np.array(
+        [0.5, 0.01], dtype=pytensor.config.floatX
+    )
+    H = np.eye(1, dtype=pytensor.config.floatX) * 0.8
+    T = np.array([[1.0, 1.0], [0.0, 1.0]], dtype=pytensor.config.floatX)
+    R = np.eye(2, dtype=pytensor.config.floatX)
+    Z = np.array([[1.0, 0.0]], dtype=pytensor.config.floatX)
 
-    data = nile_data.values.copy()
+    data = nile_data.values.copy().astype(pytensor.config.floatX)
     if n_missing > 0:
         data = add_missing_data(data, n_missing)
 

@@ -2,6 +2,7 @@ import sys
 import unittest
 
 import numpy as np
+import pytensor
 from numpy.testing import assert_allclose
 from pytensor.configdefaults import config
 from pytensor.gradient import verify_grad as orig_verify_grad
@@ -58,12 +59,12 @@ class TestSolveDiscreteARE(unittest.TestCase):
     def test_forward(self):
         # TEST CASE 4 : darex #1 -- taken from Scipy tests
         a, b, q, r = (
-            np.array([[4, 3], [-4.5, -3.5]]),
-            np.array([[1], [-1]]),
-            np.array([[9, 6], [6, 4]]),
-            np.array([[1]]),
+            np.array([[4, 3], [-4.5, -3.5]], dtype=pytensor.config.floatX),
+            np.array([[1], [-1]], dtype=pytensor.config.floatX),
+            np.array([[9, 6], [6, 4]], dtype=pytensor.config.floatX),
+            np.array([[1]], dtype=pytensor.config.floatX),
         )
-        a, b, q, r = (x.astype("float64") for x in [a, b, q, r])
+        a, b, q, r = (x.astype(pytensor.config.floatX) for x in [a, b, q, r])
 
         x = solve_discrete_are(a, b, q, r).eval()
         res = a.T.dot(x.dot(a)) - x + q
@@ -73,20 +74,22 @@ class TestSolveDiscreteARE(unittest.TestCase):
             .dot(np.linalg.solve(r + b.conj().T.dot(x.dot(b)), b.T).dot(x.dot(a)))
         )
 
-        assert_allclose(res, np.zeros_like(res), atol=1e-12)
+        atol = 1e-4 if pytensor.config.floatX == "float32" else 1e-12
+        assert_allclose(res, np.zeros_like(res), atol=atol)
 
     def test_backward(self):
-
         a, b, q, r = (
-            np.array([[4, 3], [-4.5, -3.5]]),
-            np.array([[1], [-1]]),
-            np.array([[9, 6], [6, 4]]),
-            np.array([[1]]),
+            np.array([[4, 3], [-4.5, -3.5]], dtype=pytensor.config.floatX),
+            np.array([[1], [-1]], dtype=pytensor.config.floatX),
+            np.array([[9, 6], [6, 4]], dtype=pytensor.config.floatX),
+            np.array([[1]], dtype=pytensor.config.floatX),
         )
-        a, b, q, r = (x.astype("float64") for x in [a, b, q, r])
+        a, b, q, r = (x.astype(pytensor.config.floatX) for x in [a, b, q, r])
 
         rng = np.random.default_rng(fetch_seed())
-        verify_grad(solve_discrete_are_enforce, pt=[a, b, q, r], rng=rng)
+        atol = 1e-4 if pytensor.config.floatX == "float32" else 1e-12
+
+        verify_grad(solve_discrete_are_enforce, pt=[a, b, q, r], rng=rng, abs_tol=atol)
 
 
 if __name__ == "__main__":

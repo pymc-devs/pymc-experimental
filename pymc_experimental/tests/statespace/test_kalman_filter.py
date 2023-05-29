@@ -68,7 +68,6 @@ def test_base_class_update_raises():
 def test_output_shapes_one_state_one_observed(filter_func, output_idx, name):
     p, m, r, n = 1, 1, 1, 10
     inputs = make_test_inputs(p, m, r, n)
-
     outputs = filter_func(*inputs)
     expected_output = get_expected_shape(name, p, m, r, n)
 
@@ -102,14 +101,14 @@ def test_output_shapes_when_some_states_are_deterministic(filter_func, output_id
 @pytest.fixture
 def f_standard_nd():
     ksmoother = KalmanSmoother()
-    data = pt.dtensor3(name="data")
-    a0 = pt.matrix(name="a0")
-    P0 = pt.matrix(name="P0")
-    Q = pt.dtensor3(name="Q")
-    H = pt.dtensor3(name="H")
-    T = pt.dtensor3(name="T")
-    R = pt.dtensor3(name="R")
-    Z = pt.dtensor3(name="Z")
+    data = pt.tensor(name="data", dtype=pytensor.config.floatX, shape=(None, None, 1))
+    a0 = pt.matrix(name="a0", dtype=pytensor.config.floatX)
+    P0 = pt.matrix(name="P0", dtype=pytensor.config.floatX)
+    Q = pt.tensor(name="Q", dtype=pytensor.config.floatX, shape=(None, None, None))
+    H = pt.tensor(name="H", dtype=pytensor.config.floatX, shape=(None, None, None))
+    T = pt.tensor(name="T", dtype=pytensor.config.floatX, shape=(None, None, None))
+    R = pt.tensor(name="R", dtype=pytensor.config.floatX, shape=(None, None, None))
+    Z = pt.tensor(name="Z", dtype=pytensor.config.floatX, shape=(None, None, None))
 
     inputs = [data, a0, P0, T, Z, R, H, Q]
 
@@ -226,6 +225,9 @@ def test_last_smoother_is_last_filtered(filter_func, output_idx):
 @pytest.mark.parametrize("filter_func", filter_funcs[:-1], ids=filter_names[:-1])
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
 @pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
+@pytest.mark.skipif(
+    pytensor.config.floatX == "float32", reason="Tests are too sensitive for float32"
+)
 def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missing):
     fit_sm_mod, inputs = nile_test_test_helper(n_missing)
     outputs = filter_func(*inputs)

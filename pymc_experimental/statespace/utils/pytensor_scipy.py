@@ -29,7 +29,7 @@ class SolveDiscreteARE(at.Op):
 
         if self.enforce_Q_symmetric:
             Q = 0.5 * (Q + Q.T)
-        X[0] = scipy.linalg.solve_discrete_are(A, B, Q, R)
+        X[0] = scipy.linalg.solve_discrete_are(A, B, Q, R).astype(pytensor.config.floatX)
 
     def infer_shape(self, fgraph, node, shapes):
         return [shapes[0]]
@@ -48,7 +48,7 @@ class SolveDiscreteARE(at.Op):
         A_tilde = A - B.dot(K)
 
         dX_symm = 0.5 * (dX + dX.T)
-        S = solve_discrete_lyapunov(A_tilde, dX_symm)
+        S = solve_discrete_lyapunov(A_tilde, dX_symm).astype(pytensor.config.floatX)
 
         A_bar = 2 * matrix_dot(X, A_tilde, S)
         B_bar = -2 * matrix_dot(X, A_tilde, S, K.T)
