@@ -308,7 +308,7 @@ def clone_model(model: Model) -> Tuple[Model]:
     Examples
     --------
 
-        .. code-block:: python
+    .. code-block:: python
 
         import pymc as pm
         from pymc_experimental.utils import clone_model
