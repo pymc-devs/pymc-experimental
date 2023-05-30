@@ -297,7 +297,7 @@ def model_from_fgraph(fgraph: FunctionGraph) -> Model:
     return model
 
 
-def clone_model(model: Model) -> Tuple[Model]:
+def clone_model(model: Model) -> Model:
     """Clone a PyMC model.
 
     Recreates a PyMC model with clones of the original variables.
