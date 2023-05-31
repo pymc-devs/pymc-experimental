@@ -15,6 +15,7 @@
 
 from typing import Sequence, Union
 
+import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
@@ -67,6 +68,41 @@ def _R2D2M2CP_beta(
     else:
         beta = pm.Normal(name, mu_param / input_sigma, std_param / input_sigma, dims=dims)
     return beta
+
+
+def _broadcast_as_dims(*values, dims):
+    model = pm.modelcontext(None)
+    shape = [len(model.coords[d]) for d in dims]
+    return tuple(np.broadcast_to(v, shape) for v in values)
+
+
+def _psi_masked(positive_probs, positive_probs_std, *, dims):
+    if not (
+        isinstance(positive_probs, pt.Constant) and isinstance(positive_probs_std, pt.Constant)
+    ):
+        raise TypeError(
+            "Only constant values for positive_probs and positive_probs_std are accepted"
+        )
+    positive_probs, positive_probs_std = _broadcast_as_dims(
+        positive_probs.data, positive_probs_std.data, dims=dims
+    )
+    mask = ~np.bitwise_or(positive_probs == 1, positive_probs == 0)
+    if np.bitwise_and(~mask, positive_probs_std != 0).any():
+        raise ValueError("Can't have both positive_probs == '1 or 0' and positive_probs_std != 0")
+    if (~mask).any():
+        r_idx = mask.nonzero()
+        with pm.Model("psi"):
+            psi = pm.Beta(
+                "masked",
+                mu=positive_probs[r_idx],
+                sigma=positive_probs_std[r_idx],
+                shape=len(r_idx[0]),
+            )
+        psi = pt.set_subtensor(pt.as_tensor(positive_probs)[r_idx], psi)
+        psi = pm.Deterministic("psi", psi, dims=dims)
+    else:
+        psi = pm.Beta("psi", mu=positive_probs, sigma=positive_probs_std, dims=dims)
+    return mask, psi
 
 
 def R2D2M2CP(
@@ -258,6 +294,7 @@ def R2D2M2CP(
     *broadcast_dims, dim = dims
     input_sigma = pt.as_tensor(input_sigma)
     output_sigma = pt.as_tensor(output_sigma)
+    positive_probs = pt.as_tensor(positive_probs)
     with pm.Model(name) as model:
         if variables_importance is not None:
             if variance_explained is not None:
@@ -272,7 +309,7 @@ def R2D2M2CP(
                 raise TypeError("Can't use variance explained with less than two variables")
             phi = pt.as_tensor(variance_explained)
         else:
-            phi = 1 / len(model.coords[dim])
+            phi = pt.as_tensor(1 / len(model.coords[dim]))
         if r2_std is not None:
             r2 = pm.Beta("r2", mu=r2, sigma=r2_std, dims=broadcast_dims)
         if positive_probs_std is not None:
