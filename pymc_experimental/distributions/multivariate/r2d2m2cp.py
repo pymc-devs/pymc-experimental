@@ -80,7 +80,21 @@ def _R2D2M2CP_beta(
                 raw = pm.Normal("raw", dims=dims)
         beta = pm.Deterministic(name, (raw * std_param + mu_param) / input_sigma, dims=dims)
     else:
-        beta = pm.Normal(name, mu_param / input_sigma, std_param / input_sigma, dims=dims)
+        if psi_mask is not None:
+            r_idx = psi_mask.nonzero()
+            with pm.Model(name):
+                mean = (mu_param / input_sigma)[r_idx]
+                sigma = (std_param / input_sigma)[r_idx]
+                masked = pm.Normal(
+                    "masked",
+                    mean,
+                    sigma,
+                    shape=len(r_idx[0]),
+                )
+                beta = pt.set_subtensor(mean, masked)
+            beta = pm.Deterministic(name, beta, dims=dims)
+        else:
+            beta = pm.Normal(name, mu_param / input_sigma, std_param / input_sigma, dims=dims)
     return beta
 
 
