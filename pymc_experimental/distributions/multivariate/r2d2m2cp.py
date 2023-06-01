@@ -135,7 +135,7 @@ def _psi(positive_probs, positive_probs_std, *, dims):
 def _phi(
     variables_importance,
     variance_explained,
-    variance_explained_concentration,
+    importance_concentration,
     *,
     dims,
 ):
@@ -146,14 +146,20 @@ def _phi(
             raise TypeError("Can't use variable importance with variance explained")
         if len(model.coords[dim]) <= 1:
             raise TypeError("Can't use variable importance with less than two variables")
-        phi = pm.Dirichlet("phi", pt.as_tensor(variables_importance), dims=broadcast_dims + [dim])
+        variables_importance = pt.as_tensor(variables_importance)
+        if importance_concentration is not None:
+            variables_importance *= importance_concentration
+        return pm.Dirichlet("phi", variables_importance, dims=broadcast_dims + [dim])
     elif variance_explained is not None:
         if len(model.coords[dim]) <= 1:
             raise TypeError("Can't use variance explained with less than two variables")
         phi = pt.as_tensor(variance_explained)
     else:
         phi = pt.as_tensor(1 / len(model.coords[dim]))
-    return phi
+    if importance_concentration is not None:
+        return pm.Dirichlet("phi", importance_concentration * phi, dims=broadcast_dims + [dim])
+    else:
+        return phi
 
 
 def R2D2M2CP(
@@ -165,7 +171,7 @@ def R2D2M2CP(
     r2,
     variables_importance=None,
     variance_explained=None,
-    variance_explained_concentration=None,
+    importance_concentration=None,
     r2_std=None,
     positive_probs=0.5,
     positive_probs_std=None,
@@ -190,8 +196,8 @@ def R2D2M2CP(
     variance_explained : tensor, optional
         Alternative estimate for variables importance which is point estimate of
         variance explained, should sum up to one, by default None
-    variance_explained_concentration : tensor, optional
-        Confidence around variance explained estimate
+    importance_concentration : tensor, optional
+        Confidence around variance explained or variable importance estimate
     r2_std : tensor, optional
         Optional uncertainty over :math:`R^2`, by default None
     positive_probs : tensor, optional
