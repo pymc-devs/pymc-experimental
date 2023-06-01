@@ -70,7 +70,14 @@ def _R2D2M2CP_beta(
     mu_param, std_param = _psivar2musigma(psi, explained_variance, psi_mask=psi_mask)
     if not centered:
         with pm.Model(name):
-            raw = pm.Normal("raw", dims=dims)
+            if psi_mask is not None:
+                r_idx = psi_mask.nonzero()
+                with pm.Model("raw"):
+                    raw = pm.Normal("masked", shape=len(r_idx[0]))
+                    raw = pt.set_subtensor(pt.zeros_like(mu_param)[r_idx], psi)
+                raw = pm.Deterministic("raw", raw, dims=dims)
+            else:
+                raw = pm.Normal("raw", dims=dims)
         beta = pm.Deterministic(name, (raw * std_param + mu_param) / input_sigma, dims=dims)
     else:
         beta = pm.Normal(name, mu_param / input_sigma, std_param / input_sigma, dims=dims)
