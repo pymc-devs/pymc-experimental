@@ -74,7 +74,7 @@ def _R2D2M2CP_beta(
                 r_idx = psi_mask.nonzero()
                 with pm.Model("raw"):
                     raw = pm.Normal("masked", shape=len(r_idx[0]))
-                    raw = pt.set_subtensor(pt.zeros_like(mu_param)[r_idx], psi)
+                    raw = pt.set_subtensor(pt.zeros_like(mu_param)[r_idx], raw)
                 raw = pm.Deterministic("raw", raw, dims=dims)
             else:
                 raw = pm.Normal("raw", dims=dims)
@@ -150,8 +150,8 @@ def _psi(positive_probs, positive_probs_std, *, dims):
         if not isinstance(positive_probs, pt.Constant):
             raise TypeError("Only constant values for positive_probs are allowed")
         psi = _broadcast_as_dims(positive_probs.data, dims=dims)
-        mask = np.atleast_1d(psi != 1)
-        if (mask).all():
+        mask = np.atleast_1d(~np.bitwise_or(psi == 1, psi == 0))
+        if mask.all():
             mask = None
     return mask, psi
 
@@ -179,7 +179,8 @@ def _phi(
             raise TypeError("Can't use variance explained with less than two variables")
         phi = pt.as_tensor(variance_explained)
     else:
-        phi = pt.as_tensor(1 / len(model.coords[dim]))
+        phi = 1 / len(model.coords[dim])
+        phi = _broadcast_as_dims(phi, dims=dims)
     if importance_concentration is not None:
         return pm.Dirichlet("phi", importance_concentration * phi, dims=broadcast_dims + [dim])
     else:

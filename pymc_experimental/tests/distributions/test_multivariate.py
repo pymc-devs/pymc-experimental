@@ -50,22 +50,33 @@ class TestR2D2M2CP:
     def r2_std(self, request):
         return request.param
 
-    @pytest.fixture(params=[True, False], ids=["probs", "no-probs"])
+    @pytest.fixture(params=["true", "false", "limit-1", "limit-0"])
     def positive_probs(self, input_std, request):
-        if request.param:
+        if request.param == "true":
             return np.full_like(input_std, 0.5)
-        else:
+        elif request.param == "false":
             return 0.5
+        elif request.param == "limit-1":
+            ret = np.full_like(input_std, 0.5)
+            ret[..., 0] = 1
+            return ret
+        elif request.param == "limit-0":
+            ret = np.full_like(input_std, 0.5)
+            ret[..., 0] = 0
+            return ret
 
     @pytest.fixture(params=[True, False], ids=["probs-std", "no-probs-std"])
     def positive_probs_std(self, positive_probs, request):
         if request.param:
-            return np.full_like(positive_probs, 0.1)
+            std = np.full_like(positive_probs, 0.1)
+            std[positive_probs == 0] = 0
+            std[positive_probs == 1] = 0
+            return std
         else:
             return None
 
     @pytest.fixture(params=[None, "importance", "explained"])
-    def phi_args(self, request, input_shape):
+    def phi_args_base(self, request, input_shape):
         if input_shape[-1] < 2 and request.param is not None:
             pytest.skip("not compatible")
         elif request.param is None:
@@ -75,6 +86,12 @@ class TestR2D2M2CP:
         else:
             val = np.full(input_shape, 2)
             return {"variance_explained": val / val.sum(-1, keepdims=True)}
+
+    @pytest.fixture(params=["concentration", "no-concentration"])
+    def phi_args(self, request, phi_args_base):
+        if request.param == "concentration":
+            phi_args_base["importance_concentration"] = 10
+        return phi_args_base
 
     def test_init(
         self,
@@ -106,12 +123,13 @@ class TestR2D2M2CP:
         # r2 rv is only created if r2 std is not None
         assert ("beta::r2" in model.named_vars) == (r2_std is not None), set(model.named_vars)
         # phi is only created if variable importances is not None and there is more than one var
-        assert ("beta::phi" in model.named_vars) == ("variables_importance" in phi_args), set(
-            model.named_vars
-        )
+        assert ("beta::phi" in model.named_vars) == (
+            "variables_importance" in phi_args or "importance_concentration" in phi_args
+        ), set(model.named_vars)
         assert ("beta::psi" in model.named_vars) == (positive_probs_std is not None), set(
             model.named_vars
         )
+        assert np.isfinite(sum(model.point_logps().values())), model.point_logps()
 
     def test_failing_importance(self, dims, input_shape, output_std, input_std):
         if input_shape[-1] < 2:
@@ -163,3 +181,7 @@ class TestR2D2M2CP:
                 variance_explained=[0.5, 0.5],
                 variables_importance=[1, 1],
             )
+
+    def test_limit_case_requires_std_0(self):
+        # TODO: add test for the limit cases that assertions work as expected
+        return
