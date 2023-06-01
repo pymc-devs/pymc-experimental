@@ -22,12 +22,18 @@ import pytensor.tensor as pt
 __all__ = ["R2D2M2CP"]
 
 
-def _psivar2musigma(psi: pt.TensorVariable, explained_var: pt.TensorVariable):
+def _psivar2musigma(psi: pt.TensorVariable, explained_var: pt.TensorVariable, psi_mask):
     pi = pt.erfinv(2 * psi - 1)
     f = (1 / (2 * pi**2 + 1)) ** 0.5
     sigma = explained_var**0.5 * f
     mu = sigma * pi * 2**0.5
-    return mu, sigma
+    if psi_mask is not None:
+        return (
+            pt.where(psi_mask, mu, explained_var**0.5),
+            pt.where(psi_mask, sigma, 0),
+        )
+    else:
+        return mu, sigma
 
 
 def _R2D2M2CP_beta(
@@ -38,6 +44,7 @@ def _R2D2M2CP_beta(
     phi: pt.TensorVariable,
     psi: pt.TensorVariable,
     *,
+    psi_mask,
     dims: Union[str, Sequence[str]],
     centered=False,
 ):
@@ -60,7 +67,7 @@ def _R2D2M2CP_beta(
     """
     tau2 = r2 / (1 - r2)
     explained_variance = phi * pt.expand_dims(tau2 * output_sigma**2, -1)
-    mu_param, std_param = _psivar2musigma(psi, explained_variance)
+    mu_param, std_param = _psivar2musigma(psi, explained_variance, psi_mask=psi_mask)
     if not centered:
         with pm.Model(name):
             raw = pm.Normal("raw", dims=dims)
@@ -102,7 +109,51 @@ def _psi_masked(positive_probs, positive_probs_std, *, dims):
         psi = pm.Deterministic("psi", psi, dims=dims)
     else:
         psi = pm.Beta("psi", mu=positive_probs, sigma=positive_probs_std, dims=dims)
+        mask = None
     return mask, psi
+
+
+def _psi(positive_probs, positive_probs_std, *, dims):
+    if positive_probs_std is not None:
+        mask, psi = _psi_masked(
+            "psi",
+            mu=pt.as_tensor(positive_probs),
+            sigma=pt.as_tensor(positive_probs_std),
+            dims=dims,
+        )
+    else:
+        positive_probs = pt.as_tensor(positive_probs)
+        if not isinstance(positive_probs, pt.Constant):
+            raise TypeError("Only constant values for positive_probs are allowed")
+        psi = _broadcast_as_dims(positive_probs.data, dims=dims)
+        mask = psi != 1
+        if (mask).all():
+            mask = None
+    return mask, psi
+
+
+def _phi(
+    variables_importance,
+    variance_explained,
+    variance_explained_concentration,
+    *,
+    dims,
+):
+    *broadcast_dims, dim = dims
+    model = pm.modelcontext(None)
+    if variables_importance is not None:
+        if variance_explained is not None:
+            raise TypeError("Can't use variable importance with variance explained")
+        if len(model.coords[dim]) <= 1:
+            raise TypeError("Can't use variable importance with less than two variables")
+        phi = pm.Dirichlet("phi", pt.as_tensor(variables_importance), dims=broadcast_dims + [dim])
+    elif variance_explained is not None:
+        if len(model.coords[dim]) <= 1:
+            raise TypeError("Can't use variance explained with less than two variables")
+        phi = pt.as_tensor(variance_explained)
+    else:
+        phi = pt.as_tensor(1 / len(model.coords[dim]))
+    return phi
 
 
 def R2D2M2CP(
@@ -114,6 +165,7 @@ def R2D2M2CP(
     r2,
     variables_importance=None,
     variance_explained=None,
+    variance_explained_concentration=None,
     r2_std=None,
     positive_probs=0.5,
     positive_probs_std=None,
@@ -138,6 +190,8 @@ def R2D2M2CP(
     variance_explained : tensor, optional
         Alternative estimate for variables importance which is point estimate of
         variance explained, should sum up to one, by default None
+    variance_explained_concentration : tensor, optional
+        Confidence around variance explained estimate
     r2_std : tensor, optional
         Optional uncertainty over :math:`R^2`, by default None
     positive_probs : tensor, optional
@@ -161,8 +215,8 @@ def R2D2M2CP(
     -----
     The R2D2M2CP prior is a modification of R2D2M2 prior.
 
-    - ``(R2D2M2)``CP is taken from https://arxiv.org/abs/2208.07132
-    - R2D2M2``(CP)``, (Correlation Probability) is proposed and implemented by Max Kochurov (@ferrine)
+    - ``(R2D2M2)`` CP is taken from https://arxiv.org/abs/2208.07132
+    - R2D2M2 ``(CP)``, (Correlation Probability) is proposed and implemented by Max Kochurov (@ferrine)
 
     Examples
     --------
@@ -294,33 +348,17 @@ def R2D2M2CP(
     *broadcast_dims, dim = dims
     input_sigma = pt.as_tensor(input_sigma)
     output_sigma = pt.as_tensor(output_sigma)
-    positive_probs = pt.as_tensor(positive_probs)
-    with pm.Model(name) as model:
-        if variables_importance is not None:
-            if variance_explained is not None:
-                raise TypeError("Can't use variable importance with variance explained")
-            if len(model.coords[dim]) <= 1:
-                raise TypeError("Can't use variable importance with less than two variables")
-            phi = pm.Dirichlet(
-                "phi", pt.as_tensor(variables_importance), dims=broadcast_dims + [dim]
-            )
-        elif variance_explained is not None:
-            if len(model.coords[dim]) <= 1:
-                raise TypeError("Can't use variance explained with less than two variables")
-            phi = pt.as_tensor(variance_explained)
-        else:
-            phi = pt.as_tensor(1 / len(model.coords[dim]))
+    with pm.Model(name):
         if r2_std is not None:
             r2 = pm.Beta("r2", mu=r2, sigma=r2_std, dims=broadcast_dims)
-        if positive_probs_std is not None:
-            psi = pm.Beta(
-                "psi",
-                mu=pt.as_tensor(positive_probs),
-                sigma=pt.as_tensor(positive_probs_std),
-                dims=broadcast_dims + [dim],
-            )
-        else:
-            psi = pt.as_tensor(positive_probs)
+        phi = _phi(
+            variables_importance=variables_importance,
+            variance_explained=variance_explained,
+        )
+        mask, psi = _psi(
+            positive_probs=positive_probs, positive_probs_std=positive_probs_std, dims=dims
+        )
+
     beta = _R2D2M2CP_beta(
         name,
         output_sigma,
@@ -330,6 +368,7 @@ def R2D2M2CP(
         psi,
         dims=broadcast_dims + [dim],
         centered=centered,
+        psi_mask=mask,
     )
     resid_sigma = (1 - r2) ** 0.5 * output_sigma
     return resid_sigma, beta
