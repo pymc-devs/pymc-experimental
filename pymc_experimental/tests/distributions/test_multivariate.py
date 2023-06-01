@@ -182,6 +182,25 @@ class TestR2D2M2CP:
                 variables_importance=[1, 1],
             )
 
-    def test_limit_case_requires_std_0(self):
-        # TODO: add test for the limit cases that assertions work as expected
-        return
+    def test_limit_case_requires_std_0(self, model: pm.Model):
+        model.add_coord("a", range(2))
+        with pytest.raises(ValueError, match="Can't have both positive_probs"):
+            pmx.distributions.R2D2M2CP(
+                "beta",
+                1,
+                [1, 1],
+                dims="a",
+                r2=0.8,
+                positive_probs=[0.5, 0],
+                positive_probs_std=[0.3, 0.1],
+            )
+        with pytest.raises(ValueError, match="Can't have both positive_probs"):
+            pmx.distributions.R2D2M2CP(
+                "beta",
+                1,
+                [1, 1],
+                dims="a",
+                r2=0.8,
+                positive_probs=[0.5, 1],
+                positive_probs_std=[0.3, 0.1],
+            )
