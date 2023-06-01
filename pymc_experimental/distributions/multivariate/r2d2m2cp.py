@@ -29,7 +29,7 @@ def _psivar2musigma(psi: pt.TensorVariable, explained_var: pt.TensorVariable, ps
     mu = sigma * pi * 2**0.5
     if psi_mask is not None:
         return (
-            pt.where(psi_mask, mu, explained_var**0.5),
+            pt.where(psi_mask, mu, pt.sign(mu) * explained_var**0.5),
             pt.where(psi_mask, sigma, 0),
         )
     else:
