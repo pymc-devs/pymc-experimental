@@ -118,6 +118,7 @@ class TestR2D2M2CP:
             positive_probs=positive_probs,
             **phi_args
         )
+        assert not np.isnan(beta.eval()).any()
         assert eps.eval().shape == output_std.shape
         assert beta.eval().shape == input_std.shape
         # r2 rv is only created if r2 std is not None
