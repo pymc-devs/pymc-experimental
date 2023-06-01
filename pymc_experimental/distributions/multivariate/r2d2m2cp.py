@@ -381,6 +381,7 @@ def R2D2M2CP(
         phi = _phi(
             variables_importance=variables_importance,
             variance_explained=variance_explained,
+            importance_concentration=importance_concentration,
         )
         mask, psi = _psi(
             positive_probs=positive_probs, positive_probs_std=positive_probs_std, dims=dims
