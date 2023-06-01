@@ -101,7 +101,11 @@ def _R2D2M2CP_beta(
 def _broadcast_as_dims(*values, dims):
     model = pm.modelcontext(None)
     shape = [len(model.coords[d]) for d in dims]
-    return tuple(np.broadcast_to(v, shape) for v in values)
+    ret = tuple(np.broadcast_to(v, shape) for v in values)
+    # strip output
+    if len(values) == 1:
+        ret = ret[0]
+    return ret
 
 
 def _psi_masked(positive_probs, positive_probs_std, *, dims):
@@ -137,9 +141,8 @@ def _psi_masked(positive_probs, positive_probs_std, *, dims):
 def _psi(positive_probs, positive_probs_std, *, dims):
     if positive_probs_std is not None:
         mask, psi = _psi_masked(
-            "psi",
-            mu=pt.as_tensor(positive_probs),
-            sigma=pt.as_tensor(positive_probs_std),
+            positive_probs=pt.as_tensor(positive_probs),
+            positive_probs_std=pt.as_tensor(positive_probs_std),
             dims=dims,
         )
     else:
@@ -147,7 +150,7 @@ def _psi(positive_probs, positive_probs_std, *, dims):
         if not isinstance(positive_probs, pt.Constant):
             raise TypeError("Only constant values for positive_probs are allowed")
         psi = _broadcast_as_dims(positive_probs.data, dims=dims)
-        mask = psi != 1
+        mask = np.atleast_1d(psi != 1)
         if (mask).all():
             mask = None
     return mask, psi
