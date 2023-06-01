@@ -122,7 +122,7 @@ class TestR2D2M2CP:
         assert beta.eval().shape == input_std.shape
         # r2 rv is only created if r2 std is not None
         assert ("beta::r2" in model.named_vars) == (r2_std is not None), set(model.named_vars)
-        # phi is only created if variable importances is not None and there is more than one var
+        # phi is only created if variable importance is not None and there is more than one var
         assert ("beta::phi" in model.named_vars) == (
             "variables_importance" in phi_args or "importance_concentration" in phi_args
         ), set(model.named_vars)
@@ -204,3 +204,34 @@ class TestR2D2M2CP:
                 positive_probs=[0.5, 1],
                 positive_probs_std=[0.3, 0.1],
             )
+
+    def test_limit_case_creates_masked_vars(self, model: pm.Model, centered: bool):
+        model.add_coord("a", range(2))
+        pmx.distributions.R2D2M2CP(
+            "beta0",
+            1,
+            [1, 1],
+            dims="a",
+            r2=0.8,
+            positive_probs=[0.5, 1],
+            positive_probs_std=[0.3, 0],
+            centered=centered,
+        )
+        pmx.distributions.R2D2M2CP(
+            "beta1",
+            1,
+            [1, 1],
+            dims="a",
+            r2=0.8,
+            positive_probs=[0.5, 0],
+            positive_probs_std=[0.3, 0],
+            centered=centered,
+        )
+        if not centered:
+            assert "beta0::raw::masked" in model.named_vars, model.named_vars
+            assert "beta1::raw::masked" in model.named_vars, model.named_vars
+        else:
+            assert "beta0::masked" in model.named_vars, model.named_vars
+            assert "beta1::masked" in model.named_vars, model.named_vars
+        assert "beta1::psi::masked" in model.named_vars
+        assert "beta0::psi::masked" in model.named_vars
