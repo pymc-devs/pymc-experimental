@@ -184,3 +184,30 @@ def test_do_dims():
         {"y": np.zeros(10, dtype=config.floatX)},
     )
     assert do_m.named_vars_to_dims["y"] == ["test_dim"]
+
+
+@pytest.mark.parametrize("prune", (False, True))
+def test_do_prune(prune):
+
+    with pm.Model() as m:
+        x0 = pm.ConstantData("x0", 0)
+        x1 = pm.ConstantData("x1", 0)
+        y = pm.Normal("y")
+        y_det = pm.Deterministic("y_det", y + x0)
+        z = pm.Normal("z", y_det)
+        llike = pm.Normal("llike", z + x1, observed=0)
+
+    orig_named_vars = {"x0", "x1", "y", "y_det", "z", "llike"}
+    assert set(m.named_vars) == orig_named_vars
+
+    do_m = do(m, {y_det: x0 + 5}, prune_vars=prune)
+    if prune:
+        assert set(do_m.named_vars) == {"x0", "x1", "y_det", "z", "llike"}
+    else:
+        assert set(do_m.named_vars) == orig_named_vars
+
+    do_m = do(m, {z: 0.5}, prune_vars=prune)
+    if prune:
+        assert set(do_m.named_vars) == {"x1", "z", "llike"}
+    else:
+        assert set(do_m.named_vars) == orig_named_vars

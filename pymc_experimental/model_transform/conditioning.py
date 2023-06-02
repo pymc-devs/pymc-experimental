@@ -4,6 +4,7 @@ from pymc import Model
 from pymc.pytensorf import _replace_vars_in_graphs
 from pytensor.tensor import TensorVariable
 
+from pymc_experimental.model_transform.basic import prune_vars_detached_from_observed
 from pymc_experimental.utils.model_fgraph import (
     ModelDeterministic,
     ModelFreeRV,
@@ -113,7 +114,9 @@ def replace_vars_in_graphs(graphs: Sequence[TensorVariable], replacements) -> Li
     return replaced_graphs
 
 
-def do(model: Model, vars_to_interventions: Dict[Union["str", TensorVariable], Any]) -> Model:
+def do(
+    model: Model, vars_to_interventions: Dict[Union["str", TensorVariable], Any], prune_vars=False
+) -> Model:
     """Replace model variables by intervention variables.
 
     Intervention variables will either show up as `Data` or `Deterministics` in the new model,
@@ -126,6 +129,9 @@ def do(model: Model, vars_to_interventions: Dict[Union["str", TensorVariable], A
         Dictionary that maps model variables (or names) to intervention expressions.
         Intervention expressions must have a shape and data type that is compatible
         with the original model variable.
+    prune_vars: bool, defaults to False
+        Whether to prune model variables that are not connected to any observed variables,
+        after the interventions.
 
     Returns
     -------
@@ -196,4 +202,7 @@ def do(model: Model, vars_to_interventions: Dict[Union["str", TensorVariable], A
     # Replace variables by interventions
     toposort_replace(fgraph, tuple(replacements.items()))
 
-    return model_from_fgraph(fgraph)
+    model = model_from_fgraph(fgraph)
+    if prune_vars:
+        return prune_vars_detached_from_observed(model)
+    return model
