@@ -237,6 +237,14 @@ def model_from_fgraph(fgraph: FunctionGraph) -> Model:
 
     See: fgraph_from_model
     """
+
+    def first_non_model_var(var):
+        if var.owner and isinstance(var.owner.op, ModelVar):
+            new_var = var.owner.inputs[0]
+            return first_non_model_var(new_var)
+        else:
+            return var
+
     model = Model()
     if model.parent is not None:
         raise RuntimeError("model_to_fgraph cannot be called inside a PyMC model context")
@@ -244,7 +252,6 @@ def model_from_fgraph(fgraph: FunctionGraph) -> Model:
     model._dim_lengths = getattr(fgraph, "_dim_lengths", {})
 
     # Replace dummy `ModelVar` Ops by the underlying variables,
-    # Except for Deterministics which could reintroduce the old graphs
     fgraph = fgraph.clone()
     model_dummy_vars = [
         model_node.outputs[0]
@@ -252,15 +259,14 @@ def model_from_fgraph(fgraph: FunctionGraph) -> Model:
         if isinstance(model_node.op, ModelVar)
     ]
     model_dummy_vars_to_vars = {
-        dummy_var: dummy_var.owner.inputs[0]
+        # Deterministics could refer to other model variables directly,
+        # We make sure to replace them by the first non-model variable
+        dummy_var: first_non_model_var(dummy_var.owner.inputs[0])
         for dummy_var in model_dummy_vars
-        # Don't include Deterministics!
-        if not isinstance(dummy_var.owner.op, ModelDeterministic)
     }
     toposort_replace(fgraph, tuple(model_dummy_vars_to_vars.items()))
 
     # Populate new PyMC model mappings
-    non_det_model_vars = set(model_dummy_vars_to_vars.values())
     for model_var in model_dummy_vars:
         if isinstance(model_var.owner.op, ModelFreeRV):
             var, value, *dims = model_var.owner.inputs
@@ -279,10 +285,8 @@ def model_from_fgraph(fgraph: FunctionGraph) -> Model:
             model.potentials.append(var)
         elif isinstance(model_var.owner.op, ModelDeterministic):
             var, *dims = model_var.owner.inputs
-            # Register the original var (not the copy) as the Deterministic
-            # So it shows in the expected place in graphviz.
-            # unless it's another model var, in which case we need a copy!
-            if var in non_det_model_vars:
+            # If a Deterministic is a direct view on an RV, copy it
+            if var in model.basic_RVs:
                 var = var.copy()
             model.deterministics.append(var)
         elif isinstance(model_var.owner.op, ModelNamed):
