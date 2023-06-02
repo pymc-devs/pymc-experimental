@@ -90,14 +90,16 @@ model_named = ModelNamed()
 
 
 def toposort_replace(
-    fgraph: FunctionGraph, replacements: Sequence[Tuple[Variable, Variable]]
+    fgraph: FunctionGraph, replacements: Sequence[Tuple[Variable, Variable]], reverse: bool = False
 ) -> None:
     """Replace multiple variables in topological order."""
     toposort = fgraph.toposort()
     sorted_replacements = sorted(
-        replacements, key=lambda pair: toposort.index(pair[0].owner) if pair[0].owner else -1
+        replacements,
+        key=lambda pair: toposort.index(pair[0].owner) if pair[0].owner else -1,
+        reverse=reverse,
     )
-    fgraph.replace_all(tuple(sorted_replacements), import_missing=True)
+    fgraph.replace_all(sorted_replacements, import_missing=True)
 
 
 @node_rewriter([Elemwise])
@@ -109,10 +111,19 @@ def local_remove_identity(fgraph, node):
 remove_identity_rewrite = out2in(local_remove_identity)
 
 
-def fgraph_from_model(model: Model) -> Tuple[FunctionGraph, Dict[Variable, Variable]]:
+def fgraph_from_model(
+    model: Model, inlined_views=False
+) -> Tuple[FunctionGraph, Dict[Variable, Variable]]:
     """Convert Model to FunctionGraph.
 
     See: model_from_fgraph
+
+    Parameters
+    ----------
+    model: PyMC model
+    inlined_views: bool, default False
+        Whether "view" variables (Deterministics and Data) should be inlined among RVs in the fgraph,
+        or show up as separate branches.
 
     Returns
     -------
@@ -138,19 +149,36 @@ def fgraph_from_model(model: Model) -> Tuple[FunctionGraph, Dict[Variable, Varia
     free_rvs = model.free_RVs
     observed_rvs = model.observed_RVs
     potentials = model.potentials
+    named_vars = model.named_vars.values()
     # We copy Deterministics (Identity Op) so that they don't show in between "main" variables
     # We later remove these Identity Ops when we have a Deterministic ModelVar Op as a separator
     old_deterministics = model.deterministics
-    deterministics = [det.copy(det.name) for det in old_deterministics]
-    # Other variables that are in model.named_vars but are not any of the categories above
+    deterministics = [det if inlined_views else det.copy(det.name) for det in old_deterministics]
+    # Value variables (we also have to decide whether to inline named ones)
+    old_value_vars = list(rvs_to_values.values())
+    unnamed_value_vars = [val for val in old_value_vars if val not in named_vars]
+    named_value_vars = [
+        val if inlined_views else val.copy(val.name) for val in old_value_vars if val in named_vars
+    ]
+    value_vars = old_value_vars.copy()
+    if inlined_views:
+        # In this case we want to use the named_value_vars as the value_vars in RVs
+        for named_val in named_value_vars:
+            idx = value_vars.index(named_val)
+            value_vars[idx] = named_val
+    # Other variables that are in named_vars but are not any of the categories above
     # E.g., MutableData, ConstantData, _dim_lengths
     # We use the same trick as deterministics!
-    accounted_for = free_rvs + observed_rvs + potentials + old_deterministics
-    old_other_named_vars = [var for var in model.named_vars.values() if var not in accounted_for]
-    other_named_vars = [var.copy(var.name) for var in old_other_named_vars]
-    value_vars = [val for val in rvs_to_values.values() if val not in old_other_named_vars]
+    accounted_for = set(free_rvs + observed_rvs + potentials + old_deterministics + old_value_vars)
+    other_named_vars = [
+        var if inlined_views else var.copy(var.name)
+        for var in named_vars
+        if var not in accounted_for
+    ]
 
-    model_vars = rvs + potentials + deterministics + other_named_vars + value_vars
+    model_vars = (
+        rvs + potentials + deterministics + other_named_vars + named_value_vars + unnamed_value_vars
+    )
 
     memo = {}
 
@@ -176,13 +204,13 @@ def fgraph_from_model(model: Model) -> Tuple[FunctionGraph, Dict[Variable, Varia
 
     # Introduce dummy `ModelVar` Ops
     free_rvs_to_transforms = {memo[k]: tr for k, tr in rvs_to_transforms.items()}
-    free_rvs_to_values = {memo[k]: memo[v] for k, v in rvs_to_values.items() if k in free_rvs}
+    free_rvs_to_values = {memo[k]: memo[v] for k, v in zip(rvs, value_vars) if k in free_rvs}
     observed_rvs_to_values = {
-        memo[k]: memo[v] for k, v in rvs_to_values.items() if k in observed_rvs
+        memo[k]: memo[v] for k, v in zip(rvs, value_vars) if k in observed_rvs
     }
     potentials = [memo[k] for k in potentials]
     deterministics = [memo[k] for k in deterministics]
-    other_named_vars = [memo[k] for k in other_named_vars]
+    named_vars = [memo[k] for k in other_named_vars + named_value_vars]
 
     vars = fgraph.outputs
     new_vars = []
@@ -198,31 +226,31 @@ def fgraph_from_model(model: Model) -> Tuple[FunctionGraph, Dict[Variable, Varia
             new_var = model_potential(var, *dims)
         elif var in deterministics:
             new_var = model_deterministic(var, *dims)
-        elif var in other_named_vars:
+        elif var in named_vars:
             new_var = model_named(var, *dims)
         else:
-            # Value variables
+            # Unnamed value variables
             new_var = var
         new_vars.append(new_var)
 
     replacements = tuple(zip(vars, new_vars))
-    toposort_replace(fgraph, replacements)
+    toposort_replace(fgraph, replacements, reverse=True)
 
     # Reference model vars in memo
     inverse_memo = {v: k for k, v in memo.items()}
     for var, model_var in replacements:
-        if isinstance(
-            model_var.owner is not None and model_var.owner.op, (ModelDeterministic, ModelNamed)
+        if not inlined_views and (
+            model_var.owner and isinstance(model_var.owner.op, (ModelDeterministic, ModelNamed))
         ):
             # Ignore extra identity that will be removed at the end
             var = var.owner.inputs[0]
         original_var = inverse_memo[var]
         memo[original_var] = model_var
 
-    # Remove value variable as outputs, now that they are graph inputs
-    first_value_idx = len(fgraph.outputs) - len(value_vars)
-    for _ in value_vars:
-        fgraph.remove_output(first_value_idx)
+    # Remove the last outputs corresponding to unnamed value variables, now that they are graph inputs
+    first_idx_to_remove = len(fgraph.outputs) - len(unnamed_value_vars)
+    for _ in unnamed_value_vars:
+        fgraph.remove_output(first_idx_to_remove)
 
     # Now that we have Deterministic dummy Ops, we remove the noisy `Identity`s from the graph
     remove_identity_rewrite.apply(fgraph)
