@@ -82,11 +82,10 @@ def test_save_load(fitted_linear_model_instance):
     assert model.idata.groups() == model2.idata.groups()
 
     x_pred = np.random.uniform(low=0, high=1, size=(100, 1))
-    pred1 = model.predict(x_pred)
-    pred2 = model2.predict(x_pred)
-    # Predictions should have similar statistical characteristics
-    assert pred1.mean() == pytest.approx(pred2.mean(), 1e-3)
-    assert pred1.var() == pytest.approx(pred2.var(), 1e-2)
+    pred1 = model.predict(x_pred, random_seed=423)
+    pred2 = model2.predict(x_pred, random_seed=423)
+    # Predictions should be identical
+    np.testing.assert_array_equal(pred1, pred2)
     temp.close()
 
 

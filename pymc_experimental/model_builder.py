@@ -468,6 +468,7 @@ class ModelBuilder:
         self,
         X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
         extend_idata: bool = True,
+        **kwargs,
     ) -> np.ndarray:
         """
         Uses model to predict on unseen data and return point prediction of all the samples. The point prediction
@@ -479,6 +480,7 @@ class ModelBuilder:
             The input data used for prediction.
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
             Defaults to True.
+        **kwargs: Additional arguments to pass to pymc.sample_posterior_predictive
 
         Returns
         -------
@@ -495,7 +497,7 @@ class ModelBuilder:
         """
 
         posterior_predictive_samples = self.sample_posterior_predictive(
-            X_pred, extend_idata, combined=False
+            X_pred, extend_idata, combined=False, **kwargs
         )
 
         if self.output_var not in posterior_predictive_samples:
@@ -514,6 +516,7 @@ class ModelBuilder:
         samples: Optional[int] = None,
         extend_idata: bool = False,
         combined: bool = True,
+        **kwargs,
     ):
         """
         Sample from the model's prior predictive distribution.
@@ -529,6 +532,7 @@ class ModelBuilder:
             Defaults to False.
         combined: Combine chain and draw dims into sample. Won't work if a dim named sample already exists.
             Defaults to True.
+        **kwargs: Additional arguments to pass to pymc.sample_prior_predictive
 
         Returns
         -------
@@ -544,7 +548,7 @@ class ModelBuilder:
         self._data_setter(X_pred)
         if self.model is not None:
             with self.model:  # sample with new input data
-                prior_pred: az.InferenceData = pm.sample_prior_predictive(samples)
+                prior_pred: az.InferenceData = pm.sample_prior_predictive(samples, **kwargs)
                 self.set_idata_attrs(prior_pred)
                 if extend_idata:
                     if self.idata is not None:
@@ -556,7 +560,7 @@ class ModelBuilder:
 
         return prior_predictive_samples
 
-    def sample_posterior_predictive(self, X_pred, extend_idata, combined):
+    def sample_posterior_predictive(self, X_pred, extend_idata, combined, **kwargs):
         """
         Sample from the model's posterior predictive distribution.
 
@@ -568,6 +572,7 @@ class ModelBuilder:
             Defaults to False.
         combined: Combine chain and draw dims into sample. Won't work if a dim named sample already exists.
             Defaults to True.
+        **kwargs: Additional arguments to pass to pymc.sample_posterior_predictive
 
         Returns
         -------
@@ -577,7 +582,7 @@ class ModelBuilder:
         self._data_setter(X_pred)
 
         with self.model:  # sample with new input data
-            post_pred = pm.sample_posterior_predictive(self.idata)
+            post_pred = pm.sample_posterior_predictive(self.idata, **kwargs)
             if extend_idata:
                 self.idata.extend(post_pred)
 
@@ -621,15 +626,17 @@ class ModelBuilder:
         X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
         extend_idata: bool = True,
         combined: bool = False,
+        **kwargs,
     ) -> xr.DataArray:
         """Alias for `predict_posterior`, for consistency with scikit-learn probabilistic estimators."""
-        return self.predict_posterior(X_pred, extend_idata, combined)
+        return self.predict_posterior(X_pred, extend_idata, combined, **kwargs)
 
     def predict_posterior(
         self,
         X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
         extend_idata: bool = True,
         combined: bool = True,
+        **kwargs,
     ) -> xr.DataArray:
         """
         Generate posterior predictive samples on unseen data.
@@ -642,6 +649,7 @@ class ModelBuilder:
             Defaults to True.
         combined: Combine chain and draw dims into sample. Won't work if a dim named sample already exists.
             Defaults to True.
+        **kwargs: Additional arguments to pass to pymc.sample_posterior_predictive
 
         Returns
         -------
@@ -651,7 +659,7 @@ class ModelBuilder:
 
         X_pred = self._validate_data(X_pred)
         posterior_predictive_samples = self.sample_posterior_predictive(
-            X_pred, extend_idata, combined
+            X_pred, extend_idata, combined, **kwargs
         )
 
         if self.output_var not in posterior_predictive_samples:
