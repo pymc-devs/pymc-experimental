@@ -70,17 +70,19 @@ def _R2D2M2CP_beta(
     mu_param, std_param = _psivar2musigma(psi, explained_variance, psi_mask=psi_mask)
     if not centered:
         with pm.Model(name):
-            if psi_mask is not None:
+            if psi_mask is not None and psi_mask.any():
                 r_idx = psi_mask.nonzero()
                 with pm.Model("raw"):
                     raw = pm.Normal("masked", shape=len(r_idx[0]))
                     raw = pt.set_subtensor(pt.zeros_like(mu_param)[r_idx], raw)
                 raw = pm.Deterministic("raw", raw, dims=dims)
+            elif psi_mask is not None:
+                raw = pt.zeros_like(mu_param)
             else:
                 raw = pm.Normal("raw", dims=dims)
         beta = pm.Deterministic(name, (raw * std_param + mu_param) / input_sigma, dims=dims)
     else:
-        if psi_mask is not None:
+        if psi_mask is not None and psi_mask.any():
             r_idx = psi_mask.nonzero()
             with pm.Model(name):
                 mean = (mu_param / input_sigma)[r_idx]
@@ -93,6 +95,8 @@ def _R2D2M2CP_beta(
                 )
                 beta = pt.set_subtensor(mean, masked)
             beta = pm.Deterministic(name, beta, dims=dims)
+        elif psi_mask is not None:
+            beta = mean
         else:
             beta = pm.Normal(name, mu_param / input_sigma, std_param / input_sigma, dims=dims)
     return beta
@@ -121,7 +125,9 @@ def _psi_masked(positive_probs, positive_probs_std, *, dims):
     mask = ~np.bitwise_or(positive_probs == 1, positive_probs == 0)
     if np.bitwise_and(~mask, positive_probs_std != 0).any():
         raise ValueError("Can't have both positive_probs == '1 or 0' and positive_probs_std != 0")
-    if (~mask).any():
+    if (~mask).any() and mask.any():
+        # limit case where some probs are not 1 or 0
+        # setsubtensor is required
         r_idx = mask.nonzero()
         with pm.Model("psi"):
             psi = pm.Beta(
@@ -132,6 +138,9 @@ def _psi_masked(positive_probs, positive_probs_std, *, dims):
             )
         psi = pt.set_subtensor(pt.as_tensor(positive_probs)[r_idx], psi)
         psi = pm.Deterministic("psi", psi, dims=dims)
+    elif (~mask).all():
+        # limit case where all the probs are limit case
+        psi = pt.as_tensor(positive_probs)
     else:
         psi = pm.Beta("psi", mu=positive_probs, sigma=positive_probs_std, dims=dims)
         mask = None

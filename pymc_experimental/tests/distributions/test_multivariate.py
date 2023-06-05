@@ -236,3 +236,14 @@ class TestR2D2M2CP:
             assert "beta1::masked" in model.named_vars, model.named_vars
         assert "beta1::psi::masked" in model.named_vars
         assert "beta0::psi::masked" in model.named_vars
+
+    def test_zero_length_rvs_not_created(self, model: pm.Model):
+        model.add_coord("a", range(2))
+        # deterministic case which should not have any new variables
+        b = pmx.distributions.R2D2M2CP("b1", 1, [1, 1], r2=0.5, positive_probs=[1, 1], dims="a")
+        assert not model.free_RVs, model.free_RVs
+
+        b = pmx.distributions.R2D2M2CP(
+            "b2", 1, [1, 1], r2=0.5, positive_probs=[1, 1], positive_probs_std=[0, 0], dims="a"
+        )
+        assert not model.free_RVs, model.free_RVs
