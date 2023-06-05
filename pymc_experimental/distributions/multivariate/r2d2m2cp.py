@@ -71,18 +71,23 @@ def _R2D2M2CP_beta(
     if not centered:
         with pm.Model(name):
             if psi_mask is not None and psi_mask.any():
+                # limit case where some probs are not 1 or 0
+                # setsubtensor is required
                 r_idx = psi_mask.nonzero()
                 with pm.Model("raw"):
                     raw = pm.Normal("masked", shape=len(r_idx[0]))
                     raw = pt.set_subtensor(pt.zeros_like(mu_param)[r_idx], raw)
                 raw = pm.Deterministic("raw", raw, dims=dims)
             elif psi_mask is not None:
+                # all variables are deterministic
                 raw = pt.zeros_like(mu_param)
             else:
                 raw = pm.Normal("raw", dims=dims)
         beta = pm.Deterministic(name, (raw * std_param + mu_param) / input_sigma, dims=dims)
     else:
         if psi_mask is not None and psi_mask.any():
+            # limit case where some probs are not 1 or 0
+            # setsubtensor is required
             r_idx = psi_mask.nonzero()
             with pm.Model(name):
                 mean = (mu_param / input_sigma)[r_idx]
@@ -96,7 +101,8 @@ def _R2D2M2CP_beta(
                 beta = pt.set_subtensor(mean, masked)
             beta = pm.Deterministic(name, beta, dims=dims)
         elif psi_mask is not None:
-            beta = mean
+            # all variables are deterministic
+            beta = pm.Deterministic(name, (mu_param / input_sigma), dims=dims)
         else:
             beta = pm.Normal(name, mu_param / input_sigma, std_param / input_sigma, dims=dims)
     return beta

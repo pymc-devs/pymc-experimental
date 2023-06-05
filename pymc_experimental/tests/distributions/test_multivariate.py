@@ -50,7 +50,7 @@ class TestR2D2M2CP:
     def r2_std(self, request):
         return request.param
 
-    @pytest.fixture(params=["true", "false", "limit-1", "limit-0"])
+    @pytest.fixture(params=["true", "false", "limit-1", "limit-0", "limit-all"])
     def positive_probs(self, input_std, request):
         if request.param == "true":
             return np.full_like(input_std, 0.5)
@@ -64,6 +64,8 @@ class TestR2D2M2CP:
             ret = np.full_like(input_std, 0.5)
             ret[..., 0] = 0
             return ret
+        elif request.param == "limit-all":
+            return np.full_like(input_std, 0)
 
     @pytest.fixture(params=[True, False], ids=["probs-std", "no-probs-std"])
     def positive_probs_std(self, positive_probs, request):
@@ -122,14 +124,15 @@ class TestR2D2M2CP:
         assert eps.eval().shape == output_std.shape
         assert beta.eval().shape == input_std.shape
         # r2 rv is only created if r2 std is not None
+        assert "beta" in model.named_vars
         assert ("beta::r2" in model.named_vars) == (r2_std is not None), set(model.named_vars)
         # phi is only created if variable importance is not None and there is more than one var
         assert ("beta::phi" in model.named_vars) == (
             "variables_importance" in phi_args or "importance_concentration" in phi_args
         ), set(model.named_vars)
-        assert ("beta::psi" in model.named_vars) == (positive_probs_std is not None), set(
-            model.named_vars
-        )
+        assert ("beta::psi" in model.named_vars) == (
+            positive_probs_std is not None and positive_probs_std.any()
+        ), set(model.named_vars)
         assert np.isfinite(sum(model.point_logps().values())), model.point_logps()
 
     def test_failing_importance(self, dims, input_shape, output_std, input_std):
