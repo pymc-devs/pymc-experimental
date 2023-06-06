@@ -4,6 +4,7 @@ channels:
 - defaults
 dependencies:
 - pip
+
 - pytest-cov>=2.5
 - pytest>=3.0
 - dask
@@ -11,3 +12,4 @@ dependencies:
 - pip:
   - pymc>=5.4.1  # CI was failing to resolve
   - blackjax
+  - scikit-learn

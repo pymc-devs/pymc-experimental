@@ -10,3 +10,4 @@ dependencies:
 - xhistogram
 - pip:
   - pymc>=5.4.1  # CI was failing to resolve
+  - scikit-learn
