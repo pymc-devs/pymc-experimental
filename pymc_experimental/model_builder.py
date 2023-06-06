@@ -50,7 +50,6 @@ class ModelBuilder:
 
     def __init__(
         self,
-        data: Union[np.ndarray, pd.DataFrame, pd.Series] = None,
         model_config: Dict = None,
         sampler_config: Dict = None,
     ):
@@ -77,10 +76,8 @@ class ModelBuilder:
 
         self.model_config = model_config  # parameters for priors etc.
         self.model = None  # Set by build_model
-        self.output_var = ""  # Set by build_model
         self.idata: Optional[az.InferenceData] = None  # idata is generated during fitting
         self.is_fitted_ = False
-        self.data = data
 
     def _validate_data(self, X, y=None):
         if y is not None:
@@ -120,6 +117,19 @@ class ModelBuilder:
 
         """
 
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def output_var(self):
+        """
+        Returns the name of the output variable of the model.
+
+        Returns
+        -------
+        output_var : str
+            Name of the output variable of the model.
+        """
         raise NotImplementedError
 
     @property
@@ -176,30 +186,32 @@ class ModelBuilder:
         raise NotImplementedError
 
     @abstractmethod
-    def generate_model_data(
-        self, data: Union[np.ndarray, pd.DataFrame, pd.Series] = None
-    ) -> pd.DataFrame:
+    def generate_and_preprocess_model_data(
+        self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
+    ) -> None:
         """
-        Returns a default dataset for a class, can be used as a hint to data formatting required for the class
-        If data is not None, dataset will be created from it's content.
+        Applies preprocessing to the data before fitting the model.
+        if validate is True, it will check if the data is valid for the model.
+        sets self.model_coords based on provided dataset
 
         Parameters:
-        data : Union[np.ndarray, pd.DataFrame, pd.Series], optional
-            dataset that will replace the default sample data
-
+        X : array, shape (n_obs, n_features)
+        y : array, shape (n_obs,)
 
         Examples
         --------
         >>>     @classmethod
-        >>>     def generate_model_data(self):
+        >>>     def generate_and_preprocess_model_data(self, X, y):
         >>>         x = np.linspace(start=1, stop=50, num=100)
         >>>         y = 5 * x + 3 + np.random.normal(0, 1, len(x)) * np.random.rand(100)*10 +  np.random.rand(100)*6.4
-        >>>         data = pd.DataFrame({'input': x, 'output': y})
+        >>>         X = pd.DataFrame(x, columns=['x'])
+        >>>         y = pd.Series(y, name='y')
+        >>>         self.X = X
+        >>>         self.y = y
 
         Returns
         -------
-        data : pd.DataFrame
-            The data we want to train the model on.
+        None
 
         """
         raise NotImplementedError
@@ -207,8 +219,8 @@ class ModelBuilder:
     @abstractmethod
     def build_model(
         self,
-        data: Union[np.ndarray, pd.DataFrame, pd.Series] = None,
-        model_config: Dict = None,
+        X: pd.DataFrame,
+        y: pd.Series,
         **kwargs,
     ) -> None:
         """
@@ -217,22 +229,31 @@ class ModelBuilder:
 
         Parameters
         ----------
-        data : dict
-            Preformated data that is going to be used in the model. For efficiency reasons it should contain only the necesary data columns,
-            not entire available dataset since it's going to be encoded into data used to recreate the model.
-            If not provided uses data from self.data
-        model_config : dict
-            Dictionary where keys are strings representing names of parameters of the model, values are dictionaries of parameters
-            needed for creating model parameters. If not provided uses data from self.model_config
+        X : pd.DataFrame
+            The input data that is going to be used in the model. This should be a DataFrame
+            containing the features (predictors) for the model. For efficiency reasons, it should
+            only contain the necessary data columns, not the entire available dataset, as this
+            will be encoded into the data used to recreate the model.
+
+        y : pd.Series
+            The target data for the model. This should be a Series representing the output
+            or dependent variable for the model.
+
+        kwargs : dict
+            Additional keyword arguments that may be used for model configuration.
 
         See Also
         --------
         default_model_config : returns default model config
 
-        Returns:
-        ----------
+        Returns
+        -------
         None
 
+        Raises
+        ------
+        NotImplementedError
+            This is an abstract method and must be implemented in a subclass.
         """
         raise NotImplementedError
 
@@ -248,7 +269,7 @@ class ModelBuilder:
         Returns
         -------
         xarray.Dataset
-            The PyMC3 samples dataset.
+            The PyMC samples dataset.
 
         Raises
         ------
@@ -383,12 +404,14 @@ class ModelBuilder:
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
         model = cls(
-            data=idata.fit_data.to_dataframe(),
             model_config=json.loads(idata.attrs["model_config"]),
             sampler_config=json.loads(idata.attrs["sampler_config"]),
         )
         model.idata = idata
-        model.build_model()
+        dataset = idata.fit_data.to_dataframe()
+        X = dataset.drop(columns=[model.output_var])
+        y = dataset[model.output_var]
+        model.build_model(X, y)
         # All previously used data is in idata.
 
         if model.id != idata.attrs["id"]:
@@ -400,8 +423,8 @@ class ModelBuilder:
 
     def fit(
         self,
-        X: Union[np.ndarray, pd.DataFrame, pd.Series],
-        y: Union[np.ndarray, pd.Series],
+        X: pd.DataFrame,
+        y: pd.Series,
         progressbar: bool = True,
         predictor_names: List[str] = None,
         random_seed: RandomState = None,
@@ -442,25 +465,19 @@ class ModelBuilder:
         if predictor_names is None:
             predictor_names = []
 
-        X, y = X, y
-
-        self.build_model(data=self.data)
-        self._data_setter(X, y)
+        y = pd.DataFrame({self.output_var: y})
+        self.generate_and_preprocess_model_data(X, y.values.flatten())
+        self.build_model(self.X, self.y)
 
         sampler_config = self.sampler_config.copy()
         sampler_config["progressbar"] = progressbar
         sampler_config["random_seed"] = random_seed
         sampler_config.update(**kwargs)
-
         self.idata = self.sample_model(**sampler_config)
-        if type(X) is np.ndarray:
-            if len(predictor_names) > 0:
-                X = pd.DataFrame(X, columns=predictor_names)
-            else:
-                X = pd.DataFrame(X, columns=[f"predictor{x}" for x in range(1, X.shape[1] + 1)])
-        if type(y) is np.ndarray:
-            y = pd.Series(y, name="target")
-        combined_data = pd.concat([X, y], axis=1)
+
+        X_df = pd.DataFrame(X, columns=X.columns)
+        combined_data = pd.concat([X_df, y], axis=1)
+        assert all(combined_data.columns), "All columns must have non-empty names"
         self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
         return self.idata  # type: ignore
 
@@ -513,6 +530,7 @@ class ModelBuilder:
     def sample_prior_predictive(
         self,
         X_pred,
+        y_pred=None,
         samples: Optional[int] = None,
         extend_idata: bool = False,
         combined: bool = True,
@@ -539,13 +557,15 @@ class ModelBuilder:
         prior_predictive_samples : DataArray, shape (n_pred, samples)
             Prior predictive samples for each input X_pred
         """
+        if y_pred is None:
+            y_pred = np.zeros(len(X_pred))
         if samples is None:
             samples = self.sampler_config.get("draws", 500)
 
         if self.model is None:
-            self.build_model()
+            self.build_model(X_pred, y_pred)
 
-        self._data_setter(X_pred)
+        self._data_setter(X_pred, y_pred)
         if self.model is not None:
             with self.model:  # sample with new input data
                 prior_pred: az.InferenceData = pm.sample_prior_predictive(samples, **kwargs)

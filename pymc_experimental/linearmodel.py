@@ -1,10 +1,17 @@
+from typing import Dict, Optional, Union
+
 import numpy as np
+import pandas as pd
 import pymc as pm
 
 from pymc_experimental.model_builder import ModelBuilder
 
 
 class LinearModel(ModelBuilder):
+    def __init__(self, model_config: Dict = None, sampler_config: Dict = None, nsamples=100):
+        self.nsamples = nsamples
+        super().__init__(model_config, sampler_config)
+
     """
     This class is an implementation of a single-input linear regression model in PYMC using the
     BayesianEstimator base class for interoperability with scikit-learn.
@@ -30,7 +37,11 @@ class LinearModel(ModelBuilder):
             "target_accept": 0.95,
         }
 
-    def build_model(self, data=None):
+    @property
+    def output_var(self):
+        return "y_hat"
+
+    def build_model(self, X: pd.DataFrame, y: pd.Series):
         """
         Build the PyMC model.
 
@@ -78,16 +89,16 @@ class LinearModel(ModelBuilder):
                 observed=y_data,
                 dims="observation",
             )
-            self.output_var = "y_hat"
 
-    def _data_setter(self, X, y=None):
+    def _data_setter(self, X: pd.DataFrame, y: Optional[Union[pd.DataFrame, pd.Series]] = None):
         with self.model:
-            pm.set_data({"x": X[:, 0]})
+            pm.set_data({"x": X.squeeze()})
             if y is not None:
                 pm.set_data({"y_data": y.squeeze()})
 
-    @classmethod
-    def generate_model_data(cls, nsamples=100, data=None):
+    def generate_and_preprocess_model_data(
+        self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
+    ) -> None:
         """
         Generate model data for linear regression.
 
@@ -112,9 +123,4 @@ class LinearModel(ModelBuilder):
         >>> assert x.shape == (100, 1)
         >>> assert y.shape == (100,)
         """
-        x = np.linspace(start=0, stop=1, num=nsamples)
-        y = 5 * x + 3
-        y = y + np.random.normal(0, 1, len(x))
-
-        x = np.expand_dims(x, -1)  # scikit assumes a dimension for features.
-        return x, y
+        self.X, self.y = X, y
