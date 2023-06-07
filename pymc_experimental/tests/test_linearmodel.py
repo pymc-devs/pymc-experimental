@@ -12,6 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+
 import hashlib
 import sys
 import tempfile
@@ -22,13 +23,14 @@ import pytest
 import xarray as xr
 
 from pymc_experimental.linearmodel import LinearModel
-from pymc_experimental.preprocessing.standard_scaler import StandardScalerDF
 
 try:
+    from sklearn import set_config
     from sklearn.compose import TransformedTargetRegressor
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
 
+    set_config(transform_output="pandas")
     sklearn_available = True
 except ImportError:
     sklearn_available = False
@@ -166,7 +168,7 @@ def test_pipeline_integration(toy_X, toy_y):
     }
     model = Pipeline(
         [
-            ("input_scaling", StandardScalerDF()),
+            ("input_scaling", StandardScaler()),
             (
                 "linear_model",
                 TransformedTargetRegressor(LinearModel(model_config), transformer=StandardScaler()),
