@@ -424,7 +424,7 @@ class ModelBuilder:
     def fit(
         self,
         X: pd.DataFrame,
-        y: pd.Series,
+        y: Optional[pd.Series] = None,
         progressbar: bool = True,
         predictor_names: List[str] = None,
         random_seed: RandomState = None,
@@ -464,7 +464,8 @@ class ModelBuilder:
         """
         if predictor_names is None:
             predictor_names = []
-
+        if y is None:
+            y = np.zeros(X.shape[0])
         y = pd.DataFrame({self.output_var: y})
         self.generate_and_preprocess_model_data(X, y.values.flatten())
         self.build_model(self.X, self.y)
