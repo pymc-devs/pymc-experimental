@@ -19,7 +19,6 @@ from pymc.distributions.shape_utils import (
 )
 from pymc.logprob.abstract import _logprob
 from pymc.logprob.basic import logp
-from pymc.logprob.utils import ignore_logprob
 from pymc.pytensorf import intX
 from pymc.util import check_dist_not_registered
 from pytensor.graph.basic import Node
@@ -165,9 +164,6 @@ class DiscreteMarkovChain(Distribution):
             )
             k = P.shape[-1]
             init_dist = pm.Categorical.dist(p=pt.full((k,), 1 / k))
-
-        # We can ignore init_dist, as it will be accounted for in the logp term
-        init_dist = ignore_logprob(init_dist)
 
         return super().dist([P, steps, init_dist], n_lags=n_lags, **kwargs)
 
