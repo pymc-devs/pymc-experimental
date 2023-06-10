@@ -7,7 +7,7 @@ from pymc import SymbolicRandomVariable
 from pymc.distributions.discrete import Bernoulli, Categorical, DiscreteUniform
 from pymc.distributions.transforms import Chain
 from pymc.logprob.abstract import _logprob
-from pymc.logprob.basic import factorized_joint_logprob
+from pymc.logprob.basic import conditional_logp
 from pymc.logprob.transforms import IntervalTransform
 from pymc.model import Model
 from pymc.pytensorf import constant_fold, inputvars
@@ -397,7 +397,7 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
 
     # Obtain the joint_logp graph of the inner RV graph
     inner_rvs_to_values = {rv: rv.clone() for rv in inner_rvs}
-    logps_dict = factorized_joint_logprob(rv_values=inner_rvs_to_values, **kwargs)
+    logps_dict = conditional_logp(rv_values=inner_rvs_to_values, **kwargs)
 
     # Reduce logp dimensions corresponding to broadcasted variables
     joint_logp = logps_dict[inner_rvs_to_values[marginalized_rv]]
