@@ -124,7 +124,7 @@ def test_data(inline_views):
         pm.set_data({"x": [100.0, 200.0]}, coords={"test_dim": range(2)})
 
     assert m_new.dim_lengths["test_dim"].eval() == 2
-    np.testing.assert_array_almost_equal(pm.draw(m_new["x"]), [100.0, 200.0])
+    np.testing.assert_array_almost_equal(pm.draw(m_new["x"], random_seed=63), [100.0, 200.0])
 
 
 @pytest.mark.parametrize("inline_views", (False, True))
