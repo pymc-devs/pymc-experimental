@@ -18,7 +18,7 @@ def transition_probability_tests(steps, n_states, n_lags, n_draws, atol):
         P=pt.as_tensor_variable(P), init_dist=x0, steps=steps, n_lags=n_lags
     )
 
-    draws = pm.draw(chain, n_draws)
+    draws = pm.draw(chain, n_draws, random_seed=172)
 
     # Test x0 is uniform over n_states
     for i in range(n_lags):

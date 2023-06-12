@@ -92,12 +92,13 @@ def test_observe_dims():
 
 
 def test_do():
+    rng = np.random.default_rng(seed=435)
     with pm.Model() as m_old:
         x = pm.Normal("x", 0, 1e-3)
         y = pm.Normal("y", x, 1e-3)
         z = pm.Normal("z", y + x, 1e-3)
 
-    assert -5 < pm.draw(z) < 5
+    assert -5 < pm.draw(z, random_seed=rng) < 5
 
     m_new = do(m_old, {y: x + 100})
 
@@ -106,7 +107,7 @@ def test_do():
     assert m_new["y"] in m_new.deterministics
     assert m_new["z"] in m_new.free_RVs
 
-    assert 95 < pm.draw(m_new["z"]) < 105
+    assert 95 < pm.draw(m_new["z"], random_seed=rng) < 105
 
     # Test two substitutions
     with m_old:
@@ -118,10 +119,10 @@ def test_do():
     assert m_new["x"] not in m_new.deterministics
     assert m_new["z"] in m_new.free_RVs
 
-    assert 195 < pm.draw(m_new["z"]) < 205
+    assert 195 < pm.draw(m_new["z"], random_seed=rng) < 205
     with m_new:
         pm.set_data({"switch": 0})
-    assert -5 < pm.draw(m_new["z"]) < 5
+    assert -5 < pm.draw(m_new["z"], random_seed=rng) < 5
 
 
 def test_do_posterior_predictive():
@@ -149,22 +150,24 @@ def test_do_posterior_predictive():
 
 @pytest.mark.parametrize("mutable", (False, True))
 def test_do_constant(mutable):
+    rng = np.random.default_rng(seed=122)
     with pm.Model() as m:
         x = pm.Data("x", 0, mutable=mutable)
         y = pm.Normal("y", x, 1e-3)
 
     do_m = do(m, {x: 105})
-    assert pm.draw(do_m["y"]) > 100
+    assert pm.draw(do_m["y"], random_seed=rng) > 100
 
 
 def test_do_deterministic():
+    rng = np.random.default_rng(seed=435)
     with pm.Model() as m:
         x = pm.Normal("x", 0, 1e-3)
         y = pm.Deterministic("y", x + 105)
         z = pm.Normal("z", y, 1e-3)
 
     do_m = do(m, {"z": x - 105})
-    assert pm.draw(do_m["z"]) < 100
+    assert pm.draw(do_m["z"], random_seed=rng) < 100
 
 
 def test_do_dims():
