@@ -40,8 +40,8 @@ def toy_y(toy_X):
     return y
 
 
-@pytest.fixture(scope="module")
-def fitted_model_instance(toy_X, toy_y):
+@pytest.fixture(scope="module", params=["mcmc", "MAP"])
+def fitted_model_instance(request, toy_X, toy_y):
     sampler_config = {
         "draws": 500,
         "tune": 300,
@@ -54,12 +54,11 @@ def fitted_model_instance(toy_X, toy_y):
         "obs_error": 2,
     }
     model = test_ModelBuilder(model_config=model_config, sampler_config=sampler_config)
-    model.fit(toy_X)
+    model.fit(toy_X, toy_y, fit_method=request.param)
     return model
 
 
 class test_ModelBuilder(ModelBuilder):
-
     _model_type = "LinearModel"
     version = "0.1"
 
@@ -151,9 +150,10 @@ def test_fit(fitted_model_instance):
     post_pred[fitted_model_instance.output_var].shape[0] == prediction_data.input.shape
 
 
-def test_fit_no_y(toy_X):
+@pytest.mark.parametrize("fit_method", ["mcmc", "MAP"])
+def test_fit_no_y(toy_X, fit_method):
     model_builder = test_ModelBuilder()
-    model_builder.idata = model_builder.fit(X=toy_X)
+    model_builder.idata = model_builder.fit(X=toy_X, fit_method=fit_method)
     assert model_builder.model is not None
     assert model_builder.idata is not None
     assert "posterior" in model_builder.idata.groups()
@@ -163,17 +163,16 @@ def test_fit_no_y(toy_X):
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
 def test_save_load(fitted_model_instance):
-    temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
-    fitted_model_instance.save(temp.name)
-    test_builder2 = test_ModelBuilder.load(temp.name)
-    assert fitted_model_instance.idata.groups() == test_builder2.idata.groups()
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as temp:
+        fitted_model_instance.save(temp.name)
+        test_builder2 = test_ModelBuilder.load(temp.name)
+    assert sorted(fitted_model_instance.idata.groups()) == sorted(test_builder2.idata.groups())
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
     pred1 = fitted_model_instance.predict(prediction_data["input"])
     pred2 = test_builder2.predict(prediction_data["input"])
     assert pred1.shape == pred2.shape
-    temp.close()
 
 
 def test_predict(fitted_model_instance):
@@ -193,8 +192,8 @@ def test_sample_posterior_predictive(fitted_model_instance, combined):
     pred = fitted_model_instance.sample_posterior_predictive(
         prediction_data["input"], combined=combined, extend_idata=True
     )
-    chains = fitted_model_instance.idata.sample_stats.dims["chain"]
-    draws = fitted_model_instance.idata.sample_stats.dims["draw"]
+    chains = fitted_model_instance.idata.posterior.dims["chain"]
+    draws = fitted_model_instance.idata.posterior.dims["draw"]
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
     assert pred[fitted_model_instance.output_var].shape == expected_shape
     assert np.issubdtype(pred[fitted_model_instance.output_var].dtype, np.floating)
