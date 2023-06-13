@@ -428,35 +428,6 @@ class ModelBuilder:
         X: pd.DataFrame,
         y: Optional[pd.Series] = None,
         fit_method="mcmc",
-        **kwargs: Any,
-    ) -> az.InferenceData:
-        """
-        Fit a model using the data passed as a parameter.
-        Sets attrs to inference data of the model.
-
-
-        Parameters
-        ----------
-        X : array-like if sklearn is available, otherwise array, shape (n_obs, n_features)
-            The training input samples.
-        y : array-like if sklearn is available, otherwise array, shape (n_obs,)
-            The target values (real numbers).
-        fit_method : str
-            Which method to use to infer model parameters. One of ["mcmc", "MAP"].
-        **kwargs : Any
-            Parameters to pass to the inference method. See `_fit_mcmc` or `_fit_MAP` for
-            method-specific parameters.
-        """
-        if fit_method == "mcmc":
-            return self._fit_mcmc(X, y, **kwargs)
-        if fit_method == "MAP":
-            return self._fit_MAP(X, y, **kwargs)
-        raise ValueError(f"Inference method {fit_method} not found. Choose one of ['mcmc', 'MAP'].")
-
-    def _fit_mcmc(
-        self,
-        X: pd.DataFrame,
-        y: Optional[pd.Series] = None,
         progressbar: bool = True,
         predictor_names: List[str] = None,
         random_seed: RandomState = None,
@@ -473,6 +444,8 @@ class ModelBuilder:
             The training input samples.
         y : array-like if sklearn is available, otherwise array, shape (n_obs,)
             The target values (real numbers).
+        fit_method : str
+            Which method to use to infer model parameters. One of ["mcmc", "MAP"].
         progressbar : bool
             Specifies whether the fit progressbar should be displayed
         predictor_names: List[str] = None,
@@ -481,19 +454,14 @@ class ModelBuilder:
         random_seed : RandomState
             Provides sampler with initial random seed for obtaining reproducible samples
         **kwargs : Any
-            Custom sampler settings can be provided in form of keyword arguments.
-
-        Returns
-        -------
-        self : az.InferenceData
-            returns inference data of the fitted model.
-        Examples
-        --------
-        >>> model = MyModel()
-        >>> idata = model.fit(data)
-        Auto-assigning NUTS sampler...
-        Initializing NUTS using jitter+adapt_diag...
+            Parameters to pass to the inference method. See `_fit_mcmc` or `_fit_MAP` for
+            method-specific parameters.
         """
+        available_methods = ["mcmc", "MAP"]
+        if fit_method not in available_methods:
+            raise ValueError(
+                f"Inference method {fit_method} not found. Choose one of {available_methods}."
+            )
         if predictor_names is None:
             predictor_names = []
         if y is None:
@@ -506,7 +474,11 @@ class ModelBuilder:
         sampler_config["progressbar"] = progressbar
         sampler_config["random_seed"] = random_seed
         sampler_config.update(**kwargs)
-        self.idata = self.sample_model(**sampler_config)
+
+        if fit_method == "mcmc":
+            self.idata = self.sample_model(**sampler_config)
+        elif fit_method == "MAP":
+            self.idata = self._fit_MAP(**sampler_config)
 
         X_df = pd.DataFrame(X, columns=X.columns)
         combined_data = pd.concat([X_df, y], axis=1)
@@ -516,23 +488,45 @@ class ModelBuilder:
 
     def _fit_MAP(
         self,
-        X: pd.DataFrame,
-        y: Optional[pd.Series] = None,
-        predictor_names: List[str] = None,
         **kwargs,
     ):
         """Find model maximum a posteriori using scipy optimizer"""
 
-        if predictor_names is None:
-            predictor_names = []
-        if y is None:
-            y = np.zeros(X.shape[0])
-        y = pd.DataFrame({self.output_var: y})
-        self.generate_and_preprocess_model_data(X, y.values.flatten())
-        self.build_model(self.X, self.y)
         model = self.model
+        find_MAP_args = {**self.sampler_config, **kwargs}
+        if "random_seed" in find_MAP_args:
+            # find_MAP takes a different argument name for seed than sample_* do.
+            find_MAP_args["seed"] = find_MAP_args["random_seed"]
+        # Extra unknown arguments cause problems for SciPy minimize
+        allowed_args = [  # find_MAP args
+            "start",
+            "vars",
+            "method",
+            # "return_raw",  # probably causes a problem if set spuriously
+            # "include_transformed",  # probably causes a problem if set spuriously
+            "progressbar",
+            "maxeval",
+            "seed",
+        ]
+        allowed_args += [  # scipy.optimize.minimize args
+            # "fun",  # used by find_MAP
+            # "x0",  # used by find_MAP
+            "args",
+            "method",
+            # "jac",  # used by find_MAP
+            # "hess",  # probably causes a problem if set spuriously
+            # "hessp", # probably causes a problem if set spuriously
+            "bounds",
+            "constraints",
+            "tol",
+            "callback",
+            "options",
+        ]
+        for arg in list(find_MAP_args):
+            if arg not in allowed_args:
+                del find_MAP_args[arg]
 
-        map_res = pm.find_MAP(model=model, **kwargs)
+        map_res = pm.find_MAP(model=model, **find_MAP_args)
         # Filter non-value variables
         value_vars_names = {v.name for v in model.value_vars}
         map_res = {k: v for k, v in map_res.items() if k in value_vars_names}
@@ -543,14 +537,10 @@ class ModelBuilder:
         map_strace.record(map_res)
         map_strace.close()
         trace = MultiTrace([map_strace])
-        self.idata = pm.to_inference_data(trace, model=model)
-        self.set_idata_attrs(self.idata)
+        idata = pm.to_inference_data(trace, model=model)
+        self.set_idata_attrs(idata)
 
-        X_df = pd.DataFrame(X, columns=X.columns)
-        combined_data = pd.concat([X_df, y], axis=1)
-        assert all(combined_data.columns), "All columns must have non-empty names"
-        self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
-        return self.idata
+        return idata
 
     def predict(
         self,
