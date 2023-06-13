@@ -24,6 +24,8 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 import xarray as xr
+from pymc.backends import NDArray
+from pymc.backends.base import MultiTrace
 from pymc.util import RandomState
 
 # If scikit-learn is available, use its data validator
@@ -425,6 +427,36 @@ class ModelBuilder:
         self,
         X: pd.DataFrame,
         y: Optional[pd.Series] = None,
+        fit_method="mcmc",
+        **kwargs: Any,
+    ) -> az.InferenceData:
+        """
+        Fit a model using the data passed as a parameter.
+        Sets attrs to inference data of the model.
+
+
+        Parameters
+        ----------
+        X : array-like if sklearn is available, otherwise array, shape (n_obs, n_features)
+            The training input samples.
+        y : array-like if sklearn is available, otherwise array, shape (n_obs,)
+            The target values (real numbers).
+        fit_method : str
+            Which method to use to infer model parameters. One of ["mcmc", "MAP"].
+        **kwargs : Any
+            Parameters to pass to the inference method. See `_fit_mcmc` or `_fit_MAP` for
+            method-specific parameters.
+        """
+        if fit_method == "mcmc":
+            return self._fit_mcmc(X, y, **kwargs)
+        if fit_method == "MAP":
+            return self._fit_MAP(X, y, **kwargs)
+        raise ValueError(f"Inference method {fit_method} not found. Choose one of ['mcmc', 'MAP'].")
+
+    def _fit_mcmc(
+        self,
+        X: pd.DataFrame,
+        y: Optional[pd.Series] = None,
         progressbar: bool = True,
         predictor_names: List[str] = None,
         random_seed: RandomState = None,
@@ -481,6 +513,44 @@ class ModelBuilder:
         assert all(combined_data.columns), "All columns must have non-empty names"
         self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
         return self.idata  # type: ignore
+
+    def _fit_MAP(
+        self,
+        X: pd.DataFrame,
+        y: Optional[pd.Series] = None,
+        predictor_names: List[str] = None,
+        **kwargs,
+    ):
+        """Find model maximum a posteriori using scipy optimizer"""
+
+        if predictor_names is None:
+            predictor_names = []
+        if y is None:
+            y = np.zeros(X.shape[0])
+        y = pd.DataFrame({self.output_var: y})
+        self.generate_and_preprocess_model_data(X, y.values.flatten())
+        self.build_model(self.X, self.y)
+        model = self.model
+
+        map_res = pm.find_MAP(model=model, **kwargs)
+        # Filter non-value variables
+        value_vars_names = {v.name for v in model.value_vars}
+        map_res = {k: v for k, v in map_res.items() if k in value_vars_names}
+
+        # Convert map result to InferenceData
+        map_strace = NDArray(model=model)
+        map_strace.setup(draws=1, chain=0)
+        map_strace.record(map_res)
+        map_strace.close()
+        trace = MultiTrace([map_strace])
+        self.idata = pm.to_inference_data(trace, model=model)
+        self.set_idata_attrs(self.idata)
+
+        X_df = pd.DataFrame(X, columns=X.columns)
+        combined_data = pd.concat([X_df, y], axis=1)
+        assert all(combined_data.columns), "All columns must have non-empty names"
+        self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
+        return self.idata
 
     def predict(
         self,
