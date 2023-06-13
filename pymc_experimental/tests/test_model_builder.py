@@ -163,9 +163,9 @@ def test_fit_no_y(toy_X, fit_method):
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
 def test_save_load(fitted_model_instance):
-    temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
-    fitted_model_instance.save(temp.name)
-    test_builder2 = test_ModelBuilder.load(temp.name)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as temp:
+        fitted_model_instance.save(temp.name)
+        test_builder2 = test_ModelBuilder.load(temp.name)
     assert sorted(fitted_model_instance.idata.groups()) == sorted(test_builder2.idata.groups())
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
@@ -173,7 +173,6 @@ def test_save_load(fitted_model_instance):
     pred1 = fitted_model_instance.predict(prediction_data["input"])
     pred2 = test_builder2.predict(prediction_data["input"])
     assert pred1.shape == pred2.shape
-    temp.close()
 
 
 def test_predict(fitted_model_instance):
