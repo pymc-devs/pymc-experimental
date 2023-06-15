@@ -1,5 +1,6 @@
 import numpy as np
 import pymc as pm
+import pytensor
 import pytest
 
 import pymc_experimental as pmx
@@ -95,6 +96,10 @@ class TestR2D2M2CP:
             phi_args_base["importance_concentration"] = 10
         return phi_args_base
 
+    @pytest.mark.skipif(
+        pytensor.config.floatX == "float32",
+        reason="pytensor.config.floatX == 'float32', https://github.com/pymc-devs/pymc/issues/6779",
+    )
     def test_init(
         self,
         dims,
@@ -133,7 +138,7 @@ class TestR2D2M2CP:
         assert ("beta::psi" in model.named_vars) == (
             positive_probs_std is not None and positive_probs_std.any()
         ), set(model.named_vars)
-        assert np.isfinite(sum(model.point_logps().values())), model.point_logps()
+        assert np.isfinite(sum(model.point_logps().values()))
 
     def test_failing_importance(self, dims, input_shape, output_std, input_std):
         if input_shape[-1] < 2:
