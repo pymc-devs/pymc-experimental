@@ -12,4 +12,3 @@ dependencies:
 - pymc>=5.5.0
 - pip:
   - blackjax
-  
