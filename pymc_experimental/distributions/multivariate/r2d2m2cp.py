@@ -394,7 +394,9 @@ def R2D2M2CP(
     *broadcast_dims, dim = dims
     input_sigma = pt.as_tensor(input_sigma)
     output_sigma = pt.as_tensor(output_sigma)
-    with pm.Model(name):
+    with pm.Model(name) as model:
+        if not all(isinstance(model.dim_lengths[d], pt.TensorConstant) for d in dims):
+            raise ValueError(f"{dims!r} should be constant length imutable dims")
         if r2_std is not None:
             r2 = pm.Beta("r2", mu=r2, sigma=r2_std, dims=broadcast_dims)
         phi = _phi(
