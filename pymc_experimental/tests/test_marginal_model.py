@@ -207,14 +207,14 @@ def test_marginalized_change_point_model(disaster_model):
     ip = m.initial_point()
     ip.pop("switchpoint")
     ref_logp_fn = m.compile_logp(
-        [m["switchpoint"], m["disasters_observed"], m["disasters_missing"]]
+        [m["switchpoint"], m["disasters_observed"], m["disasters_unobserved"]]
     )
     ref_logp = logsumexp([ref_logp_fn({**ip, **{"switchpoint": year}}) for year in years])
 
     with pytest.warns(UserWarning, match="There are multiple dependent variables"):
         m.marginalize(m["switchpoint"])
 
-    logp = m.compile_logp([m["disasters_observed"], m["disasters_missing"]])(ip)
+    logp = m.compile_logp([m["disasters_observed"], m["disasters_unobserved"]])(ip)
     np.testing.assert_almost_equal(logp, ref_logp)
 
 
@@ -241,7 +241,9 @@ def test_marginalized_change_point_model_sampling(disaster_model):
         before_marg["late_rate"].mean(), after_marg["late_rate"].mean(), rtol=1e-2
     )
     np.testing.assert_allclose(
-        before_marg["disasters_missing"].mean(), after_marg["disasters_missing"].mean(), rtol=1e-2
+        before_marg["disasters_unobserved"].mean(),
+        after_marg["disasters_unobserved"].mean(),
+        rtol=1e-2,
     )
 
 
