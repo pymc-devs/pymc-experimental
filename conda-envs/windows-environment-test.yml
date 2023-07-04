@@ -9,5 +9,5 @@ dependencies:
 - dask
 - xhistogram
 - pip:
-  - pymc>=5.4.1  # CI was failing to resolve
+  - pymc>=5.6.0  # CI was failing to resolve
   - scikit-learn
