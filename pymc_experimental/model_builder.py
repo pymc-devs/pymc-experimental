@@ -24,8 +24,6 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 import xarray as xr
-from pymc.backends import NDArray
-from pymc.backends.base import MultiTrace
 from pymc.util import RandomState
 
 # If scikit-learn is available, use its data validator
@@ -299,7 +297,7 @@ class ModelBuilder:
             idata.extend(pm.sample_prior_predictive())
             idata.extend(pm.sample_posterior_predictive(idata))
 
-        self.set_idata_attrs(idata)
+        idata = self.set_idata_attrs(idata)
         return idata
 
     def set_idata_attrs(self, idata=None):
@@ -340,6 +338,10 @@ class ModelBuilder:
         idata.attrs["version"] = self.version
         idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
+        # Only classes with non-dataset parameters will implement save_input_params
+        if hasattr(self, "_save_input_params"):
+            self._save_input_params(idata)
+        return idata
 
     def save(self, fname: str) -> None:
         """
@@ -377,6 +379,12 @@ class ModelBuilder:
         else:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
+    def _convert_dims_to_tuple(model_config: Dict) -> Dict:
+        for key in model_config:
+            if "dims" in model_config[key] and isinstance(model_config[key]["dims"], list):
+                model_config[key]["dims"] = tuple(model_config[key]["dims"])
+        return model_config
+
     @classmethod
     def load(cls, fname: str):
         """
@@ -405,8 +413,10 @@ class ModelBuilder:
         """
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
+        # needs to be converted, because json.loads was changing tuple to list
+        model_config = cls._convert_dims_to_tuple(json.loads(idata.attrs["model_config"]))
         model = cls(
-            model_config=json.loads(idata.attrs["model_config"]),
+            model_config=model_config,
             sampler_config=json.loads(idata.attrs["sampler_config"]),
         )
         model.idata = idata
@@ -427,7 +437,6 @@ class ModelBuilder:
         self,
         X: pd.DataFrame,
         y: Optional[pd.Series] = None,
-        fit_method="mcmc",
         progressbar: bool = True,
         predictor_names: List[str] = None,
         random_seed: RandomState = None,
@@ -444,8 +453,6 @@ class ModelBuilder:
             The training input samples.
         y : array-like if sklearn is available, otherwise array, shape (n_obs,)
             The target values (real numbers).
-        fit_method : str
-            Which method to use to infer model parameters. One of ["mcmc", "MAP"].
         progressbar : bool
             Specifies whether the fit progressbar should be displayed
         predictor_names: List[str] = None,
@@ -454,14 +461,19 @@ class ModelBuilder:
         random_seed : RandomState
             Provides sampler with initial random seed for obtaining reproducible samples
         **kwargs : Any
-            Parameters to pass to the inference method. See `_fit_mcmc` or `_fit_MAP` for
-            method-specific parameters.
+            Custom sampler settings can be provided in form of keyword arguments.
+
+        Returns
+        -------
+        self : az.InferenceData
+            returns inference data of the fitted model.
+        Examples
+        --------
+        >>> model = MyModel()
+        >>> idata = model.fit(data)
+        Auto-assigning NUTS sampler...
+        Initializing NUTS using jitter+adapt_diag...
         """
-        available_methods = ["mcmc", "MAP"]
-        if fit_method not in available_methods:
-            raise ValueError(
-                f"Inference method {fit_method} not found. Choose one of {available_methods}."
-            )
         if predictor_names is None:
             predictor_names = []
         if y is None:
@@ -474,73 +486,14 @@ class ModelBuilder:
         sampler_config["progressbar"] = progressbar
         sampler_config["random_seed"] = random_seed
         sampler_config.update(**kwargs)
-
-        if fit_method == "mcmc":
-            self.idata = self.sample_model(**sampler_config)
-        elif fit_method == "MAP":
-            self.idata = self._fit_MAP(**sampler_config)
+        self.idata = self.sample_model(**sampler_config)
 
         X_df = pd.DataFrame(X, columns=X.columns)
         combined_data = pd.concat([X_df, y], axis=1)
         assert all(combined_data.columns), "All columns must have non-empty names"
         self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
+
         return self.idata  # type: ignore
-
-    def _fit_MAP(
-        self,
-        **kwargs,
-    ):
-        """Find model maximum a posteriori using scipy optimizer"""
-
-        model = self.model
-        find_MAP_args = {**self.sampler_config, **kwargs}
-        if "random_seed" in find_MAP_args:
-            # find_MAP takes a different argument name for seed than sample_* do.
-            find_MAP_args["seed"] = find_MAP_args["random_seed"]
-        # Extra unknown arguments cause problems for SciPy minimize
-        allowed_args = [  # find_MAP args
-            "start",
-            "vars",
-            "method",
-            # "return_raw",  # probably causes a problem if set spuriously
-            # "include_transformed",  # probably causes a problem if set spuriously
-            "progressbar",
-            "maxeval",
-            "seed",
-        ]
-        allowed_args += [  # scipy.optimize.minimize args
-            # "fun",  # used by find_MAP
-            # "x0",  # used by find_MAP
-            "args",
-            "method",
-            # "jac",  # used by find_MAP
-            # "hess",  # probably causes a problem if set spuriously
-            # "hessp", # probably causes a problem if set spuriously
-            "bounds",
-            "constraints",
-            "tol",
-            "callback",
-            "options",
-        ]
-        for arg in list(find_MAP_args):
-            if arg not in allowed_args:
-                del find_MAP_args[arg]
-
-        map_res = pm.find_MAP(model=model, **find_MAP_args)
-        # Filter non-value variables
-        value_vars_names = {v.name for v in model.value_vars}
-        map_res = {k: v for k, v in map_res.items() if k in value_vars_names}
-
-        # Convert map result to InferenceData
-        map_strace = NDArray(model=model)
-        map_strace.setup(draws=1, chain=0)
-        map_strace.record(map_res)
-        map_strace.close()
-        trace = MultiTrace([map_strace])
-        idata = pm.to_inference_data(trace, model=model)
-        self.set_idata_attrs(idata)
-
-        return idata
 
     def predict(
         self,
