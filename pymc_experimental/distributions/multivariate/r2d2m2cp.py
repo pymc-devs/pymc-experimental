@@ -65,8 +65,7 @@ def _R2D2M2CP_beta(
     psi: tensor
         probability of a coefficients to be positive
     """
-    tau2 = r2 / (1 - r2)
-    explained_variance = phi * pt.expand_dims(tau2 * output_sigma**2, -1)
+    explained_variance = phi * pt.expand_dims(r2 * output_sigma**2, -1)
     mu_param, std_param = _psivar2musigma(psi, explained_variance, psi_mask=psi_mask)
     if not centered:
         with pm.Model(name):
