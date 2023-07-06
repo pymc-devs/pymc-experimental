@@ -44,6 +44,8 @@ Model Transformations
 
    conditioning.do
    conditioning.observe
+   predict.forecast_timeseries
+   predict.uncensor
 
 
 Utils
