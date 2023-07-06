@@ -14,9 +14,8 @@ from pymc_experimental.utils.model_fgraph import (
     model_from_fgraph,
     model_named,
     model_observed_rv,
-    toposort_replace,
 )
-from pymc_experimental.utils.pytensorf import rvs_in_graph
+from pymc_experimental.utils.pytensorf import rvs_in_graph, toposort_replace
 
 
 def observe(model: Model, vars_to_observations: Dict[Union["str", TensorVariable], Any]) -> Model:
