@@ -38,7 +38,7 @@ class LinearModel(ModelBuilder):
         }
 
     @property
-    def _serializable_model_config(self) -> Dict[str, int | float | Dict]:
+    def _serializable_model_config(self) -> Dict:
         return self.model_config
 
     @property
