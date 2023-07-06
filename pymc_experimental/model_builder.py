@@ -379,9 +379,14 @@ class ModelBuilder:
         else:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
-    def _convert_dims_to_tuple(model_config: Dict) -> Dict:
+    @classmethod
+    def _convert_dims_to_tuple(cls, model_config: Dict) -> Dict:
         for key in model_config:
-            if "dims" in model_config[key] and isinstance(model_config[key]["dims"], list):
+            if (
+                isinstance(model_config[key], dict)
+                and "dims" in model_config[key]
+                and isinstance(model_config[key]["dims"], list)
+            ):
                 model_config[key]["dims"] = tuple(model_config[key]["dims"])
         return model_config
 
