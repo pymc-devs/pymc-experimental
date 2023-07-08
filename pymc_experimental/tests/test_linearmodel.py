@@ -12,48 +12,59 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+
 import hashlib
 import sys
 import tempfile
 
 import numpy as np
+import pandas as pd
 import pytest
 import xarray as xr
 
 from pymc_experimental.linearmodel import LinearModel
 
 try:
+    from sklearn import set_config
     from sklearn.compose import TransformedTargetRegressor
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
 
+    set_config(transform_output="pandas")
     sklearn_available = True
 except ImportError:
     sklearn_available = False
 
 
 @pytest.fixture(scope="module")
-def sample_input():
-    x, y = LinearModel.generate_model_data()
-    return x, y
+def toy_X():
+    x = np.linspace(start=0, stop=1, num=100)
+    X = pd.DataFrame({"input": x})
+    return X
 
 
 @pytest.fixture(scope="module")
-def fitted_linear_model_instance(sample_input):
+def toy_y(toy_X):
+    y = 5 * toy_X["input"] + 3
+    y = y + np.random.normal(0, 1, size=len(toy_X))
+    y = pd.Series(y, name="output")
+    return y
+
+
+@pytest.fixture(scope="module")
+def fitted_linear_model_instance(toy_X, toy_y):
     sampler_config = {
         "draws": 500,
         "tune": 300,
         "chains": 2,
         "target_accept": 0.95,
     }
-    x, y = sample_input
-    model = LinearModel()
-    model.fit(x, y)
+    model = LinearModel(sampler_config=sampler_config)
+    model.fit(toy_X, toy_y)
     return model
 
 
-def test_save_without_fit_raises_runtime_error():
-    x, y = LinearModel.generate_model_data()
+def test_save_without_fit_raises_runtime_error(toy_X, toy_y):
     test_model = LinearModel()
     with pytest.raises(RuntimeError):
         test_model.save("saved_model")
@@ -62,12 +73,13 @@ def test_save_without_fit_raises_runtime_error():
 def test_fit(fitted_linear_model_instance):
     model = fitted_linear_model_instance
 
-    x_pred = np.random.uniform(low=0, high=1, size=(100, 1))
-    pred = model.predict(x_pred)
-    assert len(x_pred) == len(pred)
+    new_X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=100)})
+
+    pred = model.predict(new_X_pred)
+    assert len(new_X_pred) == len(pred)
     assert isinstance(pred, np.ndarray)
-    post_pred = model.predict_posterior(x_pred)
-    assert len(x_pred) == len(post_pred)
+    post_pred = model.predict_posterior(new_X_pred)
+    assert len(new_X_pred) == len(post_pred)
     assert isinstance(post_pred, xr.DataArray)
 
 
@@ -81,20 +93,19 @@ def test_save_load(fitted_linear_model_instance):
     model2 = LinearModel.load(temp.name)
     assert model.idata.groups() == model2.idata.groups()
 
-    x_pred = np.random.uniform(low=0, high=1, size=(100, 1))
-    pred1 = model.predict(x_pred)
-    pred2 = model2.predict(x_pred)
-    # Predictions should have similar statistical characteristics
-    assert pred1.mean() == pytest.approx(pred2.mean(), 1e-3)
-    assert pred1.var() == pytest.approx(pred2.var(), 1e-2)
+    X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=100)})
+    pred1 = model.predict(X_pred, random_seed=423)
+    pred2 = model2.predict(X_pred, random_seed=423)
+    # Predictions should be identical
+    np.testing.assert_array_equal(pred1, pred2)
     temp.close()
 
 
 def test_predict(fitted_linear_model_instance):
     model = fitted_linear_model_instance
-    x_pred = np.random.uniform(low=0, high=1, size=(100, 1))
-    pred = model.predict(x_pred)
-    assert len(x_pred) == len(pred)
+    X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=100)})
+    pred = model.predict(X_pred)
+    assert len(X_pred) == len(pred)
     assert np.issubdtype(pred.dtype, np.floating)
 
 
@@ -102,8 +113,8 @@ def test_predict(fitted_linear_model_instance):
 def test_predict_posterior(fitted_linear_model_instance, combined):
     model = fitted_linear_model_instance
     n_pred = 150
-    x_pred = np.random.uniform(low=0, high=1, size=(n_pred, 1))
-    pred = model.predict_posterior(x_pred, combined=combined)
+    X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=n_pred)})
+    pred = model.predict_posterior(X_pred, combined=combined)
     chains = model.idata.sample_stats.dims["chain"]
     draws = model.idata.sample_stats.dims["draw"]
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
@@ -114,19 +125,19 @@ def test_predict_posterior(fitted_linear_model_instance, combined):
 
 @pytest.mark.parametrize("samples", [None, 300])
 @pytest.mark.parametrize("combined", [True, False])
-def test_sample_prior_predictive(samples, combined, sample_input):
-    x, y = sample_input
+def test_sample_prior_predictive(samples, combined, toy_X, toy_y):
     model = LinearModel()
-    prior_pred = model.sample_prior_predictive(x, samples, combined=combined)[model.output_var]
+    prior_pred = model.sample_prior_predictive(toy_X, toy_y, samples, combined=combined)[
+        model.output_var
+    ]
     draws = model.sampler_config["draws"] if samples is None else samples
     chains = 1
-    expected_shape = (len(x), chains * draws) if combined else (chains, draws, len(x))
+    expected_shape = (len(toy_X), chains * draws) if combined else (chains, draws, len(toy_X))
     assert prior_pred.shape == expected_shape
     # TODO: check that extend_idata has the expected effect
 
 
-def test_id(sample_input):
-    x, y = sample_input
+def test_id():
     model_config = {
         "intercept": {"loc": 0, "scale": 10},
         "slope": {"loc": 0, "scale": 10},
@@ -148,7 +159,7 @@ def test_id(sample_input):
 
 
 @pytest.mark.skipif(not sklearn_available, reason="scikit-learn package is not available.")
-def test_pipeline_integration(sample_input):
+def test_pipeline_integration(toy_X, toy_y):
     model_config = {
         "intercept": {"loc": 0, "scale": 2},
         "slope": {"loc": 0, "scale": 2},
@@ -164,8 +175,7 @@ def test_pipeline_integration(sample_input):
             ),
         ]
     )
-    x, y = sample_input
-    model.fit(x, y)
+    model.fit(toy_X, toy_y)
 
-    x_pred = np.random.uniform(low=0, high=1, size=(100, 1))
-    model.predict(x_pred)
+    X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=100)})
+    model.predict(X_pred)

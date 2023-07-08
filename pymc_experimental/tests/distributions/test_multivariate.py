@@ -1,5 +1,6 @@
 import numpy as np
 import pymc as pm
+import pytensor
 import pytest
 
 import pymc_experimental as pmx
@@ -50,22 +51,35 @@ class TestR2D2M2CP:
     def r2_std(self, request):
         return request.param
 
-    @pytest.fixture(params=[True, False], ids=["probs", "no-probs"])
+    @pytest.fixture(params=["true", "false", "limit-1", "limit-0", "limit-all"])
     def positive_probs(self, input_std, request):
-        if request.param:
+        if request.param == "true":
             return np.full_like(input_std, 0.5)
-        else:
+        elif request.param == "false":
             return 0.5
+        elif request.param == "limit-1":
+            ret = np.full_like(input_std, 0.5)
+            ret[..., 0] = 1
+            return ret
+        elif request.param == "limit-0":
+            ret = np.full_like(input_std, 0.5)
+            ret[..., 0] = 0
+            return ret
+        elif request.param == "limit-all":
+            return np.full_like(input_std, 0)
 
     @pytest.fixture(params=[True, False], ids=["probs-std", "no-probs-std"])
     def positive_probs_std(self, positive_probs, request):
         if request.param:
-            return np.full_like(positive_probs, 0.1)
+            std = np.full_like(positive_probs, 0.1)
+            std[positive_probs == 0] = 0
+            std[positive_probs == 1] = 0
+            return std
         else:
             return None
 
     @pytest.fixture(params=[None, "importance", "explained"])
-    def phi_args(self, request, input_shape):
+    def phi_args_base(self, request, input_shape):
         if input_shape[-1] < 2 and request.param is not None:
             pytest.skip("not compatible")
         elif request.param is None:
@@ -76,6 +90,16 @@ class TestR2D2M2CP:
             val = np.full(input_shape, 2)
             return {"variance_explained": val / val.sum(-1, keepdims=True)}
 
+    @pytest.fixture(params=["concentration", "no-concentration"])
+    def phi_args(self, request, phi_args_base):
+        if request.param == "concentration":
+            phi_args_base["importance_concentration"] = 10
+        return phi_args_base
+
+    @pytest.mark.skipif(
+        pytensor.config.floatX == "float32",
+        reason="pytensor.config.floatX == 'float32', https://github.com/pymc-devs/pymc/issues/6779",
+    )
     def test_init(
         self,
         dims,
@@ -101,17 +125,20 @@ class TestR2D2M2CP:
             positive_probs=positive_probs,
             **phi_args
         )
+        assert not np.isnan(beta.eval()).any()
         assert eps.eval().shape == output_std.shape
         assert beta.eval().shape == input_std.shape
         # r2 rv is only created if r2 std is not None
+        assert "beta" in model.named_vars
         assert ("beta::r2" in model.named_vars) == (r2_std is not None), set(model.named_vars)
-        # phi is only created if variable importances is not None and there is more than one var
-        assert ("beta::phi" in model.named_vars) == ("variables_importance" in phi_args), set(
-            model.named_vars
-        )
-        assert ("beta::psi" in model.named_vars) == (positive_probs_std is not None), set(
-            model.named_vars
-        )
+        # phi is only created if variable importance is not None and there is more than one var
+        assert ("beta::phi" in model.named_vars) == (
+            "variables_importance" in phi_args or "importance_concentration" in phi_args
+        ), set(model.named_vars)
+        assert ("beta::psi" in model.named_vars) == (
+            positive_probs_std is not None and positive_probs_std.any()
+        ), set(model.named_vars)
+        assert np.isfinite(sum(model.point_logps().values()))
 
     def test_failing_importance(self, dims, input_shape, output_std, input_std):
         if input_shape[-1] < 2:
@@ -162,4 +189,93 @@ class TestR2D2M2CP:
                 r2=0.8,
                 variance_explained=[0.5, 0.5],
                 variables_importance=[1, 1],
+            )
+
+    def test_limit_case_requires_std_0(self, model: pm.Model):
+        model.add_coord("a", range(2))
+        with pytest.raises(ValueError, match="Can't have both positive_probs"):
+            pmx.distributions.R2D2M2CP(
+                "beta",
+                1,
+                [1, 1],
+                dims="a",
+                r2=0.8,
+                positive_probs=[0.5, 0],
+                positive_probs_std=[0.3, 0.1],
+            )
+        with pytest.raises(ValueError, match="Can't have both positive_probs"):
+            pmx.distributions.R2D2M2CP(
+                "beta",
+                1,
+                [1, 1],
+                dims="a",
+                r2=0.8,
+                positive_probs=[0.5, 1],
+                positive_probs_std=[0.3, 0.1],
+            )
+
+    def test_limit_case_creates_masked_vars(self, model: pm.Model, centered: bool):
+        model.add_coord("a", range(2))
+        pmx.distributions.R2D2M2CP(
+            "beta0",
+            1,
+            [1, 1],
+            dims="a",
+            r2=0.8,
+            positive_probs=[0.5, 1],
+            positive_probs_std=[0.3, 0],
+            centered=centered,
+        )
+        pmx.distributions.R2D2M2CP(
+            "beta1",
+            1,
+            [1, 1],
+            dims="a",
+            r2=0.8,
+            positive_probs=[0.5, 0],
+            positive_probs_std=[0.3, 0],
+            centered=centered,
+        )
+        if not centered:
+            assert "beta0::raw::masked" in model.named_vars, model.named_vars
+            assert "beta1::raw::masked" in model.named_vars, model.named_vars
+        else:
+            assert "beta0::masked" in model.named_vars, model.named_vars
+            assert "beta1::masked" in model.named_vars, model.named_vars
+        assert "beta1::psi::masked" in model.named_vars
+        assert "beta0::psi::masked" in model.named_vars
+
+    def test_zero_length_rvs_not_created(self, model: pm.Model):
+        model.add_coord("a", range(2))
+        # deterministic case which should not have any new variables
+        b = pmx.distributions.R2D2M2CP("b1", 1, [1, 1], r2=0.5, positive_probs=[1, 1], dims="a")
+        assert not model.free_RVs, model.free_RVs
+
+        b = pmx.distributions.R2D2M2CP(
+            "b2", 1, [1, 1], r2=0.5, positive_probs=[1, 1], positive_probs_std=[0, 0], dims="a"
+        )
+        assert not model.free_RVs, model.free_RVs
+
+    def test_immutable_dims(self, model: pm.Model):
+        model.add_coord("a", range(2), mutable=True)
+        model.add_coord("b", range(2), mutable=False)
+        with pytest.raises(ValueError, match="should be constant length immutable dims"):
+            pmx.distributions.R2D2M2CP(
+                "beta0",
+                1,
+                [1, 1],
+                dims="a",
+                r2=0.8,
+                positive_probs=[0.5, 1],
+                positive_probs_std=[0.3, 0],
+            )
+        with pytest.raises(ValueError, match="should be constant length immutable dims"):
+            pmx.distributions.R2D2M2CP(
+                "beta0",
+                1,
+                [1, 1],
+                dims=("a", "b"),
+                r2=0.8,
+                positive_probs=[0.5, 1],
+                positive_probs_std=[0.3, 0],
             )

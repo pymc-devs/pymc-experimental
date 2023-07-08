@@ -25,19 +25,51 @@ import pytest
 from pymc_experimental.model_builder import ModelBuilder
 
 
+@pytest.fixture(scope="module")
+def toy_X():
+    x = np.linspace(start=0, stop=1, num=100)
+    X = pd.DataFrame({"input": x})
+    return X
+
+
+@pytest.fixture(scope="module")
+def toy_y(toy_X):
+    y = 5 * toy_X["input"] + 3
+    y = y + np.random.normal(0, 1, size=len(toy_X))
+    y = pd.Series(y, name="output")
+    return y
+
+
+@pytest.fixture(scope="module")
+def fitted_model_instance(toy_X, toy_y):
+    sampler_config = {
+        "draws": 500,
+        "tune": 300,
+        "chains": 2,
+        "target_accept": 0.95,
+    }
+    model_config = {
+        "a": {"loc": 0, "scale": 10},
+        "b": {"loc": 0, "scale": 10},
+        "obs_error": 2,
+    }
+    model = test_ModelBuilder(model_config=model_config, sampler_config=sampler_config)
+    model.fit(toy_X)
+    return model
+
+
 class test_ModelBuilder(ModelBuilder):
+
     _model_type = "LinearModel"
     version = "0.1"
 
-    def build_model(self, data=None, model_config=None):
-
+    def build_model(self, X: pd.DataFrame, y: pd.Series, model_config=None):
+        self.generate_and_preprocess_model_data(X, y)
         with pm.Model() as self.model:
-            if data is None:
-                data = test_ModelBuilder.generate_model_data()
             if model_config is None:
                 model_config = self.default_model_config
-            x = pm.MutableData("x", data["input"].values)
-            y_data = pm.MutableData("y_data", data["output"].values)
+            x = pm.MutableData("x", self.X["input"].values)
+            y_data = pm.MutableData("y_data", self.y)
 
             # prior parameters
             a_loc = model_config["a"]["loc"]
@@ -52,8 +84,11 @@ class test_ModelBuilder(ModelBuilder):
             obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
 
             # observed data
-            y_model = pm.Normal("y_model", a + b * x, obs_error, shape=x.shape, observed=y_data)
-            self.output_var = "y_model"
+            output = pm.Normal("output", a + b * x, obs_error, shape=x.shape, observed=y_data)
+
+    @property
+    def output_var(self):
+        return "output"
 
     def _data_setter(self, x: pd.Series, y: pd.Series = None):
         with self.model:
@@ -65,13 +100,9 @@ class test_ModelBuilder(ModelBuilder):
     def _serializable_model_config(self):
         return self.model_config
 
-    @classmethod
-    def generate_model_data(cls, data=None):
-        x = np.linspace(start=0, stop=1, num=100)
-        y = 5 * x + 3
-        y = y + np.random.normal(0, 1, len(x))
-        data = pd.DataFrame({"input": x, "output": y})
-        return data
+    def generate_and_preprocess_model_data(self, X: pd.DataFrame, y: pd.Series):
+        self.X = X
+        self.y = y
 
     @property
     def default_model_config(self) -> Dict:
@@ -90,15 +121,11 @@ class test_ModelBuilder(ModelBuilder):
             "target_accept": 0.95,
         }
 
-    @staticmethod
-    def initial_build_and_fit(check_idata=True) -> ModelBuilder:
-        data = test_ModelBuilder.generate_model_data()
-        model_builder = test_ModelBuilder()
-        model_builder.idata = model_builder.fit(X=data["input"], y=data["output"])
-        if check_idata:
-            assert model_builder.idata is not None
-            assert "posterior" in model_builder.idata.groups()
-        return model_builder
+
+def test_initial_build_and_fit(fitted_model_instance, check_idata=True) -> ModelBuilder:
+    if check_idata:
+        assert fitted_model_instance.idata is not None
+        assert "posterior" in fitted_model_instance.idata.groups()
 
 
 def test_save_without_fit_raises_runtime_error():
@@ -107,76 +134,78 @@ def test_save_without_fit_raises_runtime_error():
         model_builder.save("saved_model")
 
 
-def test_empty_sampler_config_fit():
+def test_empty_sampler_config_fit(toy_X, toy_y):
     sampler_config = {}
     model_builder = test_ModelBuilder(sampler_config=sampler_config)
-    data = test_ModelBuilder.generate_model_data()
-    model_builder.idata = model_builder.fit(X=data["input"], y=data["output"])
+    model_builder.idata = model_builder.fit(X=toy_X, y=toy_y)
     assert model_builder.idata is not None
     assert "posterior" in model_builder.idata.groups()
 
 
-def test_fit():
-    model = test_ModelBuilder.initial_build_and_fit()
-    x_pred = np.random.uniform(low=0, high=1, size=100)
-    prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.predict(prediction_data["input"])
-    post_pred = model.sample_posterior_predictive(
+def test_fit(fitted_model_instance):
+    prediction_data = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=100)})
+    pred = fitted_model_instance.predict(prediction_data["input"])
+    post_pred = fitted_model_instance.sample_posterior_predictive(
         prediction_data["input"], extend_idata=True, combined=True
     )
-    post_pred.y_model.shape[0] == prediction_data.input.shape
+    post_pred[fitted_model_instance.output_var].shape[0] == prediction_data.input.shape
+
+
+def test_fit_no_y(toy_X):
+    model_builder = test_ModelBuilder()
+    model_builder.idata = model_builder.fit(X=toy_X)
+    assert model_builder.model is not None
+    assert model_builder.idata is not None
+    assert "posterior" in model_builder.idata.groups()
 
 
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
-def test_save_load():
-    test_builder = test_ModelBuilder.initial_build_and_fit()
+def test_save_load(fitted_model_instance):
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
-    test_builder.save(temp.name)
+    fitted_model_instance.save(temp.name)
     test_builder2 = test_ModelBuilder.load(temp.name)
-    assert test_builder.idata.groups() == test_builder2.idata.groups()
+    assert fitted_model_instance.idata.groups() == test_builder2.idata.groups()
 
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred1 = test_builder.predict(prediction_data["input"])
+    pred1 = fitted_model_instance.predict(prediction_data["input"])
     pred2 = test_builder2.predict(prediction_data["input"])
     assert pred1.shape == pred2.shape
     temp.close()
 
 
-def test_predict():
-    model = test_ModelBuilder.initial_build_and_fit()
+def test_predict(fitted_model_instance):
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.predict(prediction_data["input"])
+    pred = fitted_model_instance.predict(prediction_data["input"])
     # Perform elementwise comparison using numpy
     assert type(pred) == np.ndarray
     assert len(pred) > 0
 
 
 @pytest.mark.parametrize("combined", [True, False])
-def test_sample_posterior_predictive(combined):
-    model = test_ModelBuilder.initial_build_and_fit()
+def test_sample_posterior_predictive(fitted_model_instance, combined):
     n_pred = 100
     x_pred = np.random.uniform(low=0, high=1, size=n_pred)
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = model.sample_posterior_predictive(
+    pred = fitted_model_instance.sample_posterior_predictive(
         prediction_data["input"], combined=combined, extend_idata=True
     )
-    chains = model.idata.sample_stats.dims["chain"]
-    draws = model.idata.sample_stats.dims["draw"]
+    chains = fitted_model_instance.idata.sample_stats.dims["chain"]
+    draws = fitted_model_instance.idata.sample_stats.dims["draw"]
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
-    assert pred["y_model"].shape == expected_shape
-    assert np.issubdtype(pred["y_model"].dtype, np.floating)
+    assert pred[fitted_model_instance.output_var].shape == expected_shape
+    assert np.issubdtype(pred[fitted_model_instance.output_var].dtype, np.floating)
 
 
 def test_id():
-    model = test_ModelBuilder()
+    model_builder = test_ModelBuilder()
     expected_id = hashlib.sha256(
-        str(model.model_config.values()).encode()
-        + model.version.encode()
-        + model._model_type.encode()
+        str(model_builder.model_config.values()).encode()
+        + model_builder.version.encode()
+        + model_builder._model_type.encode()
     ).hexdigest()[:16]
 
-    assert model.id == expected_id
+    assert model_builder.id == expected_id

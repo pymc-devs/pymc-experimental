@@ -6,8 +6,8 @@ import pytensor.tensor as pt
 from pymc import SymbolicRandomVariable
 from pymc.distributions.discrete import Bernoulli, Categorical, DiscreteUniform
 from pymc.distributions.transforms import Chain
-from pymc.logprob.abstract import _get_measurable_outputs, _logprob
-from pymc.logprob.basic import factorized_joint_logprob
+from pymc.logprob.abstract import _logprob
+from pymc.logprob.basic import conditional_logp
 from pymc.logprob.transforms import IntervalTransform
 from pymc.model import Model
 from pymc.pytensorf import constant_fold, inputvars
@@ -371,12 +371,6 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     return rvs_to_marginalize, marginalized_rvs
 
 
-@_get_measurable_outputs.register(FiniteDiscreteMarginalRV)
-def _get_measurable_outputs_finite_discrete_marginal_rv(op, node):
-    # Marginalized RVs are not measurable
-    return node.outputs[1:]
-
-
 def get_domain_of_finite_discrete_rv(rv: TensorVariable) -> Tuple[int, ...]:
     op = rv.owner.op
     if isinstance(op, Bernoulli):
@@ -395,44 +389,38 @@ def get_domain_of_finite_discrete_rv(rv: TensorVariable) -> Tuple[int, ...]:
 def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
     # Clone the inner RV graph of the Marginalized RV
     marginalized_rvs_node = op.make_node(*inputs)
-    marginalized_rv, *dependent_rvs = clone_replace(
+    inner_rvs = clone_replace(
         op.inner_outputs,
         replace={u: v for u, v in zip(op.inner_inputs, marginalized_rvs_node.inputs)},
     )
+    marginalized_rv = inner_rvs[0]
 
     # Obtain the joint_logp graph of the inner RV graph
-    # Some inputs are not root inputs (such as transformed projections of value variables)
-    # Or cannot be used as inputs to an OpFromGraph (shared variables and constants)
-    inputs = list(inputvars(inputs))
-    rvs_to_values = {}
-    dummy_marginalized_value = marginalized_rv.clone()
-    rvs_to_values[marginalized_rv] = dummy_marginalized_value
-    rvs_to_values.update(zip(dependent_rvs, values))
-    logps_dict = factorized_joint_logprob(rv_values=rvs_to_values, **kwargs)
+    inner_rvs_to_values = {rv: rv.clone() for rv in inner_rvs}
+    logps_dict = conditional_logp(rv_values=inner_rvs_to_values, **kwargs)
 
     # Reduce logp dimensions corresponding to broadcasted variables
-    values_axis_bcast = []
-    for value in values:
-        vbcast = value.type.broadcastable
-        mbcast = dummy_marginalized_value.type.broadcastable
+    joint_logp = logps_dict[inner_rvs_to_values[marginalized_rv]]
+    for inner_rv, inner_value in inner_rvs_to_values.items():
+        if inner_rv is marginalized_rv:
+            continue
+        vbcast = inner_value.type.broadcastable
+        mbcast = marginalized_rv.type.broadcastable
         mbcast = (True,) * (len(vbcast) - len(mbcast)) + mbcast
-        values_axis_bcast.append([i for i, (m, v) in enumerate(zip(mbcast, vbcast)) if m != v])
-    joint_logp = logps_dict[dummy_marginalized_value]
-    for value, values_axis_bcast in zip(values, values_axis_bcast):
-        joint_logp += logps_dict[value].sum(values_axis_bcast, keepdims=True)
+        values_axis_bcast = [i for i, (m, v) in enumerate(zip(mbcast, vbcast)) if m != v]
+        joint_logp += logps_dict[inner_value].sum(values_axis_bcast, keepdims=True)
 
     # Wrap the joint_logp graph in an OpFromGrah, so that we can evaluate it at different
     # values of the marginalized RV
-    # OpFromGraph does not accept constant inputs
-    non_const_values = [
-        value
-        for value in rvs_to_values.values()
-        if not isinstance(value, (Constant, SharedVariable))
-    ]
-    joint_logp_op = OpFromGraph([*non_const_values, *inputs], [joint_logp], inline=True)
+    # Some inputs are not root inputs (such as transformed projections of value variables)
+    # Or cannot be used as inputs to an OpFromGraph (shared variables and constants)
+    inputs = list(inputvars(inputs))
+    joint_logp_op = OpFromGraph(
+        list(inner_rvs_to_values.values()) + inputs, [joint_logp], inline=True
+    )
 
     # Compute the joint_logp for all possible n values of the marginalized RV. We assume
-    # each original dimension is independent so that it sufficies to evaluate the graph
+    # each original dimension is independent so that it suffices to evaluate the graph
     # n times, once with each possible value of the marginalized RV replicated across
     # batched dimensions of the marginalized RV
 
@@ -449,18 +437,14 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
         axis2=-1,
     )
 
-    # OpFromGraph does not accept constant inputs
-    non_const_values = [
-        value for value in values if not isinstance(value, (Constant, SharedVariable))
-    ]
     # Arbitrary cutoff to switch to Scan implementation to keep graph size under control
     if len(marginalized_rv_domain) <= 10:
         joint_logps = [
-            joint_logp_op(marginalized_rv_domain_tensor[i], *non_const_values, *inputs)
+            joint_logp_op(marginalized_rv_domain_tensor[i], *values, *inputs)
             for i in range(len(marginalized_rv_domain))
         ]
     else:
-        # Make sure this is rewrite is registered
+        # Make sure this rewrite is registered
         from pymc.pytensorf import local_remove_check_parameter
 
         def logp_fn(marginalized_rv_const, *non_sequences):
@@ -469,7 +453,7 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
         joint_logps, _ = scan_map(
             fn=logp_fn,
             sequences=marginalized_rv_domain_tensor,
-            non_sequences=[*non_const_values, *inputs],
+            non_sequences=[*values, *inputs],
             mode=Mode().including("local_remove_check_parameter"),
         )
 

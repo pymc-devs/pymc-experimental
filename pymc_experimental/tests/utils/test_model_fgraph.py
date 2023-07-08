@@ -76,7 +76,8 @@ def test_basic():
     )
 
 
-def test_data():
+@pytest.mark.parametrize("inline_views", (False, True))
+def test_data(inline_views):
     """Test shared RNGs, MutableData, ConstantData and Dim lengths are handled correctly.
 
     Everything should be preserved across new and old models, except for shared RNGs
@@ -84,20 +85,32 @@ def test_data():
     with pm.Model(coords_mutable={"test_dim": range(3)}) as m_old:
         x = pm.MutableData("x", [0.0, 1.0, 2.0], dims=("test_dim",))
         y = pm.MutableData("y", [10.0, 11.0, 12.0], dims=("test_dim",))
-        b0 = pm.ConstantData("b0", 0.0)
+        b0 = pm.ConstantData("b0", np.zeros(3))
         b1 = pm.Normal("b1")
         mu = pm.Deterministic("mu", b0 + b1 * x, dims=("test_dim",))
         obs = pm.Normal("obs", mu, sigma=1e-5, observed=y, dims=("test_dim",))
 
-    m_fgraph, memo = fgraph_from_model(m_old)
+    m_fgraph, memo = fgraph_from_model(m_old, inlined_views=inline_views)
     assert isinstance(memo[x].owner.op, ModelNamed)
     assert isinstance(memo[y].owner.op, ModelNamed)
     assert isinstance(memo[b0].owner.op, ModelNamed)
+    mu_inp = memo[mu].owner.inputs[0]
+    obs = memo[obs]
+    if not inline_views:
+        # Add(b0, Mul(FreeRV(b1), x) not Add(Named(b0), Mul(FreeRV(b1), Named(x))
+        assert mu_inp.owner.inputs[0] is memo[b0].owner.inputs[0]
+        assert mu_inp.owner.inputs[1].owner.inputs[1] is memo[x].owner.inputs[0]
+        # ObservedRV(obs, y, *dims) not ObservedRV(obs, Named(y), *dims)
+        assert obs.owner.inputs[1] is memo[y].owner.inputs[0]
+    else:
+        assert mu_inp.owner.inputs[0] is memo[b0]
+        assert mu_inp.owner.inputs[1].owner.inputs[1] is memo[x]
+        assert obs.owner.inputs[1] is memo[y]
 
     m_new = model_from_fgraph(m_fgraph)
 
     # ConstantData is preserved
-    assert m_new["b0"].data == m_old["b0"].data
+    assert np.all(m_new["b0"].data == m_old["b0"].data)
 
     # Shared non-rng shared variables are preserved
     assert m_new["x"].container is x.container
@@ -111,10 +124,11 @@ def test_data():
         pm.set_data({"x": [100.0, 200.0]}, coords={"test_dim": range(2)})
 
     assert m_new.dim_lengths["test_dim"].eval() == 2
-    np.testing.assert_array_almost_equal(pm.draw(m_new["x"]), [100.0, 200.0])
+    np.testing.assert_array_almost_equal(pm.draw(m_new["x"], random_seed=63), [100.0, 200.0])
 
 
-def test_deterministics():
+@pytest.mark.parametrize("inline_views", (False, True))
+def test_deterministics(inline_views):
     """Test handling of deterministics.
 
     We don't want Deterministics in the middle of the FunctionGraph, as they would make rewrites cumbersome
@@ -140,22 +154,27 @@ def test_deterministics():
     assert m["y"].owner.inputs[3] is m["mu"]
     assert m["y"].owner.inputs[4] is not m["sigma"]
 
-    fg, _ = fgraph_from_model(m)
+    fg, _ = fgraph_from_model(m, inlined_views=inline_views)
 
     # Check that no Deterministics are in graph of x to y and y to z
     x, y, z, det_mu, det_sigma, det_y_, det_y__ = fg.outputs
     # [Det(mu), Det(sigma)]
     mu = det_mu.owner.inputs[0]
     sigma = det_sigma.owner.inputs[0]
-    # [FreeRV(y(mu, sigma))] not [FreeRV(y(Det(mu), Det(sigma)))]
-    assert y.owner.inputs[0].owner.inputs[3] is mu
     assert y.owner.inputs[0].owner.inputs[4] is sigma
-    # [FreeRV(z(y))] not [FreeRV(z(Det(Det(y))))]
-    assert z.owner.inputs[0].owner.inputs[3] is y
-    # [Det(y), Det(y)], not [Det(y), Det(Det(y))]
-    assert det_y_.owner.inputs[0] is y
-    assert det_y__.owner.inputs[0] is y
     assert det_y_ is not det_y__
+    assert det_y_.owner.inputs[0] is y
+    if not inline_views:
+        # FreeRV(y(mu, sigma)) not FreeRV(y(Det(mu), Det(sigma)))
+        assert y.owner.inputs[0].owner.inputs[3] is mu
+        # FreeRV(z(y)) not FreeRV(z(Det(Det(y))))
+        assert z.owner.inputs[0].owner.inputs[3] is y
+        # Det(y), not Det(Det(y))
+        assert det_y__.owner.inputs[0] is y
+    else:
+        assert y.owner.inputs[0].owner.inputs[3] is det_mu
+        assert z.owner.inputs[0].owner.inputs[3] is det_y__
+        assert det_y__.owner.inputs[0] is det_y_
 
     # Both mu and sigma deterministics are now in the graph of x to y
     m = model_from_fgraph(fg)
