@@ -13,7 +13,6 @@
 #   limitations under the License.
 
 import itertools
-import re
 from codecs import open
 from os.path import dirname, join, realpath
 
@@ -33,6 +32,7 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "License :: OSI Approved :: Apache Software License",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering",
@@ -52,19 +52,9 @@ DEV_REQUIREMENTS_FILE = join(PROJECT_ROOT, "requirements-dev.txt")
 with open(REQUIREMENTS_FILE) as f:
     install_reqs = f.read().splitlines()
 
+
 with open(DEV_REQUIREMENTS_FILE) as f:
     dev_install_reqs = f.read().splitlines()
-
-
-def get_version():
-    VERSIONFILE = join("pymc_experimental", "__init__.py")
-    lines = open(VERSIONFILE).readlines()
-    version_regex = r"^__version__ = ['\"]([^'\"]*)['\"]"
-    for line in lines:
-        mo = re.search(version_regex, line, re.M)
-        if mo:
-            return mo.group(1)
-    raise RuntimeError(f"Unable to find version in {VERSIONFILE}.")
 
 
 extras_require = dict(
@@ -74,11 +64,23 @@ extras_require = dict(
 extras_require["complete"] = sorted(set(itertools.chain.from_iterable(extras_require.values())))
 extras_require["dev"] = dev_install_reqs
 
+import os
+
+from setuptools import find_packages, setup
+
+
+def read_version():
+    here = os.path.abspath(os.path.dirname(__file__))
+    with open(os.path.join(here, "pymc_experimental", "version.txt")) as f:
+        version = f.read().strip()
+    return version
+
 
 if __name__ == "__main__":
+
     setup(
-        name=DISTNAME,
-        version=get_version(),
+        name="pymc-experimental",
+        version=read_version(),
         maintainer=AUTHOR,
         maintainer_email=AUTHOR_EMAIL,
         description=DESCRIPTION,

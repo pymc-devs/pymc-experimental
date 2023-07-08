@@ -132,7 +132,7 @@ def prior_from_idata(
     idata: arviz.InferenceData,
     name="trace_prior_",
     *,
-    var_names: Sequence[str],
+    var_names: Sequence[str] = (),
     **kwargs: Union[ParamCfg, RVTransform, str, Tuple]
 ) -> Dict[str, pt.TensorVariable]:
     """
@@ -192,5 +192,7 @@ def prior_from_idata(
     ...     trace1 = pm.sample_prior_predictive(100)
     """
     param_cfg = _parse_args(var_names=var_names, **kwargs)
+    if not param_cfg:
+        return {}
     flat_info = _flatten(idata, **param_cfg)
     return _mvn_prior_from_flat_info(name, flat_info)

@@ -29,7 +29,7 @@
 import os
 import sys
 
-from pymc_experimental import __version__
+import pymc_experimental  # isort:skip
 
 sys.path.insert(0, os.path.abspath("../"))
 
@@ -40,9 +40,9 @@ copyright = "2022, pymc-devs"
 author = "pymc-devs"
 
 # The short X.Y version
-version = __version__
+version = pymc_experimental.__version__
 # The full version, including alpha/beta/rc tags
-release = __version__
+release = version
 
 
 # -- General configuration ---------------------------------------------------
@@ -56,6 +56,7 @@ release = __version__
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.doctest",
     "sphinx.ext.autosummary",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
@@ -127,7 +128,7 @@ html_context = {
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+html_static_path = ["../_static"]
 
 # -- Options for HTMLHelp output ---------------------------------------------
 

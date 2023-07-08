@@ -29,17 +29,21 @@ Distributions
    :toctree: generated/
 
    GenExtreme
-   histogram_utils.histogram_approximation
+   GeneralizedPoisson
+   DiscreteMarkovChain
+   R2D2M2CP
+   histogram_approximation
 
 
-Gaussian Processess
-===================
+Model Transformations
+=====================
 
-.. currentmodule:: pymc_experimental.gp
+.. currentmodule:: pymc_experimental.model_transform
 .. autosummary::
    :toctree: generated/
 
-   latent_approx.HSGP
+   conditioning.do
+   conditioning.observe
 
 
 Utils
@@ -49,5 +53,8 @@ Utils
 .. autosummary::
    :toctree: generated/
 
+   clone_model
    spline.bspline_interpolation
    prior.prior_from_idata
+   model_fgraph.fgraph_from_model
+   model_fgraph.model_from_fgraph

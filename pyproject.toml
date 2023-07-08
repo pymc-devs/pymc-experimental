@@ -1,6 +1,12 @@
 [tool.pytest.ini_options]
 minversion = "6.0"
-xfail_strict=true
+xfail_strict = true
+addopts = [
+  "-v",
+  "--doctest-modules",
+  "--ignore=pymc_experimental/model_builder.py"
+]
+
 
 [tool.black]
 line-length = 100
