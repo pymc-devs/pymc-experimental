@@ -50,7 +50,7 @@ def fitted_model_instance(toy_X, toy_y):
         "target_accept": 0.95,
     }
     model_config = {
-        "a": {"loc": 0, "scale": 10},
+        "a": {"loc": 0, "scale": 10, "dims": ("numbers",)},
         "b": {"loc": 0, "scale": 10},
         "obs_error": 2,
     }
@@ -70,8 +70,9 @@ class test_ModelBuilder(ModelBuilder):
     version = "0.1"
 
     def build_model(self, X: pd.DataFrame, y: pd.Series, model_config=None):
+        coords = {"numbers": np.arange(len(X))}
         self.generate_and_preprocess_model_data(X, y)
-        with pm.Model() as self.model:
+        with pm.Model(coords=coords) as self.model:
             if model_config is None:
                 model_config = self.default_model_config
             x = pm.MutableData("x", self.X["input"].values)
@@ -85,7 +86,7 @@ class test_ModelBuilder(ModelBuilder):
             obs_error = model_config["obs_error"]
 
             # priors
-            a = pm.Normal("a", a_loc, sigma=a_scale)
+            a = pm.Normal("a", a_loc, sigma=a_scale, dims=model_config["a"]["dims"])
             b = pm.Normal("b", b_loc, sigma=b_scale)
             obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
 
@@ -116,7 +117,7 @@ class test_ModelBuilder(ModelBuilder):
     @property
     def default_model_config(self) -> Dict:
         return {
-            "a": {"loc": 0, "scale": 10},
+            "a": {"loc": 0, "scale": 10, "dims": ("numbers",)},
             "b": {"loc": 0, "scale": 10},
             "obs_error": 2,
         }
