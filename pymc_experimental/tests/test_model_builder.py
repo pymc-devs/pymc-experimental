@@ -209,3 +209,12 @@ def test_id():
     ).hexdigest()[:16]
 
     assert model_builder.id == expected_id
+
+
+def test_step_selection_in_sample_config(toy_X, toy_y):
+    sampler_config = {
+        "step": "Slice",
+    }
+    model = test_ModelBuilder(sampler_config=sampler_config)
+    model.fit(toy_X, toy_y)
+    assert model.idata is not None
