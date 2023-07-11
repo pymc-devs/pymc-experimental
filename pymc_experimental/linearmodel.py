@@ -38,6 +38,10 @@ class LinearModel(ModelBuilder):
         }
 
     @property
+    def _serializable_model_config(self) -> Dict:
+        return self.model_config
+
+    @property
     def output_var(self):
         return "y_hat"
 
