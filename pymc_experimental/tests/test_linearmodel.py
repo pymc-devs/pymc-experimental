@@ -64,6 +64,24 @@ def fitted_linear_model_instance(toy_X, toy_y):
     return model
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
+)
+def test_save_load(fitted_linear_model_instance):
+    model = fitted_linear_model_instance
+    temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
+    model.save(temp.name)
+    model2 = LinearModel.load(temp.name)
+    assert model.idata.groups() == model2.idata.groups()
+
+    X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=100)})
+    pred1 = model.predict(X_pred, random_seed=423)
+    pred2 = model2.predict(X_pred, random_seed=423)
+    # Predictions should be identical
+    np.testing.assert_array_equal(pred1, pred2)
+    temp.close()
+
+
 def test_save_without_fit_raises_runtime_error(toy_X, toy_y):
     test_model = LinearModel()
     with pytest.raises(RuntimeError):
@@ -81,24 +99,6 @@ def test_fit(fitted_linear_model_instance):
     post_pred = model.predict_posterior(new_X_pred)
     assert len(new_X_pred) == len(post_pred)
     assert isinstance(post_pred, xr.DataArray)
-
-
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
-)
-def test_save_load(fitted_linear_model_instance):
-    model = fitted_linear_model_instance
-    temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
-    model.save(temp.name)
-    model2 = LinearModel.load(temp.name)
-    assert model.idata.groups() == model2.idata.groups()
-
-    X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=100)})
-    pred1 = model.predict(X_pred, random_seed=423)
-    pred2 = model2.predict(X_pred, random_seed=423)
-    # Predictions should be identical
-    np.testing.assert_array_equal(pred1, pred2)
-    temp.close()
 
 
 def test_predict(fitted_linear_model_instance):

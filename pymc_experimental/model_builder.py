@@ -297,7 +297,7 @@ class ModelBuilder:
             idata.extend(pm.sample_prior_predictive())
             idata.extend(pm.sample_posterior_predictive(idata))
 
-        self.set_idata_attrs(idata)
+        idata = self.set_idata_attrs(idata)
         return idata
 
     def set_idata_attrs(self, idata=None):
@@ -338,6 +338,10 @@ class ModelBuilder:
         idata.attrs["version"] = self.version
         idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
+        # Only classes with non-dataset parameters will implement save_input_params
+        if hasattr(self, "_save_input_params"):
+            self._save_input_params(idata)
+        return idata
 
     def save(self, fname: str) -> None:
         """
@@ -376,6 +380,17 @@ class ModelBuilder:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
     @classmethod
+    def _convert_dims_to_tuple(cls, model_config: Dict) -> Dict:
+        for key in model_config:
+            if (
+                isinstance(model_config[key], dict)
+                and "dims" in model_config[key]
+                and isinstance(model_config[key]["dims"], list)
+            ):
+                model_config[key]["dims"] = tuple(model_config[key]["dims"])
+        return model_config
+
+    @classmethod
     def load(cls, fname: str):
         """
         Creates a ModelBuilder instance from a file,
@@ -403,8 +418,10 @@ class ModelBuilder:
         """
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
+        # needs to be converted, because json.loads was changing tuple to list
+        model_config = cls._convert_dims_to_tuple(json.loads(idata.attrs["model_config"]))
         model = cls(
-            model_config=json.loads(idata.attrs["model_config"]),
+            model_config=model_config,
             sampler_config=json.loads(idata.attrs["sampler_config"]),
         )
         model.idata = idata
@@ -480,6 +497,7 @@ class ModelBuilder:
         combined_data = pd.concat([X_df, y], axis=1)
         assert all(combined_data.columns), "All columns must have non-empty names"
         self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
+
         return self.idata  # type: ignore
 
     def predict(

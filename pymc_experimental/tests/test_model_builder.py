@@ -13,6 +13,7 @@
 #   limitations under the License.
 
 import hashlib
+import json
 import sys
 import tempfile
 from typing import Dict
@@ -43,29 +44,35 @@ def toy_y(toy_X):
 @pytest.fixture(scope="module")
 def fitted_model_instance(toy_X, toy_y):
     sampler_config = {
-        "draws": 500,
-        "tune": 300,
+        "draws": 100,
+        "tune": 100,
         "chains": 2,
         "target_accept": 0.95,
     }
     model_config = {
-        "a": {"loc": 0, "scale": 10},
+        "a": {"loc": 0, "scale": 10, "dims": ("numbers",)},
         "b": {"loc": 0, "scale": 10},
         "obs_error": 2,
     }
-    model = test_ModelBuilder(model_config=model_config, sampler_config=sampler_config)
+    model = test_ModelBuilder(
+        model_config=model_config, sampler_config=sampler_config, test_parameter="test_paramter"
+    )
     model.fit(toy_X)
     return model
 
 
 class test_ModelBuilder(ModelBuilder):
+    def __init__(self, model_config=None, sampler_config=None, test_parameter=None):
+        self.test_parameter = test_parameter
+        super().__init__(model_config=model_config, sampler_config=sampler_config)
 
-    _model_type = "LinearModel"
+    _model_type = "test_model"
     version = "0.1"
 
     def build_model(self, X: pd.DataFrame, y: pd.Series, model_config=None):
+        coords = {"numbers": np.arange(len(X))}
         self.generate_and_preprocess_model_data(X, y)
-        with pm.Model() as self.model:
+        with pm.Model(coords=coords) as self.model:
             if model_config is None:
                 model_config = self.default_model_config
             x = pm.MutableData("x", self.X["input"].values)
@@ -79,12 +86,15 @@ class test_ModelBuilder(ModelBuilder):
             obs_error = model_config["obs_error"]
 
             # priors
-            a = pm.Normal("a", a_loc, sigma=a_scale)
+            a = pm.Normal("a", a_loc, sigma=a_scale, dims=model_config["a"]["dims"])
             b = pm.Normal("b", b_loc, sigma=b_scale)
             obs_error = pm.HalfNormal("σ_model_fmc", obs_error)
 
             # observed data
             output = pm.Normal("output", a + b * x, obs_error, shape=x.shape, observed=y_data)
+
+    def _save_input_params(self, idata):
+        idata.attrs["test_paramter"] = json.dumps(self.test_parameter)
 
     @property
     def output_var(self):
@@ -107,7 +117,7 @@ class test_ModelBuilder(ModelBuilder):
     @property
     def default_model_config(self) -> Dict:
         return {
-            "a": {"loc": 0, "scale": 10},
+            "a": {"loc": 0, "scale": 10, "dims": ("numbers",)},
             "b": {"loc": 0, "scale": 10},
             "obs_error": 2,
         }
@@ -120,6 +130,38 @@ class test_ModelBuilder(ModelBuilder):
             "chains": 3,
             "target_accept": 0.95,
         }
+
+
+def test_save_input_params(fitted_model_instance):
+    assert fitted_model_instance.idata.attrs["test_paramter"] == '"test_paramter"'
+
+
+def test_save_load(fitted_model_instance):
+    temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
+    fitted_model_instance.save(temp.name)
+    test_builder2 = test_ModelBuilder.load(temp.name)
+    assert fitted_model_instance.idata.groups() == test_builder2.idata.groups()
+    assert fitted_model_instance.id == test_builder2.id
+    x_pred = np.random.uniform(low=0, high=1, size=100)
+    prediction_data = pd.DataFrame({"input": x_pred})
+    pred1 = fitted_model_instance.predict(prediction_data["input"])
+    pred2 = test_builder2.predict(prediction_data["input"])
+    assert pred1.shape == pred2.shape
+    temp.close()
+
+
+def test_convert_dims_to_tuple(fitted_model_instance):
+    model_config = {
+        "a": {
+            "loc": 0,
+            "scale": 10,
+            "dims": [
+                "x",
+            ],
+        },
+    }
+    converted_model_config = fitted_model_instance._convert_dims_to_tuple(model_config)
+    assert converted_model_config["a"]["dims"] == ("x",)
 
 
 def test_initial_build_and_fit(fitted_model_instance, check_idata=True) -> ModelBuilder:
@@ -162,20 +204,6 @@ def test_fit_no_y(toy_X):
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
 )
-def test_save_load(fitted_model_instance):
-    temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
-    fitted_model_instance.save(temp.name)
-    test_builder2 = test_ModelBuilder.load(temp.name)
-    assert fitted_model_instance.idata.groups() == test_builder2.idata.groups()
-
-    x_pred = np.random.uniform(low=0, high=1, size=100)
-    prediction_data = pd.DataFrame({"input": x_pred})
-    pred1 = fitted_model_instance.predict(prediction_data["input"])
-    pred2 = test_builder2.predict(prediction_data["input"])
-    assert pred1.shape == pred2.shape
-    temp.close()
-
-
 def test_predict(fitted_model_instance):
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
