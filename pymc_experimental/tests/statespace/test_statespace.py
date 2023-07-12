@@ -1,25 +1,19 @@
-import os
 import unittest
-from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pymc as pm
 import pytensor
 import pytest
 from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
-from pymc_experimental.tests.statespace.utilities.test_helpers import make_test_inputs
+from pymc_experimental.tests.statespace.utilities.test_helpers import (
+    load_nile_test_data,
+    make_test_inputs,
+)
 
 floatX = pytensor.config.floatX
-
-ROOT = Path(__file__).parent.absolute()
-nile = pd.read_csv(os.path.join(ROOT, "test_data/nile.csv"))
-nile.index = pd.date_range(start="1871-01-01", end="1970-01-01", freq="AS-Jan")
-nile.rename(columns={"x": "height"}, inplace=True)
-nile = (nile - nile.mean()) / nile.std()
-nile = nile.astype(floatX)
+nile = load_nile_test_data()
 
 
 @pytest.fixture()

@@ -1,8 +1,5 @@
-import os
-import sys
 import warnings
 from itertools import product
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,14 +13,13 @@ from numpy.testing import assert_allclose
 from pymc_experimental.statespace import BayesianVARMAX
 
 floatX = pytensor.config.floatX
-ROOT = Path(__file__).parent.absolute()
-sys.path.append(ROOT)
 
 
 @pytest.fixture
 def data():
     return pd.read_csv(
-        os.path.join(ROOT, "test_data/statsmodels_macrodata_processed.csv"), index_col=0
+        "pymc_experimental/tests/statespace/test_data/statsmodels_macrodata_processed.csv",
+        index_col=0,
     ).astype(floatX)
 
 

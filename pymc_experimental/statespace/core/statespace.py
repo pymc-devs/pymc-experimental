@@ -196,6 +196,22 @@ class PyMCStateSpace:
             pm.Deterministic("smoothed_states", smooth_states)
             pm.Deterministic("smoothed_covariances", smooth_covariances)
 
+    def make_matrix_update_funcs(self, pymc_model):
+        rvs_on_graph = []
+        with pymc_model:
+            for param_name in self.param_names:
+                param = getattr(pymc_model, param_name, None)
+                if param:
+                    rvs_on_graph.append(param)
+
+        # TODO: This is pretty hacky, ask on the forums if there is a better solution
+        matrix_update_funcs = [
+            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
+            for X in self.unpack_statespace()
+        ]
+
+        return matrix_update_funcs
+
     @staticmethod
     def sample_conditional_prior(
         filter_output="filtered", n_simulations=100, prior_samples=500
@@ -342,29 +358,13 @@ class PyMCStateSpace:
         """
         pymc_model = modelcontext(None)
 
-        with pymc_model:
-            with catch_warnings():
-                simplefilter("ignore", category=UserWarning)
-                prior_params = pm.sample_prior_predictive(
-                    var_names=self.param_names, samples=prior_samples
-                )
+        with pymc_model, catch_warnings():
+            simplefilter("ignore", category=UserWarning)
+            prior_params = pm.sample_prior_predictive(
+                var_names=self.param_names, samples=prior_samples
+            )
 
-        rvs_on_graph = []
-        with pymc_model:
-            for param_name in self.param_names:
-                for param in pymc_model.rvs_to_values:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-                for param in pymc_model.deterministics:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-
-        # TODO: This is pretty hacky, ask on the forums if there is a better solution
-        matrix_update_funcs = [
-            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
-            for X in self.unpack_statespace()
-        ]
-
+        matrix_update_funcs = self.make_matrix_update_funcs(pymc_model)
         # Take the 0th element to remove the chain dimension
         thetas = [prior_params.prior[var].values[0] for var in self.param_names]
         simulated_states, simulated_data = unconditional_simulations(
@@ -412,21 +412,7 @@ class PyMCStateSpace:
         resample_idxs = np.random.randint(0, posterior_size, size=posterior_samples)
 
         pymc_model = modelcontext(None)
-
-        rvs_on_graph = []
-        with pymc_model:
-            for param_name in self.param_names:
-                for param in pymc_model.rvs_to_values:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-                for param in pymc_model.deterministics:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-
-        matrix_update_funcs = [
-            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
-            for X in self.unpack_statespace()
-        ]
+        matrix_update_funcs = self.make_matrix_update_funcs(pymc_model)
 
         thetas = [trace.posterior[var].values for var in self.param_names]
         thetas = [arr.reshape(-1, *arr.shape[2:])[resample_idxs] for arr in thetas]

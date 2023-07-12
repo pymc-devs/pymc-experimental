@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytensor
@@ -13,9 +10,15 @@ from pymc_experimental.tests.statespace.utilities.statsmodel_local_level import 
 
 floatX = pytensor.config.floatX
 
-ROOT = Path(__file__).parent.parent.absolute()
-nile_data = pd.read_csv(os.path.join(ROOT, "test_data/nile.csv"))
-nile_data["x"] = nile_data["x"].astype(floatX)
+
+def load_nile_test_data():
+    nile = pd.read_csv("pymc_experimental/tests/statespace/test_data/nile.csv")
+    nile.index = pd.date_range(start="1871-01-01", end="1970-01-01", freq="AS-Jan")
+    nile.rename(columns={"x": "height"}, inplace=True)
+    nile = (nile - nile.mean()) / nile.std()
+    nile = nile.astype(floatX)
+
+    return nile
 
 
 def initialize_filter(kfilter):
@@ -121,7 +124,7 @@ def nile_test_test_helper(n_missing=0):
     R = np.eye(2, dtype=floatX)
     Z = np.array([[1.0, 0.0]], dtype=floatX)
 
-    data = nile_data.values.copy().astype(floatX)
+    data = load_nile_test_data().values
     if n_missing > 0:
         data = add_missing_data(data, n_missing)
 
