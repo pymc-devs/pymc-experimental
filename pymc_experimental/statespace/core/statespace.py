@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional, Tuple, Union
 from warnings import catch_warnings, simplefilter
 
@@ -21,6 +22,8 @@ from pymc_experimental.statespace.utils.simulation import (
     conditional_simulation,
     unconditional_simulations,
 )
+
+_log = logging.getLogger("pymc.experimental.statespace")
 
 floatX = pytensor.config.floatX
 FILTER_FACTORY = {
@@ -76,11 +79,10 @@ class PyMCStateSpace:
         self.kalman_smoother = KalmanSmoother()
 
         if verbose:
-            # TODO: Ask Ricardo how to log this to console without a print
-            # print(
-            #     "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
-            #     f'model block: {", ".join(self.param_names)}'
-            # )
+            _log.info(
+                "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
+                f'model block: {", ".join(self.param_names)}'
+            )
             pass
 
     def unpack_statespace(self):
