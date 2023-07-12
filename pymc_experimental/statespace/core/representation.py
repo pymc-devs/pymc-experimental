@@ -28,7 +28,7 @@ def _preprocess_data(data: Union[DataFrame, np.ndarray], expected_dims=3):
 class PytensorRepresentation:
     def __init__(
         self,
-        data: Union[DataFrame, np.ndarray],
+        k_endog: int,
         k_states: int,
         k_posdef: int,
         design: Optional[np.ndarray] = None,
@@ -49,8 +49,8 @@ class PytensorRepresentation:
 
         Parameters
         ----------
-        data: ArrayLike
-            Array of observed data (called exog in statsmodels)
+        k_endog: int
+            Number of observed states (called "endogeous states" in statsmodels)
         k_states: int
             Number of hidden states
         k_posdef: int
@@ -86,16 +86,12 @@ class PytensorRepresentation:
             Time Series Analysis by State Space Methods: Second Edition.
             Oxford University Press.
         """
-
-        self.data = _preprocess_data(data)
         self.k_states = k_states
+        self.k_endog = k_endog
         self.k_posdef = k_posdef if k_posdef is not None else k_states
-
-        self.n_obs, self.k_endog, *_ = data.shape
 
         # The last dimension is for time varying matrices; it could be n_obs. Not thinking about that now.
         self.shapes = {
-            "data": (self.k_endog, self.n_obs, 1),
             "design": (self.k_endog, self.k_states, 1),
             "obs_intercept": (self.k_endog, 1, 1),
             "obs_cov": (self.k_endog, self.k_endog, 1),
@@ -110,10 +106,7 @@ class PytensorRepresentation:
         # Initialize the representation matrices
         scope = locals()
         for name, shape in self.shapes.items():
-            if name == "data":
-                continue
-
-            elif scope[name] is not None:
+            if scope[name] is not None:
                 matrix = self._numpy_to_pytensor(name, scope[name])
                 setattr(self, name, matrix)
 
@@ -191,12 +184,15 @@ class PytensorRepresentation:
                     f"First two dimensions of array provided for {name} has shape {X.shape[:2]}, "
                     f"expected {expected_shape}"
                 )
-            if X.shape[-1] != self.data.shape[0]:
-                raise ValueError(
-                    f"Last dimension (time dimension) of array provided for {name} has shape "
-                    f"{X.shape[-1]}, expected {self.data.shape[0]} (equal to the first dimension of the "
-                    f"provided data)"
-                )
+
+            # TODO: Think of another way to validate shapes of time-varying matrices if we don't know the data
+            #   when the PytensorRepresentation is recreated
+            # if X.shape[-1] != self.data.shape[0]:
+            #     raise ValueError(
+            #         f"Last dimension (time dimension) of array provided for {name} has shape "
+            #         f"{X.shape[-1]}, expected {self.data.shape[0]} (equal to the first dimension of the "
+            #         f"provided data)"
+            #     )
 
     def _numpy_to_pytensor(self, name: str, X: np.ndarray) -> pt.TensorVariable:
         X = X.copy()

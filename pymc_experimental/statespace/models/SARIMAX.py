@@ -10,7 +10,6 @@ from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lya
 class BayesianARMA(PyMCStateSpace):
     def __init__(
         self,
-        data,
         order: Tuple[int, int],
         stationary_initialization: bool = True,
         filter_type: str = "standard",
@@ -23,8 +22,9 @@ class BayesianARMA(PyMCStateSpace):
 
         k_states = max(self.p, self.q + 1)
         k_posdef = 1
+        k_endog = 1
 
-        super().__init__(data, k_states, k_posdef, filter_type)
+        super().__init__(k_endog, k_states, k_posdef, filter_type)
 
         # Initialize the matrices
         self.ssm["design"] = np.r_[[1.0], np.zeros(k_states - 1)][None]

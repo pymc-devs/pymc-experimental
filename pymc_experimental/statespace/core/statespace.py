@@ -58,14 +58,20 @@ def validate_filter_arg(filter_arg):
 
 
 class PyMCStateSpace:
-    def __init__(self, data, k_states, k_posdef, filter_type="standard", verbose=True):
-        self.data = data
-        self.n_obs, self.k_endog = data.shape
+    def __init__(
+        self,
+        k_endog: int,
+        k_states: int,
+        k_posdef: int,
+        filter_type: str = "standard",
+        verbose: bool = True,
+    ):
+        self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
 
         # All models contain a state space representation and a Kalman filter
-        self.ssm = PytensorRepresentation(data, k_states, k_posdef)
+        self.ssm = PytensorRepresentation(k_endog, k_states, k_posdef)
 
         if filter_type.lower() not in FILTER_FACTORY.keys():
             raise NotImplementedError(
@@ -143,7 +149,7 @@ class PyMCStateSpace:
             )
         return pt.concatenate(theta)
 
-    def build_statespace_graph(self, mode=None) -> None:
+    def build_statespace_graph(self, data, mode=None) -> None:
         """
         Given parameter vector theta, constructs the full computational graph describing the state space model.
         Must be called inside a PyMC model context.
@@ -162,7 +168,7 @@ class PyMCStateSpace:
                 log_likelihood,
                 ll_obs,
             ) = self.kalman_filter.build_graph(
-                pt.as_tensor_variable(self.ssm.data), *self.unpack_statespace(), mode=mode
+                pt.as_tensor_variable(data), *self.unpack_statespace(), mode=mode
             )
 
             pm.Deterministic("filtered_states", filtered_states)
