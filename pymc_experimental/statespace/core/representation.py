@@ -87,17 +87,6 @@ class PytensorRepresentation:
             Oxford University Press.
         """
 
-        # self.data = pt.tensor3(name="Data")
-        # self.transition = pt.tensor3(name="transition")
-        # self.selection = pt.tensor3(name="selection")
-        # self.design = pt.tensor3(name="design")
-        # self.obs_cov = pt.tensor3(name="obs_cov")
-        # self.state_cov = pt.tensor3(name="state_cov")
-        # self.state_intercept = pt.tensor3(name="state_cov")
-        # self.obs_intercept = pt.tensor3(name="state_cov")
-        # self.initial_state = pt.tensor3(name="state_cov")
-        # self.initial_state_cov = pt.tensor3(name="state_cov")
-
         self.data = _preprocess_data(data)
         self.k_states = k_states
         self.k_posdef = k_posdef if k_posdef is not None else k_states

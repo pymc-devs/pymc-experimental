@@ -5,7 +5,7 @@ from warnings import catch_warnings, simplefilter
 import numpy as np
 import pymc as pm
 import pytensor
-import pytensor.tensor as at
+import pytensor.tensor as pt
 from numpy.typing import ArrayLike
 from pymc.model import modelcontext
 
@@ -83,7 +83,6 @@ class PyMCStateSpace:
                 "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
                 f'model block: {", ".join(self.param_names)}'
             )
-            pass
 
     def unpack_statespace(self):
         a0 = self.ssm["initial_state"]
@@ -100,7 +99,7 @@ class PyMCStateSpace:
     def param_names(self) -> List[str]:
         raise NotImplementedError
 
-    def update(self, theta: at.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
 
@@ -111,18 +110,18 @@ class PyMCStateSpace:
         """
         raise NotImplementedError
 
-    def gather_required_random_variables(self) -> at.TensorVariable:
+    def gather_required_random_variables(self) -> pt.TensorVariable:
         """
         Iterates through random variables in the model on the context stack, matches their names with the statespace
         model's named parameters, and returns a single vector of parameters to pass to the update method.
 
         Important point is that the *order of the variables matters*. Update will expect that the theta vector will be
-        organized as variables are listed in param_names. This could be improved...
+        organized as variables are listed in param_names.
 
         Returns
         ----------
         theta: TensorVariable
-            A p x 1 theano vector containing all parameters to be estimated among all state space matrices in the
+            A size (p,) tensor containing all parameters to be estimated among all state space matrices in the
             system.
         """
 
@@ -131,14 +130,10 @@ class PyMCStateSpace:
         found_params = []
         with pymc_model:
             for param_name in self.param_names:
-                for param in pymc_model.rvs_to_values:
-                    if param.name == param_name:
-                        theta.append(param.ravel())
-                        found_params.append(param.name)
-                for param in pymc_model.deterministics:
-                    if param.name == param_name:
-                        theta.append(param.ravel())
-                        found_params.append(param.name)
+                param = getattr(pymc_model, param_name, None)
+                if param:
+                    found_params.append(param.name)
+                    theta.append(param.ravel())
 
         missing_params = set(self.param_names) - set(found_params)
         if len(missing_params) > 0:
@@ -146,7 +141,7 @@ class PyMCStateSpace:
                 "The following required model parameters were not found in the PyMC model: "
                 + ", ".join(param for param in list(missing_params))
             )
-        return at.concatenate(theta)
+        return pt.concatenate(theta)
 
     def build_statespace_graph(self, mode=None) -> None:
         """
@@ -167,7 +162,7 @@ class PyMCStateSpace:
                 log_likelihood,
                 ll_obs,
             ) = self.kalman_filter.build_graph(
-                at.as_tensor_variable(self.ssm.data), *self.unpack_statespace(), mode=mode
+                pt.as_tensor_variable(self.ssm.data), *self.unpack_statespace(), mode=mode
             )
 
             pm.Deterministic("filtered_states", filtered_states)
