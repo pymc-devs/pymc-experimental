@@ -122,7 +122,6 @@ class PytensorRepresentation:
 
     def update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.TensorType]) -> None:
         # TODO: Get rid of these evals
-
         if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
             shape = value.shape.eval()
         else:
@@ -130,6 +129,7 @@ class PytensorRepresentation:
 
         old_shape = self.shapes[key]
         check_slice = slice(None, 2) if key not in VECTOR_VALUED else slice(None, 1)
+
         if not all([a == b for a, b in zip(shape[check_slice], old_shape[check_slice])]):
             raise ValueError(
                 f"The first two dimensions of {key} must be {old_shape[check_slice]}, found {shape[check_slice]}"
@@ -241,7 +241,7 @@ class PytensorRepresentation:
             matrix = getattr(self, key)
 
             # Slice away the time dimension if it's a dummy
-            if self.shapes[key][-1] == 1:
+            if (self.shapes[key][-1] == 1) and (key not in NEVER_TIME_VARYING):
                 return matrix[(slice(None),) * (matrix.ndim - 1) + (0,)]
 
             # If it's time varying, return everything
