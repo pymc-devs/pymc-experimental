@@ -32,13 +32,7 @@ def conditional_simulation(mus, covs, n, k, n_simulations=100):
 
 
 @njit
-def simulate_statespace(T, Z, R, H, Q, n_steps, x0=None):
-    T = np.ascontiguousarray(T)
-    Z = np.ascontiguousarray(Z)
-    R = np.ascontiguousarray(R)
-    H = np.ascontiguousarray(H)
-    Q = np.ascontiguousarray(Q)
-
+def simulate_statespace(c, d, T, Z, R, H, Q, n_steps, x0=None):
     n_obs, n_states = Z.shape
     k_posdef = R.shape[1]
     k_obs_noise = H.shape[0] * (1 - int(np.all(H == 0)))
@@ -61,19 +55,19 @@ def simulate_statespace(T, Z, R, H, Q, n_steps, x0=None):
 
     if k_obs_noise != 0:
         for t in range(1, n_steps):
-            simulated_states[t] = T @ simulated_states[t - 1] + R @ state_innovations[t]
-            simulated_obs[t] = Z @ simulated_states[t - 1] + obs_innovations[t]
+            simulated_states[t] = c + T @ simulated_states[t - 1] + R @ state_innovations[t]
+            simulated_obs[t] = d + Z @ simulated_states[t - 1] + obs_innovations[t]
     else:
         for t in range(1, n_steps):
-            simulated_states[t] = T @ simulated_states[t - 1] + R @ state_innovations[t]
-            simulated_obs[t] = Z @ simulated_states[t - 1]
+            simulated_states[t] = c + T @ simulated_states[t - 1] + R @ state_innovations[t]
+            simulated_obs[t] = d + Z @ simulated_states[t - 1]
 
     return simulated_states, simulated_obs
 
 
 def unconditional_simulations(thetas, update_funcs, n_steps=100, n_simulations=100):
     samples, *_ = thetas[0].shape
-    _, _, T, Z, R, H, Q = (f(*[theta[0] for theta in thetas])[0] for f in update_funcs)
+    _, _, c, d, T, Z, R, H, Q = (f(*[theta[0] for theta in thetas])[0] for f in update_funcs)
     n_obs, n_states = Z.shape
 
     states = np.empty((samples * n_simulations, n_steps, n_states))
@@ -81,9 +75,10 @@ def unconditional_simulations(thetas, update_funcs, n_steps=100, n_simulations=1
 
     for i in range(samples):
         theta = [x[i] for x in thetas]
-        _, _, T, Z, R, H, Q = (f(*theta)[0] for f in update_funcs)
+        _, _, c, d, T, Z, R, H, Q = (f(*theta)[0] for f in update_funcs)
+        c, d, T, Z, R, H, Q = map(np.ascontiguousarray, [c, d, T, Z, R, H, Q])
         for j in range(n_simulations):
-            sim_state, sim_obs = simulate_statespace(T, Z, R, H, Q, n_steps=n_steps)
+            sim_state, sim_obs = simulate_statespace(c, d, T, Z, R, H, Q, n_steps=n_steps)
             states[i * n_simulations + j, :, :] = sim_state
             observed[i * n_simulations + j, :, :] = sim_obs
 

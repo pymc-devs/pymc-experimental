@@ -1,7 +1,7 @@
 from typing import Tuple
 
 import numpy as np
-import pytensor.tensor as at
+import pytensor.tensor as pt
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
 from pymc_experimental.statespace.models.utilities import get_slice_and_move_cursor
@@ -95,7 +95,7 @@ class BayesianVARMAX(PyMCStateSpace):
             names.remove("ma_params")
         return names
 
-    def update(self, theta: at.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
 
@@ -108,7 +108,7 @@ class BayesianVARMAX(PyMCStateSpace):
         cursor = 0
         # initial states
         param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["x0"])
-        self.ssm["initial_state", :, 0] = theta[param_slice]
+        self.ssm["initial_state", :] = theta[param_slice]
 
         if not self.stationary_initialization:
             # initial covariance
@@ -149,5 +149,5 @@ class BayesianVARMAX(PyMCStateSpace):
             R = self.ssm["selection"]
             Q = self.ssm["state_cov"]
 
-            P0 = solve_discrete_lyapunov(T, at.linalg.matrix_dot(R, Q, R.T), method="bilinear")
+            P0 = solve_discrete_lyapunov(T, pt.linalg.matrix_dot(R, Q, R.T), method="bilinear")
             self.ssm["initial_state_cov", :, :] = P0

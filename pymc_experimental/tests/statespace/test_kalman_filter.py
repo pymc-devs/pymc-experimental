@@ -103,16 +103,18 @@ def test_output_shapes_when_some_states_are_deterministic(filter_func, output_id
 @pytest.fixture
 def f_standard_nd():
     ksmoother = KalmanSmoother()
-    data = pt.tensor(name="data", dtype=floatX, shape=(None, None, 1))
-    a0 = pt.matrix(name="a0", dtype=floatX)
+    data = pt.tensor(name="data", dtype=floatX, shape=(None, None))
+    a0 = pt.vector(name="a0", dtype=floatX)
     P0 = pt.matrix(name="P0", dtype=floatX)
+    c = pt.vector(name="c", dtype=floatX)
+    d = pt.vector(name="d", dtype=floatX)
     Q = pt.tensor(name="Q", dtype=floatX, shape=(None, None, None))
     H = pt.tensor(name="H", dtype=floatX, shape=(None, None, None))
     T = pt.tensor(name="T", dtype=floatX, shape=(None, None, None))
     R = pt.tensor(name="R", dtype=floatX, shape=(None, None, None))
     Z = pt.tensor(name="Z", dtype=floatX, shape=(None, None, None))
 
-    inputs = [data, a0, P0, T, Z, R, H, Q]
+    inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
 
     (
         filtered_states,
@@ -144,14 +146,14 @@ def f_standard_nd():
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
 def test_output_shapes_with_time_varying_matrices(f_standard_nd, output_idx, name):
     p, m, r, n = 1, 5, 2, 10
-    data, a0, P0, T, Z, R, H, Q = make_test_inputs(p, m, r, n)
+    data, a0, P0, c, d, T, Z, R, H, Q = make_test_inputs(p, m, r, n)
     T = np.concatenate([np.expand_dims(T, 0)] * n, axis=0)
     Z = np.concatenate([np.expand_dims(Z, 0)] * n, axis=0)
     R = np.concatenate([np.expand_dims(R, 0)] * n, axis=0)
     H = np.concatenate([np.expand_dims(H, 0)] * n, axis=0)
     Q = np.concatenate([np.expand_dims(Q, 0)] * n, axis=0)
 
-    outputs = f_standard_nd(data, a0, P0, T, Z, R, H, Q)
+    outputs = f_standard_nd(data, a0, P0, c, d, T, Z, R, H, Q)
     expected_output = get_expected_shape(name, p, m, r, n)
 
     assert outputs[output_idx].shape == expected_output

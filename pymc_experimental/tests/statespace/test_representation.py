@@ -56,7 +56,7 @@ class BasicFunctionality(unittest.TestCase):
 
     def test_build_representation_from_data(self):
         p, m, r, n = 3, 6, 1, 10
-        inputs = [data, a0, P0, T, Z, R, H, Q] = make_test_inputs(p, m, r, n, missing_data=0)
+        inputs = [data, a0, P0, c, d, T, Z, R, H, Q] = make_test_inputs(p, m, r, n, missing_data=0)
         ssm = PytensorRepresentation(
             k_endog=p,
             k_states=m,
@@ -72,6 +72,8 @@ class BasicFunctionality(unittest.TestCase):
         names = [
             "initial_state",
             "initial_state_cov",
+            "state_intercept",
+            "obs_intercept",
             "transition",
             "design",
             "selection",
@@ -79,7 +81,7 @@ class BasicFunctionality(unittest.TestCase):
             "state_cov",
         ]
         for name, X in zip(names, inputs[1:]):
-            self.assertTrue(np.allclose(X, ssm[name].eval()))
+            assert_allclose(X, ssm[name].eval(), err_msg=name)
 
     def test_assign_time_varying_matrices(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=2)
@@ -89,13 +91,13 @@ class BasicFunctionality(unittest.TestCase):
         ssm["transition", 0, :] = 2.7
         ssm["selection", -1, -1] = 9.9
 
-        ssm["state_intercept"] = np.zeros((5, 1, n))
-        ssm["state_intercept", 0, 0, :] = np.arange(n)
+        ssm["state_intercept"] = np.zeros((5, n))
+        ssm["state_intercept", 0, :] = np.arange(n)
 
         assert_allclose(ssm["design"].eval()[0, 0], 3.0, atol=atol)
         assert_allclose(ssm["transition"].eval()[0, :], 2.7, atol=atol)
         assert_allclose(ssm["selection"].eval()[-1, -1], 9.9, atol=atol)
-        assert_allclose(ssm["state_intercept"][0, 0, :].eval(), np.arange(n), atol=atol)
+        assert_allclose(ssm["state_intercept"][0, :].eval(), np.arange(n), atol=atol)
 
     def test_invalid_key_name_raises(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
@@ -137,7 +139,9 @@ class BasicFunctionality(unittest.TestCase):
         with self.assertRaises(ValueError) as e:
             ssm["transition"] = T
         msg = str(e.exception)
-        self.assertEqual(msg, "Array provided for transition has shape (10, 10), expected (5, 5)")
+        self.assertEqual(
+            msg, "The first two dimensions of transition must be (5, 5), found [10 10]"
+        )
 
 
 if __name__ == "__main__":
