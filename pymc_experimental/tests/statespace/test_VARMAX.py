@@ -1,8 +1,5 @@
-import os
-import sys
 import warnings
 from itertools import product
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,14 +13,13 @@ from numpy.testing import assert_allclose
 from pymc_experimental.statespace import BayesianVARMAX
 
 floatX = pytensor.config.floatX
-ROOT = Path(__file__).parent.absolute()
-sys.path.append(ROOT)
 
 
 @pytest.fixture
 def data():
     return pd.read_csv(
-        os.path.join(ROOT, "test_data/statsmodels_macrodata_processed.csv"), index_col=0
+        "pymc_experimental/tests/statespace/test_data/statsmodels_macrodata_processed.csv",
+        index_col=0,
     ).astype(floatX)
 
 
@@ -38,7 +34,7 @@ ids = [f"p={x[0]}, q={x[1]}" for x in orders]
 def test_VARMAX_init_matches_statsmodels(data, order, matrix):
     p, q = order
 
-    mod = BayesianVARMAX(data, order=(p, q), verbose=False)
+    mod = BayesianVARMAX(k_endog=data.shape[1], order=(p, q), verbose=False)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         sm_var = sm.tsa.VARMAX(data, order=(p, q))
@@ -51,7 +47,7 @@ def test_VARMAX_init_matches_statsmodels(data, order, matrix):
 def test_VARMAX_param_counts_match_statsmodels(data, order, var):
     p, q = order
 
-    mod = BayesianVARMAX(data, order=(p, q), verbose=False)
+    mod = BayesianVARMAX(k_endog=data.shape[1], order=(p, q), verbose=False)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         sm_var = sm.tsa.VARMAX(data, order=(p, q))
@@ -83,7 +79,9 @@ def test_VARMAX_update_matches_statsmodels(data, order, matrix):
 
     res = sm_var.fit_constrained(param_d)
 
-    mod = BayesianVARMAX(data, order=(p, q), verbose=False, measurement_error=False)
+    mod = BayesianVARMAX(
+        k_endog=data.shape[1], order=(p, q), verbose=False, measurement_error=False
+    )
 
     with pm.Model() as pm_mod:
         x0 = pm.Deterministic("x0", pt.zeros(mod.k_states))
@@ -96,6 +94,6 @@ def test_VARMAX_update_matches_statsmodels(data, order, matrix):
         state_chol = np.zeros((mod.k_posdef, mod.k_posdef))
         state_chol[np.tril_indices(mod.k_posdef)] = np.array([param_d[var] for var in state_cov])
         state_cov = pm.Deterministic("state_cov", pt.as_tensor_variable(state_chol @ state_chol.T))
-        mod.build_statespace_graph()
+        mod.build_statespace_graph(data=data)
 
     assert_allclose(mod.ssm[matrix].eval(), sm_var.ssm[matrix])

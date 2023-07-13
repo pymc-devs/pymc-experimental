@@ -1,10 +1,11 @@
+import logging
 from typing import List, Optional, Tuple, Union
 from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pymc as pm
 import pytensor
-import pytensor.tensor as at
+import pytensor.tensor as pt
 from numpy.typing import ArrayLike
 from pymc.model import modelcontext
 
@@ -21,6 +22,8 @@ from pymc_experimental.statespace.utils.simulation import (
     conditional_simulation,
     unconditional_simulations,
 )
+
+_log = logging.getLogger("pymc.experimental.statespace")
 
 floatX = pytensor.config.floatX
 FILTER_FACTORY = {
@@ -55,14 +58,20 @@ def validate_filter_arg(filter_arg):
 
 
 class PyMCStateSpace:
-    def __init__(self, data, k_states, k_posdef, filter_type="standard", verbose=True):
-        self.data = data
-        self.n_obs, self.k_endog = data.shape
+    def __init__(
+        self,
+        k_endog: int,
+        k_states: int,
+        k_posdef: int,
+        filter_type: str = "standard",
+        verbose: bool = True,
+    ):
+        self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
 
         # All models contain a state space representation and a Kalman filter
-        self.ssm = PytensorRepresentation(data, k_states, k_posdef)
+        self.ssm = PytensorRepresentation(k_endog, k_states, k_posdef)
 
         if filter_type.lower() not in FILTER_FACTORY.keys():
             raise NotImplementedError(
@@ -76,12 +85,10 @@ class PyMCStateSpace:
         self.kalman_smoother = KalmanSmoother()
 
         if verbose:
-            # TODO: Ask Ricardo how to log this to console without a print
-            # print(
-            #     "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
-            #     f'model block: {", ".join(self.param_names)}'
-            # )
-            pass
+            _log.info(
+                "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
+                f'model block: {", ".join(self.param_names)}'
+            )
 
     def unpack_statespace(self):
         a0 = self.ssm["initial_state"]
@@ -98,7 +105,7 @@ class PyMCStateSpace:
     def param_names(self) -> List[str]:
         raise NotImplementedError
 
-    def update(self, theta: at.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
 
@@ -109,18 +116,18 @@ class PyMCStateSpace:
         """
         raise NotImplementedError
 
-    def gather_required_random_variables(self) -> at.TensorVariable:
+    def gather_required_random_variables(self) -> pt.TensorVariable:
         """
         Iterates through random variables in the model on the context stack, matches their names with the statespace
         model's named parameters, and returns a single vector of parameters to pass to the update method.
 
         Important point is that the *order of the variables matters*. Update will expect that the theta vector will be
-        organized as variables are listed in param_names. This could be improved...
+        organized as variables are listed in param_names.
 
         Returns
         ----------
         theta: TensorVariable
-            A p x 1 theano vector containing all parameters to be estimated among all state space matrices in the
+            A size (p,) tensor containing all parameters to be estimated among all state space matrices in the
             system.
         """
 
@@ -129,14 +136,10 @@ class PyMCStateSpace:
         found_params = []
         with pymc_model:
             for param_name in self.param_names:
-                for param in pymc_model.rvs_to_values:
-                    if param.name == param_name:
-                        theta.append(param.ravel())
-                        found_params.append(param.name)
-                for param in pymc_model.deterministics:
-                    if param.name == param_name:
-                        theta.append(param.ravel())
-                        found_params.append(param.name)
+                param = getattr(pymc_model, param_name, None)
+                if param:
+                    found_params.append(param.name)
+                    theta.append(param.ravel())
 
         missing_params = set(self.param_names) - set(found_params)
         if len(missing_params) > 0:
@@ -144,9 +147,9 @@ class PyMCStateSpace:
                 "The following required model parameters were not found in the PyMC model: "
                 + ", ".join(param for param in list(missing_params))
             )
-        return at.concatenate(theta)
+        return pt.concatenate(theta)
 
-    def build_statespace_graph(self, mode=None) -> None:
+    def build_statespace_graph(self, data, mode=None) -> None:
         """
         Given parameter vector theta, constructs the full computational graph describing the state space model.
         Must be called inside a PyMC model context.
@@ -165,7 +168,7 @@ class PyMCStateSpace:
                 log_likelihood,
                 ll_obs,
             ) = self.kalman_filter.build_graph(
-                at.as_tensor_variable(self.ssm.data), *self.unpack_statespace(), mode=mode
+                pt.as_tensor_variable(data), *self.unpack_statespace(), mode=mode
             )
 
             pm.Deterministic("filtered_states", filtered_states)
@@ -198,6 +201,22 @@ class PyMCStateSpace:
 
             pm.Deterministic("smoothed_states", smooth_states)
             pm.Deterministic("smoothed_covariances", smooth_covariances)
+
+    def make_matrix_update_funcs(self, pymc_model):
+        rvs_on_graph = []
+        with pymc_model:
+            for param_name in self.param_names:
+                param = getattr(pymc_model, param_name, None)
+                if param:
+                    rvs_on_graph.append(param)
+
+        # TODO: This is pretty hacky, ask on the forums if there is a better solution
+        matrix_update_funcs = [
+            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
+            for X in self.unpack_statespace()
+        ]
+
+        return matrix_update_funcs
 
     @staticmethod
     def sample_conditional_prior(
@@ -345,29 +364,13 @@ class PyMCStateSpace:
         """
         pymc_model = modelcontext(None)
 
-        with pymc_model:
-            with catch_warnings():
-                simplefilter("ignore", category=UserWarning)
-                prior_params = pm.sample_prior_predictive(
-                    var_names=self.param_names, samples=prior_samples
-                )
+        with pymc_model, catch_warnings():
+            simplefilter("ignore", category=UserWarning)
+            prior_params = pm.sample_prior_predictive(
+                var_names=self.param_names, samples=prior_samples
+            )
 
-        rvs_on_graph = []
-        with pymc_model:
-            for param_name in self.param_names:
-                for param in pymc_model.rvs_to_values:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-                for param in pymc_model.deterministics:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-
-        # TODO: This is pretty hacky, ask on the forums if there is a better solution
-        matrix_update_funcs = [
-            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
-            for X in self.unpack_statespace()
-        ]
-
+        matrix_update_funcs = self.make_matrix_update_funcs(pymc_model)
         # Take the 0th element to remove the chain dimension
         thetas = [prior_params.prior[var].values[0] for var in self.param_names]
         simulated_states, simulated_data = unconditional_simulations(
@@ -415,21 +418,7 @@ class PyMCStateSpace:
         resample_idxs = np.random.randint(0, posterior_size, size=posterior_samples)
 
         pymc_model = modelcontext(None)
-
-        rvs_on_graph = []
-        with pymc_model:
-            for param_name in self.param_names:
-                for param in pymc_model.rvs_to_values:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-                for param in pymc_model.deterministics:
-                    if param.name == param_name:
-                        rvs_on_graph.append(param)
-
-        matrix_update_funcs = [
-            pytensor.function(rvs_on_graph, [X], on_unused_input="ignore")
-            for X in self.unpack_statespace()
-        ]
+        matrix_update_funcs = self.make_matrix_update_funcs(pymc_model)
 
         thetas = [trace.posterior[var].values for var in self.param_names]
         thetas = [arr.reshape(-1, *arr.shape[2:])[resample_idxs] for arr in thetas]

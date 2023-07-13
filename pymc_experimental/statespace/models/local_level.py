@@ -5,10 +5,12 @@ from pymc_experimental.statespace.core.statespace import PyMCStateSpace
 
 
 class BayesianLocalLevel(PyMCStateSpace):
-    def __init__(self, data):
-        k_states = k_posdef = 2
+    def __init__(self):
+        k_states = 2
+        k_posdef = 2
+        k_endog = 1
 
-        super().__init__(data, k_states, k_posdef)
+        super().__init__(k_endog, k_states, k_posdef)
 
         # Initialize the matrices
         self.ssm["design"] = np.array([[1.0, 0.0]])

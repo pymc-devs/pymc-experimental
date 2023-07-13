@@ -1,25 +1,19 @@
-import os
 import unittest
-from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pymc as pm
 import pytensor
 import pytest
 from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
-from pymc_experimental.tests.statespace.utilities.test_helpers import make_test_inputs
+from pymc_experimental.tests.statespace.utilities.test_helpers import (
+    load_nile_test_data,
+    make_test_inputs,
+)
 
 floatX = pytensor.config.floatX
-
-ROOT = Path(__file__).parent.absolute()
-nile = pd.read_csv(os.path.join(ROOT, "test_data/nile.csv"))
-nile.index = pd.date_range(start="1871-01-01", end="1970-01-01", freq="AS-Jan")
-nile.rename(columns={"x": "height"}, inplace=True)
-nile = (nile - nile.mean()) / nile.std()
-nile = nile.astype(floatX)
+nile = load_nile_test_data()
 
 
 @pytest.fixture()
@@ -39,7 +33,7 @@ def ss_mod():
     H = np.array([[0.1]], dtype=floatX)
     Q = np.array([[0.8]], dtype=floatX)
 
-    ss_mod = StateSpace(data=nile, k_states=2, k_posdef=1, filter_type="standard")
+    ss_mod = StateSpace(k_endog=nile.shape[1], k_states=2, k_posdef=1, filter_type="standard")
     for X, name in zip(
         [T, Z, R, H, Q], ["transition", "design", "selection", "obs_cov", "state_cov"]
     ):
@@ -53,7 +47,7 @@ def pymc_mod(ss_mod):
     with pm.Model() as pymc_mod:
         rho = pm.Normal("rho")
         zeta = pm.Deterministic("zeta", 1 - rho)
-        ss_mod.build_statespace_graph()
+        ss_mod.build_statespace_graph(data=nile)
         ss_mod.build_smoother_graph()
 
     return pymc_mod
@@ -70,22 +64,19 @@ def idata(pymc_mod):
 def test_invalid_filter_name_raises():
     msg = "The following are valid filter types: " + ", ".join(list(FILTER_FACTORY.keys()))
     with pytest.raises(NotImplementedError, match=msg):
-        mod = PyMCStateSpace(data=nile.values, k_states=5, k_posdef=1, filter_type="invalid_filter")
+        mod = PyMCStateSpace(k_endog=1, k_states=5, k_posdef=1, filter_type="invalid_filter")
 
 
-def test_singleseriesfilter_raises_if_data_is_nd():
-    data = np.random.normal(size=(4, 10))
+def test_singleseriesfilter_raises_if_k_endog_gt_one():
     msg = 'Cannot use filter_type = "single" with multiple observed time series'
     with pytest.raises(ValueError, match=msg):
-        mod = PyMCStateSpace(data=data, k_states=5, k_posdef=1, filter_type="single")
+        mod = PyMCStateSpace(k_endog=10, k_states=5, k_posdef=1, filter_type="single")
 
 
 def test_unpack_matrices():
     p, m, r, n = 2, 5, 1, 10
     data, *inputs = make_test_inputs(p, m, r, n, missing_data=0)
-    mod = PyMCStateSpace(
-        data=data[..., 0], k_states=m, k_posdef=r, filter_type="standard", verbose=False
-    )
+    mod = PyMCStateSpace(k_endog=p, k_states=m, k_posdef=r, filter_type="standard", verbose=False)
 
     outputs = mod.unpack_statespace()
     for x, y in zip(inputs, outputs):
@@ -93,13 +84,13 @@ def test_unpack_matrices():
 
 
 def test_param_names_raises_on_base_class():
-    mod = PyMCStateSpace(data=nile, k_states=5, k_posdef=1, filter_type="standard", verbose=False)
+    mod = PyMCStateSpace(k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False)
     with pytest.raises(NotImplementedError):
         x = mod.param_names
 
 
 def test_update_raises_on_base_class():
-    mod = PyMCStateSpace(data=nile, k_states=5, k_posdef=1, filter_type="standard", verbose=False)
+    mod = PyMCStateSpace(k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False)
     theta = np.zeros(4)
     with pytest.raises(NotImplementedError):
         mod.update(theta)
