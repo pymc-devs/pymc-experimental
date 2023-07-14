@@ -90,16 +90,18 @@ class PyMCStateSpace:
                 f'model block: {", ".join(self.param_names)}'
             )
 
-    def unpack_statespace(self):
+    def unpack_statespace(self, include_constants=False):
         a0 = self.ssm["initial_state"]
         P0 = self.ssm["initial_state_cov"]
+        c = self.ssm["state_intercept"]
+        d = self.ssm["obs_intercept"]
         T = self.ssm["transition"]
         Z = self.ssm["design"]
         R = self.ssm["selection"]
         H = self.ssm["obs_cov"]
         Q = self.ssm["state_cov"]
 
-        return a0, P0, T, Z, R, H, Q
+        return a0, P0, c, d, T, Z, R, H, Q
 
     @property
     def param_names(self) -> List[str]:

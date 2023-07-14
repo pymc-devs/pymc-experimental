@@ -79,9 +79,11 @@ class KalmanSmoother:
         )
 
         smoothed_states, smoothed_covariances = smoother_result
-        smoothed_states = pt.concatenate([smoothed_states[::-1], pt.atleast_3d(a_last)], axis=0)
+        smoothed_states = pt.concatenate(
+            [smoothed_states[::-1], pt.expand_dims(a_last, axis=(0,))], axis=0
+        )
         smoothed_covariances = pt.concatenate(
-            [smoothed_covariances[::-1], pt.atleast_3d(P_last)], axis=0
+            [smoothed_covariances[::-1], pt.expand_dims(P_last, axis=(0,))], axis=0
         )
 
         return smoothed_states, smoothed_covariances

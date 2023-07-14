@@ -10,6 +10,9 @@ from pandas import DataFrame
 floatX = pytensor.config.floatX
 KeyLike = Union[Tuple[Union[str, int]], str]
 
+NEVER_TIME_VARYING = ["initial_state", "initial_state_cov", "a0", "P0"]
+VECTOR_VALUED = ["initial_state", "state_intercept", "obs_intercept", "a0", "c", "d"]
+
 
 def _preprocess_data(data: Union[DataFrame, np.ndarray], expected_dims=3):
     if isinstance(data, pandas.DataFrame):
@@ -93,14 +96,14 @@ class PytensorRepresentation:
         # The last dimension is for time varying matrices; it could be n_obs. Not thinking about that now.
         self.shapes = {
             "design": (self.k_endog, self.k_states, 1),
-            "obs_intercept": (self.k_endog, 1, 1),
+            "obs_intercept": (self.k_endog, 1),
             "obs_cov": (self.k_endog, self.k_endog, 1),
             "transition": (self.k_states, self.k_states, 1),
-            "state_intercept": (self.k_states, 1, 1),
+            "state_intercept": (self.k_states, 1),
             "selection": (self.k_states, self.k_posdef, 1),
             "state_cov": (self.k_posdef, self.k_posdef, 1),
-            "initial_state": (self.k_states, 1, 1),
-            "initial_state_cov": (self.k_states, self.k_states, 1),
+            "initial_state": (self.k_states,),
+            "initial_state_cov": (self.k_states, self.k_states),
         }
 
         # Initialize the representation matrices
@@ -119,20 +122,21 @@ class PytensorRepresentation:
 
     def update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.TensorType]) -> None:
         # TODO: Get rid of these evals
-
         if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
             shape = value.shape.eval()
         else:
             shape = value.shape
 
         old_shape = self.shapes[key]
-        if not all([a == b for a, b in zip(shape[:2], old_shape[:2])]):
+        check_slice = slice(None, 2) if key not in VECTOR_VALUED else slice(None, 1)
+
+        if not all([a == b for a, b in zip(shape[check_slice], old_shape[check_slice])]):
             raise ValueError(
-                f"The first two dimensions of {key} must be {old_shape[:2]}, found {shape[:2]}"
+                f"The first two dimensions of {key} must be {old_shape[check_slice]}, found {shape[check_slice]}"
             )
 
         # Add time dimension dummy if none present
-        if len(shape) == 2:
+        if len(shape) == 2 and key not in NEVER_TIME_VARYING:
             self.shapes[key] = shape + (1,)
 
         self.shapes[key] = shape
@@ -140,17 +144,15 @@ class PytensorRepresentation:
     def _add_time_dim_to_slice(
         self, name: str, slice_: Union[List[int], Tuple[int]], n_dim: int
     ) -> Tuple[int]:
-        no_time_dim = self.shapes[name][-1] == 1
+        # Case 1: There is never a time dim. No changes needed.
+        if name in NEVER_TIME_VARYING:
+            return slice_
 
-        # Case 1: All dimensions are sliced
+        # Case 2: The matrix has a time dim, and it was requested. No changes needed.
         if len(slice_) == n_dim:
             return slice_
 
-        # Case 2a: There is a time dim. Just return.
-        if not no_time_dim:
-            return slice_
-
-        # Case 2b: There's no time dim. Slice away the dummy dim.
+        # Case 3: There's no time dim on the matrix, and none requested. Slice away the dummy dim.
         if len(slice_) < n_dim:
             empty_slice = (slice(None, None, None),)
             n_omitted = n_dim - len(slice_) - 1
@@ -167,23 +169,47 @@ class PytensorRepresentation:
         *expected_shape, time_dim = self.shapes[name]
         expected_shape = tuple(expected_shape)
 
-        if X.ndim > 3 or X.ndim < 2:
-            raise ValueError(
-                f"Array provided for {name} has {X.ndim} dimensions, "
-                f"expecting 2 (static) or 3 (time-varying)"
-            )
+        is_vector = name in VECTOR_VALUED
+        not_time_varying = name in NEVER_TIME_VARYING
 
-        if X.ndim == 2:
-            if expected_shape != X.shape:
-                raise ValueError(
-                    f"Array provided for {name} has shape {X.shape}, expected {expected_shape}"
-                )
-        if X.ndim == 3:
-            if X.shape[:2] != expected_shape:
-                raise ValueError(
-                    f"First two dimensions of array provided for {name} has shape {X.shape[:2]}, "
-                    f"expected {expected_shape}"
-                )
+        if not_time_varying:
+            if is_vector:
+                if X.ndim != 1:
+                    raise ValueError(
+                        f"Array provided for {name} has {X.ndim} dimensions, but it must have exactly 1."
+                    )
+
+            else:
+                if X.ndim != 2:
+                    raise ValueError(
+                        f"Array provided for {name} has {X.ndim} dimensions, but it must have exactly 2."
+                    )
+
+        else:
+            if is_vector:
+                if X.ndim not in [1, 2]:
+                    raise ValueError(
+                        f"Array provided for {name} has {X.ndim} dimensions, "
+                        f"expecting 1 (static) or 2 (time-varying)"
+                    )
+                if X.ndim == 2 and X.shape[:-1] != expected_shape:
+                    raise ValueError(
+                        f"First dimension of array provided for {name} has shape {X.shape[0]}, "
+                        f"expected {expected_shape}"
+                    )
+
+            else:
+                if X.ndim not in [2, 3]:
+                    raise ValueError(
+                        f"Array provided for {name} has {X.ndim} dimensions, "
+                        f"expecting 2 (static) or 3 (time-varying)"
+                    )
+
+                if X.ndim == 3 and X.shape[:-1] != expected_shape:
+                    raise ValueError(
+                        f"First two dimensions of array provided for {name} has shape {X.shape[:-1]}, "
+                        f"expected {expected_shape}"
+                    )
 
             # TODO: Think of another way to validate shapes of time-varying matrices if we don't know the data
             #   when the PytensorRepresentation is recreated
@@ -197,9 +223,13 @@ class PytensorRepresentation:
     def _numpy_to_pytensor(self, name: str, X: np.ndarray) -> pt.TensorVariable:
         X = X.copy()
         self._validate_matrix_shape(name, X)
+
         # Add a time dimension if one isn't provided
-        if X.ndim == 2:
-            X = X[..., None]
+        if name not in NEVER_TIME_VARYING:
+            if X.ndim == 1 and name in VECTOR_VALUED:
+                X = X[..., None]
+            elif X.ndim == 2:
+                X = X[..., None]
         return pt.as_tensor(X, name=name, dtype=floatX)
 
     def __getitem__(self, key: KeyLike) -> pt.TensorVariable:
@@ -211,7 +241,7 @@ class PytensorRepresentation:
             matrix = getattr(self, key)
 
             # Slice away the time dimension if it's a dummy
-            if self.shapes[key][-1] == 1:
+            if (self.shapes[key][-1] == 1) and (key not in NEVER_TIME_VARYING):
                 return matrix[(slice(None),) * (matrix.ndim - 1) + (0,)]
 
             # If it's time varying, return everything

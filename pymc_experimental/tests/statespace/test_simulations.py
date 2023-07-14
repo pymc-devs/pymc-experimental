@@ -17,17 +17,17 @@ def test_numba_mvn_draws():
 
 
 def test_simulate_statespace():
-    data, a0, P0, T, Z, R, H, Q = make_test_inputs(3, 5, 1, 100)
-    simulated_states, simulated_obs = simulate_statespace(T, Z, R, H, Q, n_steps=100)
+    data, a0, P0, c, d, T, Z, R, H, Q = make_test_inputs(3, 5, 1, 100)
+    simulated_states, simulated_obs = simulate_statespace(c, d, T, Z, R, H, Q, n_steps=100)
 
     assert simulated_states.shape == (100, 5)
     assert simulated_obs.shape == (100, 3)
 
 
 def test_simulate_statespace_with_x0():
-    data, a0, P0, T, Z, R, H, Q = make_test_inputs(3, 5, 1, 100)
+    data, a0, P0, c, d, T, Z, R, H, Q = make_test_inputs(3, 5, 1, 100)
     simulated_states, simulated_obs = simulate_statespace(
-        T, Z, R, H, Q, n_steps=100, x0=a0.squeeze()
+        c, d, T, Z, R, H, Q, n_steps=100, x0=a0.squeeze()
     )
 
     assert simulated_states.shape == (100, 5)
@@ -37,10 +37,10 @@ def test_simulate_statespace_with_x0():
 
 
 def test_simulate_statespace_no_obs_noise():
-    data, a0, P0, T, Z, R, H, Q = make_test_inputs(3, 5, 1, 100)
+    data, a0, P0, c, d, T, Z, R, H, Q = make_test_inputs(3, 5, 1, 100)
     H = np.zeros_like(H)
     simulated_states, simulated_obs = simulate_statespace(
-        T, Z, R, H, Q, n_steps=100, x0=a0.squeeze()
+        c, d, T, Z, R, H, Q, n_steps=100, x0=a0.squeeze()
     )
 
     assert simulated_states.shape == (100, 5)

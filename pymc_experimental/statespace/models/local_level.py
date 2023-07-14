@@ -1,5 +1,5 @@
 import numpy as np
-import pytensor.tensor as at
+import pytensor.tensor as pt
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
 
@@ -17,7 +17,7 @@ class BayesianLocalLevel(PyMCStateSpace):
         self.ssm["transition"] = np.array([[1.0, 1.0], [0.0, 1.0]])
         self.ssm["selection"] = np.eye(k_states)
 
-        self.ssm["initial_state"] = np.array([[0.0], [0.0]])
+        self.ssm["initial_state"] = np.array([0.0, 0.0])
         self.ssm["initial_state_cov"] = np.array([[1.0, 0.0], [0.0, 1.0]])
 
         # Cache some indices
@@ -27,11 +27,9 @@ class BayesianLocalLevel(PyMCStateSpace):
     def param_names(self):
         return ["x0", "P0", "sigma_obs", "sigma_state"]
 
-    def update(self, theta: at.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
-        TODO: Can this be done using variable names to avoid the need to ravel and concatenate all RVs in the
-              PyMC model?
 
         Parameters
         ----------
@@ -39,7 +37,7 @@ class BayesianLocalLevel(PyMCStateSpace):
             Vector of all variables in the state space model
         """
         # initial states
-        self.ssm["initial_state", :, 0] = theta[:2]
+        self.ssm["initial_state", :] = theta[:2]
 
         # initial covariance
         self.ssm["initial_state_cov", :, :] = theta[2:6].reshape((2, 2))

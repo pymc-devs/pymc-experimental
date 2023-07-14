@@ -35,23 +35,6 @@ class BaseFilter(ABC):
         self.eye_posdef = None
         self.eye_endog = None
 
-    @staticmethod
-    def initialize_intercepts(c, d, Z):
-        """
-        # TODO: Should this be handled in the StateSpaceModel object instead, and the KF should demand they are always
-            given?
-        """
-        m, p, *_ = Z.shape
-
-        if c is None:
-            c = pt.zeros((p, 1))
-            c.name = "c"
-        if d is None:
-            d = pt.zeros((m, 1))
-            d.name = "d"
-
-        return c, d
-
     def initialize_eyes(self, R, Z):
         """
         It's surprisingly expensive for pytensor to create an identity matrix every time we need one for e.g. a matrix
@@ -75,7 +58,6 @@ class BaseFilter(ABC):
         """
         Apply any checks on validity of inputs. For most filters this is just the identity function.
         """
-        c, d = self.initialize_intercepts(c, d, Z)
         return data, a0, P0, c, d, T, Z, R, H, Q
 
     @staticmethod
@@ -125,9 +107,7 @@ class BaseFilter(ABC):
 
         return y, a0, P0, c, d, T, Z, R, H, Q
 
-    def build_graph(
-        self, data, a0, P0, T, Z, R, H, Q, c=None, d=None, mode=None
-    ) -> List[TensorVariable]:
+    def build_graph(self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None) -> List[TensorVariable]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
 
@@ -180,8 +160,10 @@ class BaseFilter(ABC):
             log_likelihoods,
         ) = results
 
-        predicted_states = pt.concatenate([pt.atleast_3d(a0), predicted_states], axis=0)
-        predicted_covariances = pt.concatenate([pt.atleast_3d(P0), predicted_covariances], axis=0)
+        predicted_states = pt.concatenate([pt.expand_dims(a0, axis=(0,)), predicted_states], axis=0)
+        predicted_covariances = pt.concatenate(
+            [pt.expand_dims(P0, axis=(0,)), predicted_covariances], axis=0
+        )
 
         filter_results = [
             filtered_states,
@@ -269,12 +251,11 @@ class StandardFilter(BaseFilter):
         F_inv = pt.linalg.solve(
             F + self.eye_endog * all_nan_flag, self.eye_endog, assume_a="pos", check_finite=False
         )
-
         K = PZT.dot(F_inv)
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)  # Joseph form
+        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
 
         inner_term = matrix_dot(v.T, F_inv, v)
         ll = pt.switch(
@@ -327,25 +308,24 @@ class SingleTimeseriesFilter(BaseFilter):
     """
 
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
-        c, d = self.initialize_intercepts(c, d, Z)
         data = assert_data_is_1d(data, pt.eq(data.shape[1], 1))
 
         return data, a0, P0, c, d, T, Z, R, H, Q
 
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         # y, v are scalar, but a might not be
-        y_hat = Z.dot(a).ravel() - d
+        y_hat = Z.dot(a) - d
         v = y - y_hat
 
         PZT = P.dot(Z.T)
 
         # F is scalar, K is a column vector
-        F = (Z.dot(PZT) + H).ravel() + all_nan_flag
+        F = (Z.dot(PZT) + H).ravel()[0] + all_nan_flag
         K = PZT / F
 
         I_KZ = self.eye_states - K.dot(Z)
 
-        a_filtered = a + (K * v)
+        a_filtered = a + K.ravel() * v
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
 
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
@@ -363,7 +343,7 @@ class SteadyStateFilter(BaseFilter):
     only have differences from the standard approach in the early steps (T < 10?). A process of "learning" is lost.
     """
 
-    def build_graph(self, data, a0, P0, T, Z, R, H, Q, c=None, d=None, mode=None):
+    def build_graph(self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None):
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
@@ -461,10 +441,9 @@ class UnivariateFilter(BaseFilter):
 
     @staticmethod
     def _univariate_inner_filter_step(y, Z_row, d_row, sigma_H, nan_flag, a, P):
-        Z_row = Z_row[None, :]
         v = y - Z_row.dot(a) - d_row
 
-        PZT = P.dot(Z_row.T)
+        PZT = P.dot(Z_row.T).squeeze()
         F = Z_row.dot(PZT) + sigma_H
 
         F_zero_flag = pt.or_(pt.eq(F, 0), nan_flag)
@@ -475,6 +454,7 @@ class UnivariateFilter(BaseFilter):
         # If F is zero (implies y is NAN or another degenerate case), then we want:
         # K = 0, a = a, P = P, ll = 0
         K = PZT / F * (1 - F_zero_flag)
+
         a_filtered = a + K * v * (1 - F_zero_flag)
         P_filtered = P - pt.outer(K, K) * F * (1 - F_zero_flag)
         ll_inner = (pt.log(F) + v**2 / F) * (1 - F_zero_flag)
@@ -482,8 +462,7 @@ class UnivariateFilter(BaseFilter):
         return a_filtered, P_filtered, ll_inner
 
     def kalman_step(self, y, a, P, c, d, T, Z, R, H, Q):
-        y = y[:, None]
-        nan_mask = pt.isnan(y).ravel()
+        nan_mask = pt.isnan(y)
 
         W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask, nan_mask], 0.0)
         Z_masked = W.dot(Z)
@@ -495,6 +474,7 @@ class UnivariateFilter(BaseFilter):
             sequences=[y_masked, Z_masked, d, pt.diag(H_masked), nan_mask],
             outputs_info=[a, P, None],
             mode=get_mode(self.mode),
+            name="univariate_inner_scan",
         )
 
         a_filtered, P_filtered, ll_inner = result
