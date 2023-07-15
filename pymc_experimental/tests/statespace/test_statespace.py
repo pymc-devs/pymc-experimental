@@ -33,7 +33,9 @@ def ss_mod():
     H = np.array([[0.1]], dtype=floatX)
     Q = np.array([[0.8]], dtype=floatX)
 
-    ss_mod = StateSpace(k_endog=nile.shape[1], k_states=2, k_posdef=1, filter_type="standard")
+    ss_mod = StateSpace(
+        k_endog=nile.shape[1], k_states=2, k_posdef=1, filter_type="standard", verbose=False
+    )
     for X, name in zip(
         [T, Z, R, H, Q], ["transition", "design", "selection", "obs_cov", "state_cov"]
     ):

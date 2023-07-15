@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from warnings import catch_warnings, simplefilter
 
 import numpy as np
@@ -87,8 +87,15 @@ class PyMCStateSpace:
         if verbose:
             _log.info(
                 "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
-                f'model block: {", ".join(self.param_names)}'
+                f"model block: \n"
+                f"{self._print_prior_requirements()}"
             )
+
+    def _print_prior_requirements(self):
+        out = ""
+        for param, info in self.param_info.items():
+            out += f'\t{param} -- shape: {info["shape"]}, constraints: {info["constraints"]}\n'
+        return out.rstrip()
 
     def unpack_statespace(self, include_constants=False):
         a0 = self.ssm["initial_state"]
@@ -105,6 +112,29 @@ class PyMCStateSpace:
 
     @property
     def param_names(self) -> List[str]:
+        raise NotImplementedError
+
+    @property
+    def param_info(self) -> Dict[str, Dict[str, Any]]:
+        raise NotImplementedError
+
+    @property
+    def state_names(self):
+        raise NotImplementedError
+
+    @property
+    def observed_states(self):
+        raise NotImplementedError
+
+    @property
+    def default_priors(self):
+        raise NotImplementedError
+
+    @property
+    def default_coords(self) -> Dict[str, Sequence]:
+        raise NotImplementedError
+
+    def add_default_priors(self):
         raise NotImplementedError
 
     def update(self, theta: pt.TensorVariable) -> None:
