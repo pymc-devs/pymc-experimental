@@ -4,6 +4,7 @@ from typing import List, Tuple
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
+from pymc.gp.util import stabilize
 from pytensor.compile.mode import get_mode
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
@@ -134,7 +135,7 @@ class BaseFilter(ABC):
         results, updates = pytensor.scan(
             self.kalman_step,
             sequences=[data] + sequences,
-            outputs_info=[None, a0, None, P0, None],
+            outputs_info=[None, a0, None, P0, None, None],
             non_sequences=non_sequences,
             name="forward_kalman_pass",
             mode=get_mode(mode),
@@ -142,7 +143,7 @@ class BaseFilter(ABC):
 
         filter_results = self._postprocess_scan_results(results, a0, P0)
 
-        return filter_results
+        return filter_results, updates
 
     @staticmethod
     def _postprocess_scan_results(results, a0, P0) -> List[TensorVariable]:
@@ -157,7 +158,8 @@ class BaseFilter(ABC):
             predicted_states,
             filtered_covariances,
             predicted_covariances,
-            log_likelihoods,
+            obs_mean,
+            obs_cov,
         ) = results
 
         predicted_states = pt.concatenate([pt.expand_dims(a0, axis=(0,)), predicted_states], axis=0)
@@ -170,8 +172,8 @@ class BaseFilter(ABC):
             predicted_states,
             filtered_covariances,
             predicted_covariances,
-            log_likelihoods.sum(),
-            log_likelihoods.squeeze(),
+            obs_mean,
+            obs_cov,
         ]
 
         return filter_results
@@ -225,46 +227,47 @@ class BaseFilter(ABC):
         """
         y, a, P, c, d, T, Z, R, H, Q = self.unpack_args(args)
 
-        y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
+        # y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
 
-        a_filtered, P_filtered, ll = self.update(
-            y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
-        )
+        a_filtered, P_filtered, obs_mu, obs_cov = self.update(y=y, a=a, c=c, d=d, P=P, Z=Z, H=H)
 
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
+        outputs = (a_filtered, a_hat, P_filtered, P_hat, obs_mu, obs_cov)
+        # updates = collect_default_updates(inputs=args, outputs=outputs)
 
-        return a_filtered, a_hat, P_filtered, P_hat, ll
+        return outputs
 
 
 class StandardFilter(BaseFilter):
-    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
+    def update(self, a, P, y, c, d, Z, H):
         """
         Conjugate update rule for the mean and covariance matrix, with log-likelihood en passant
         TODO: Verify these equations are correct if there are multiple endogenous variables.
         TODO: Is there a more elegant way to handle nans?
         """
-        v = y - Z.dot(a) - d
+        y_hat = d + Z.dot(a)
+        v = y - y_hat
 
         PZT = P.dot(Z.T)
         F = Z.dot(PZT) + H
 
-        F_inv = pt.linalg.solve(
-            F + self.eye_endog * all_nan_flag, self.eye_endog, assume_a="pos", check_finite=False
-        )
+        F_inv = pt.linalg.solve(stabilize(F), self.eye_endog, assume_a="pos", check_finite=False)
         K = PZT.dot(F_inv)
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
 
-        inner_term = matrix_dot(v.T, F_inv, v)
-        ll = pt.switch(
-            all_nan_flag,
-            0.0,
-            -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
-        )
+        # inner_term = matrix_dot(v.T, F_inv, v)
+        # ll = pt.switch(
+        #     all_nan_flag,
+        #     0.0,
+        #     -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
+        # )
 
-        return a_filtered, P_filtered, ll
+        # obs_rv = pm.MvNormal.dist(mu=y_hat, cov=F)
+
+        return a_filtered, P_filtered, y_hat, F
 
 
 class CholeskyFilter(BaseFilter):

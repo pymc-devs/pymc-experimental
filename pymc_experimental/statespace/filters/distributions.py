@@ -4,16 +4,8 @@ import pytensor
 import pytensor.tensor as pt
 from pymc.distributions.distribution import Distribution, SymbolicRandomVariable
 from pymc.distributions.shape_utils import get_support_shape_1d
-from pymc.gp.util import stabilize
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
-
-
-def step_fn(*args):
-    mu, cov, rng = args
-    next_rng, predicted_state = pm.MvNormal.dist(mu=mu, cov=stabilize(cov), rng=rng).owner.outputs
-
-    return predicted_state, {rng: next_rng}
 
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
@@ -93,87 +85,30 @@ def linear_guassian_logp(op, values, *args, **kwargs):
     return logp
 
 
-class FilteredStateSpaceRV(SymbolicRandomVariable):
+class SequenceMvNormalRV(SymbolicRandomVariable):
     default_output = 1
-    _print_name = ("FilteredStateSpaceRV", "\\operatorname{FilteredStateSpace}")
+    _print_name = ("SequenceMvNormal", "\\operatorname{SequenceMvNormal}")
 
     def update(self, node: Node):
         return {node.inputs[-1]: node.outputs[0]}
 
 
-class FilteredStateSpace(Distribution):
-    rv_op = FilteredStateSpaceRV
-
-    def __new__(cls, *args, **kwargs):
-        steps = get_support_shape_1d(
-            support_shape=None,
-            shape=None,
-            dims=kwargs.get("dims", None),
-            observed=kwargs.get("observed", None),
-            support_shape_offset=0,
-        )
-
-        return super().__new__(cls, *args, **kwargs)
-
-    @classmethod
-    def dist(cls, mus, covs, **kwargs):
-        steps = get_support_shape_1d(
-            support_shape=None, shape=kwargs.get("shape", None), support_shape_offset=0
-        )
-
-        return super().dist([mus, covs], **kwargs)
-
-    @classmethod
-    def rv_op(cls, mus, covs, size=None):
-        mus_, covs_ = mus.type(), covs.type()
-        rng = pytensor.shared(np.random.default_rng())
-
-        filtered_states, updates = pytensor.scan(
-            step_fn, sequences=[mus_, covs_], non_sequences=[rng]
-        )
-
-        (filtered_rng,) = tuple(updates.values())
-        filtered_state_space_op = LinearGaussianStateSpaceRV(
-            inputs=[mus_, covs_],
-            outputs=[filtered_rng, filtered_states],
-            ndim_supp=1,
-        )
-
-        filtered_state_space = filtered_state_space_op(mus, covs)
-        return filtered_state_space
-
-
-@_logprob.register(FilteredStateSpaceRV)
-def filtered_ss_logp(op, values, *args, **kwargs):
-    logp = pt.constant(0, "filtered_ss_logp")
-    return logp
-
-
-class PredictedStateSpaceRV(SymbolicRandomVariable):
-    default_output = 1
-    _print_name = ("PredictedStateSpaceRV", "\\operatorname{PredictedStateSpace}")
-
-    def update(self, node: Node):
-        return {node.inputs[-1]: node.outputs[0]}
-
-
-class PredictedStateSpace(Distribution):
-    rv_op = PredictedStateSpaceRV
+class SequenceMvNormal(Distribution):
+    rv_op = SequenceMvNormalRV
 
     def __new__(cls, *args, steps=None, **kwargs):
         steps = get_support_shape_1d(
             support_shape=steps,
             shape=None,
             dims=kwargs.get("dims", None),
-            observed=kwargs.get("observed", None),
+            observed=None,
             support_shape_offset=0,
         )
 
         return super().__new__(cls, *args, steps=steps, **kwargs)
 
     @classmethod
-    def dist(cls, mus, covs, logp, steps=None, **kwargs):
-
+    def dist(cls, mus, covs, steps=None, **kwargs):
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
         )
@@ -181,37 +116,42 @@ class PredictedStateSpace(Distribution):
         if steps is None:
             raise ValueError("Must specify steps or shape parameter")
 
-        return super().dist([mus, covs, logp, steps], **kwargs)
+        return super().dist([mus, covs, steps], **kwargs)
 
     @classmethod
-    def rv_op(cls, mus, covs, logp, steps, size=None):
-        mus_, covs_ = mus.type(), covs.type()
-        steps_ = steps.type()
+    def rv_op(cls, mus, covs, steps, size=None):
+
+        mus_, covs_, steps_ = mus.type(), covs.type(), steps.type()
+
         rng = pytensor.shared(np.random.default_rng())
 
-        predicted_states, updates = pytensor.scan(
-            step_fn, sequences=[mus_, covs_], non_sequences=[rng]
+        def step(mu, cov, rng):
+            new_rng, mvn = pm.MvNormal.dist(mu=mu, cov=cov, rng=rng).owner.outputs
+            return mvn, {rng: new_rng}
+
+        mvn_seq, updates = pytensor.scan(step, sequences=[mus_, covs_], non_sequences=[rng])
+        (seq_mvn_rng,) = tuple(updates.values())
+
+        mvn_seq_op = SequenceMvNormalRV(
+            inputs=[mus_, covs_, steps_], outputs=[seq_mvn_rng, mvn_seq.T], ndim_supp=1
         )
 
-        (predicted_rng,) = tuple(updates.values())
-        predicted_state_space_op = PredictedStateSpaceRV(
-            inputs=[mus_, covs_, steps_],
-            outputs=[predicted_rng, predicted_states],
-            ndim_supp=1,
+        mvn_seq = mvn_seq_op(mus, covs, steps)
+        return mvn_seq
+
+
+@_logprob.register(SequenceMvNormalRV)
+def sequence_mvnormal_logp(op, values, mus, covs, steps, rng, **kwargs):
+    def step_logp(x, mu, cov):
+        x = pt.atleast_1d(x)
+        data_ndim = x.ndim
+        logp = pt.switch(
+            pt.eq(data_ndim, 1),
+            pm.Normal.logp(x.ravel(), mu.ravel(), cov.ravel() ** 0.5),
+            pm.MvNormal.logp(x, mu, cov),
         )
+        return logp.squeeze()
 
-        predicted_state_space = predicted_state_space_op(mus, covs, steps)
-        return predicted_state_space
+    logp, updates = pytensor.scan(step_logp, sequences=[values, mus, covs], n_steps=steps)
 
-
-@_logprob.register(PredictedStateSpaceRV)
-def predicted_ss_logp(op, values, mus, covs, logp, rng, **kwargs):
     return logp
-
-
-class SmoothedStateSpaceRV(SymbolicRandomVariable):
-    default_output = 1
-    _print_name = ("SmoothedStateSpaceRV", "\\operatorname{SmoothedStateSpace}")
-
-    def update(self, node: Node):
-        return {node.inputs[-1]: node.outputs[0]}
