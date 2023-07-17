@@ -44,6 +44,8 @@ Model Transformations
 
    conditioning.do
    conditioning.observe
+   conditioning.change_value_transforms
+   conditioning.remove_value_transforms
 
 
 Utils

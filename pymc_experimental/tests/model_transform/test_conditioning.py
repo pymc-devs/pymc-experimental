@@ -2,10 +2,16 @@ import arviz as az
 import numpy as np
 import pymc as pm
 import pytest
+from pymc.distributions.transforms import logodds
 from pymc.variational.minibatch_rv import create_minibatch_rv
 from pytensor import config
 
-from pymc_experimental.model_transform.conditioning import do, observe
+from pymc_experimental.model_transform.conditioning import (
+    change_value_transforms,
+    do,
+    observe,
+    remove_value_transforms,
+)
 
 
 def test_observe():
@@ -214,3 +220,60 @@ def test_do_prune(prune):
         assert set(do_m.named_vars) == {"x1", "z", "llike"}
     else:
         assert set(do_m.named_vars) == orig_named_vars
+
+
+def test_change_value_transforms():
+    with pm.Model() as base_m:
+        p = pm.Uniform("p", 0, 1, transform=None)
+        w = pm.Binomial("w", n=9, p=p, observed=6)
+        assert base_m.rvs_to_transforms[p] is None
+        assert base_m.rvs_to_values[p].name == "p"
+
+    with change_value_transforms(base_m, {"p": logodds}) as transformed_p:
+        new_p = transformed_p["p"]
+        assert transformed_p.rvs_to_transforms[new_p] == logodds
+        assert transformed_p.rvs_to_values[new_p].name == "p_logodds__"
+        mean_q = pm.find_MAP(progressbar=False)
+
+    with change_value_transforms(transformed_p, {"p": None}) as untransformed_p:
+        new_p = untransformed_p["p"]
+        assert untransformed_p.rvs_to_transforms[new_p] is None
+        assert untransformed_p.rvs_to_values[new_p].name == "p"
+        std_q = ((1 / pm.find_hessian(mean_q, vars=[new_p])) ** 0.5)[0]
+
+    np.testing.assert_allclose(np.round(mean_q["p"], 2), 0.67)
+    np.testing.assert_allclose(np.round(std_q[0], 2), 0.16)
+
+
+def test_change_value_transforms_error():
+    with pm.Model() as m:
+        x = pm.Uniform("x", observed=5.0)
+
+    with pytest.raises(ValueError, match="All keys must be free variables in the model"):
+        change_value_transforms(m, {x: logodds})
+
+
+def test_remove_value_transforms():
+    with pm.Model() as base_m:
+        p = pm.Uniform("p", transform=logodds)
+        q = pm.Uniform("q", transform=logodds)
+
+    new_m = remove_value_transforms(base_m)
+    new_p = new_m["p"]
+    new_q = new_m["q"]
+    assert new_m.rvs_to_transforms == {new_p: None, new_q: None}
+
+    new_m = remove_value_transforms(base_m, [p, q])
+    new_p = new_m["p"]
+    new_q = new_m["q"]
+    assert new_m.rvs_to_transforms == {new_p: None, new_q: None}
+
+    new_m = remove_value_transforms(base_m, [p])
+    new_p = new_m["p"]
+    new_q = new_m["q"]
+    assert new_m.rvs_to_transforms == {new_p: None, new_q: logodds}
+
+    new_m = remove_value_transforms(base_m, ["q"])
+    new_p = new_m["p"]
+    new_q = new_m["q"]
+    assert new_m.rvs_to_transforms == {new_p: logodds, new_q: None}
