@@ -1,4 +1,7 @@
+from typing import List, Sequence, Union
+
 from pymc import Model
+from pytensor import Variable
 from pytensor.graph import ancestors
 
 from pymc_experimental.utils.model_fgraph import (
@@ -7,6 +10,8 @@ from pymc_experimental.utils.model_fgraph import (
     fgraph_from_model,
     model_from_fgraph,
 )
+
+ModelVariable = Union[Variable, str]
 
 
 def prune_vars_detached_from_observed(model: Model) -> Model:
@@ -33,3 +38,9 @@ def prune_vars_detached_from_observed(model: Model) -> Model:
     for node_to_remove in nodes_to_remove:
         fgraph.remove_node(node_to_remove)
     return model_from_fgraph(fgraph)
+
+
+def parse_vars(model: Model, vars: Union[ModelVariable, Sequence[ModelVariable]]) -> List[Variable]:
+    if not isinstance(vars, (list, tuple)):
+        vars = (vars,)
+    return [model[var] if isinstance(var, str) else var for var in vars]

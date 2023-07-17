@@ -1,16 +1,23 @@
-from typing import Any, Dict, List, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from pymc import Model
+from pymc.logprob.transforms import RVTransform
 from pymc.pytensorf import _replace_vars_in_graphs
+from pymc.util import get_transformed_name, get_untransformed_name
 from pytensor.tensor import TensorVariable
 
-from pymc_experimental.model_transform.basic import prune_vars_detached_from_observed
+from pymc_experimental.model_transform.basic import (
+    ModelVariable,
+    parse_vars,
+    prune_vars_detached_from_observed,
+)
 from pymc_experimental.utils.model_fgraph import (
     ModelDeterministic,
     ModelFreeRV,
     extract_dims,
     fgraph_from_model,
     model_deterministic,
+    model_free_rv,
     model_from_fgraph,
     model_named,
     model_observed_rv,
@@ -206,3 +213,132 @@ def do(
     if prune_vars:
         return prune_vars_detached_from_observed(model)
     return model
+
+
+def change_value_transforms(
+    model: Model,
+    vars_to_transforms: Dict[ModelVariable, Union[RVTransform, None]],
+) -> Model:
+    """Change the value variables transforms in the model
+
+    Parameters
+    ----------
+    model : Model
+    vars_to_transforms : Dict
+        Dictionary that maps RVs to new transforms to be applied to the respective value variables
+
+    Returns
+    -------
+    new_model : Model
+        Model with the updated transformed value variables
+
+    Examples
+    --------
+    Extract untransformed space Hessian after finding transformed space MAP
+
+    .. code-block:: python
+
+        import pymc as pm
+        from pymc.distributions.transforms import logodds
+        from pymc_experimental.model_transform.conditioning import change_value_transforms
+
+        with pm.Model() as base_m:
+            p = pm.Uniform("p", 0, 1, transform=None)
+            w = pm.Binomial("w", n=9, p=p, observed=6)
+
+        with change_value_transforms(base_m, {"p": logodds}) as transformed_p:
+            mean_q = pm.find_MAP()
+
+        with change_value_transforms(transformed_p, {"p": None}) as untransformed_p:
+            new_p = untransformed_p['p']
+            std_q = ((1 / pm.find_hessian(mean_q, vars=[new_p])) ** 0.5)[0]
+
+        print(f"  Mean, Standard deviation\np {mean_q['p']:.2}, {std_q[0]:.2}")
+        #   Mean, Standard deviation
+        # p 0.67, 0.16
+
+    """
+    vars_to_transforms = {
+        parse_vars(model, var)[0]: transform for var, transform in vars_to_transforms.items()
+    }
+
+    if set(vars_to_transforms.keys()) - set(model.free_RVs):
+        raise ValueError(f"All keys must be free variables in the model: {model.free_RVs}")
+
+    fgraph, memo = fgraph_from_model(model)
+
+    vars_to_transforms = {memo[var]: transform for var, transform in vars_to_transforms.items()}
+    replacements = {}
+    for node in fgraph.apply_nodes:
+        if not isinstance(node.op, ModelFreeRV):
+            continue
+
+        [dummy_rv] = node.outputs
+        if dummy_rv not in vars_to_transforms:
+            continue
+
+        transform = vars_to_transforms[dummy_rv]
+
+        rv, value, *dims = node.inputs
+
+        new_value = rv.type()
+        try:
+            untransformed_name = get_untransformed_name(value.name)
+        except ValueError:
+            untransformed_name = value.name
+        if transform:
+            new_name = get_transformed_name(untransformed_name, transform)
+        else:
+            new_name = untransformed_name
+        new_value.name = new_name
+
+        new_dummy_rv = model_free_rv(rv, new_value, transform, *dims)
+        replacements[dummy_rv] = new_dummy_rv
+
+    toposort_replace(fgraph, tuple(replacements.items()))
+    return model_from_fgraph(fgraph)
+
+
+def remove_value_transforms(
+    model: Model,
+    vars: Optional[Sequence[ModelVariable]] = None,
+) -> Model:
+    """Remove the value variables transforms in the model
+
+    Parameters
+    ----------
+    model : Model
+    vars : Model variables, optional
+        Model variables for which to remove transforms. Defaults to all transformed variables
+
+    Returns
+    -------
+    new_model : Model
+        Model with the removed transformed value variables
+
+    Examples
+    --------
+    Extract untransformed space Hessian after finding transformed space MAP
+
+    .. code-block:: python
+
+        import pymc as pm
+        from pymc_experimental.model_transform.conditioning import remove_value_transforms
+
+        with pm.Model() as transformed_m:
+            p = pm.Uniform("p", 0, 1)
+            w = pm.Binomial("w", n=9, p=p, observed=6)
+            mean_q = pm.find_MAP()
+
+        with remove_value_transforms(transformed_m) as untransformed_m:
+            new_p = untransformed_m["p"]
+            std_q = ((1 / pm.find_hessian(mean_q, vars=[new_p])) ** 0.5)[0]
+            print(f"  Mean, Standard deviation\np {mean_q['p']:.2}, {std_q[0]:.2}")
+
+        #   Mean, Standard deviation
+        # p 0.67, 0.16
+
+    """
+    if vars is None:
+        vars = model.free_RVs
+    return change_value_transforms(model, {var: None for var in vars})
