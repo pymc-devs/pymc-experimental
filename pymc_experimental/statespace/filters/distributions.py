@@ -2,9 +2,11 @@ import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
+from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Distribution, SymbolicRandomVariable
-from pymc.distributions.shape_utils import get_support_shape_1d
+from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
 from pymc.logprob.abstract import _logprob
+from pymc.logprob.basic import logp
 from pytensor.graph.basic import Node
 
 
@@ -96,62 +98,71 @@ class SequenceMvNormalRV(SymbolicRandomVariable):
 class SequenceMvNormal(Distribution):
     rv_op = SequenceMvNormalRV
 
-    def __new__(cls, *args, steps=None, **kwargs):
-        steps = get_support_shape_1d(
-            support_shape=steps,
+    def __new__(cls, *args, **kwargs):
+        support_shape = get_support_shape(
+            support_shape=None,
             shape=None,
             dims=kwargs.get("dims", None),
             observed=None,
-            support_shape_offset=0,
+            ndim_supp=2,
         )
 
-        return super().__new__(cls, *args, steps=steps, **kwargs)
+        return super().__new__(cls, *args, support_shape=support_shape, **kwargs)
 
     @classmethod
-    def dist(cls, mus, covs, steps=None, **kwargs):
-        steps = get_support_shape_1d(
-            support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
+    def dist(cls, mus, covs, support_shape=None, **kwargs):
+        support_shape = get_support_shape(
+            support_shape=None,
+            shape=None,
+            dims=kwargs.get("dims", None),
+            observed=kwargs.get("observed", None),
+            ndim_supp=2,
         )
 
-        if steps is None:
-            raise ValueError("Must specify steps or shape parameter")
+        if support_shape is None:
+            support_shape = pt.as_tensor_variable(())
 
-        return super().dist([mus, covs, steps], **kwargs)
+        return super().dist([mus, covs, support_shape], **kwargs)
 
     @classmethod
-    def rv_op(cls, mus, covs, steps, size=None):
+    def rv_op(cls, mus, covs, support_shape, size=None):
+        if size is not None:
+            batch_size = size
+        else:
+            batch_size = support_shape
 
-        mus_, covs_, steps_ = mus.type(), covs.type(), steps.type()
+        steps, mvn_ndim = mus.shape[0], mus.shape[1]
+        mus_, covs_, support_shape_ = mus.type(), covs.type(), support_shape.type()
+        steps_, mvn_ndim_ = steps.type(), mvn_ndim.type()
 
         rng = pytensor.shared(np.random.default_rng())
 
         def step(mu, cov, rng):
-            new_rng, mvn = pm.MvNormal.dist(mu=mu, cov=cov, rng=rng).owner.outputs
+            new_rng, mvn = pm.MvNormal.dist(mu=mu, cov=cov, rng=rng, size=batch_size).owner.outputs
             return mvn, {rng: new_rng}
 
         mvn_seq, updates = pytensor.scan(step, sequences=[mus_, covs_], non_sequences=[rng])
         (seq_mvn_rng,) = tuple(updates.values())
 
         mvn_seq_op = SequenceMvNormalRV(
-            inputs=[mus_, covs_, steps_], outputs=[seq_mvn_rng, mvn_seq.T], ndim_supp=1
+            inputs=[mus_, covs_, steps_, mvn_ndim_], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
         )
 
-        mvn_seq = mvn_seq_op(mus, covs, steps)
+        mvn_seq = mvn_seq_op(mus, covs, steps, mvn_ndim)
         return mvn_seq
 
 
 @_logprob.register(SequenceMvNormalRV)
-def sequence_mvnormal_logp(op, values, mus, covs, steps, rng, **kwargs):
+def sequence_mvnormal_logp(op, values, mus, covs, steps, mvn_ndim, rng, **kwargs):
     def step_logp(x, mu, cov):
-        x = pt.atleast_1d(x)
-        data_ndim = x.ndim
-        logp = pt.switch(
-            pt.eq(data_ndim, 1),
-            pm.Normal.logp(x.ravel(), mu.ravel(), cov.ravel() ** 0.5),
-            pm.MvNormal.logp(x, mu, cov),
-        )
-        return logp.squeeze()
+        return logp(pm.MvNormal.dist(mu, cov), x)
 
-    logp, updates = pytensor.scan(step_logp, sequences=[values, mus, covs], n_steps=steps)
+    logp_values, updates = pytensor.scan(
+        step_logp, sequences=[values[0], mus, covs], n_steps=steps, strict=True
+    )
 
-    return logp
+    return check_parameters(
+        logp_values,
+        pt.eq(values[0].shape[0], steps),
+        msg="Observed data and parameters must have the same number of timesteps (dimension 0)",
+    )
