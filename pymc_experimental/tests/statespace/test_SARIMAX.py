@@ -59,11 +59,11 @@ def test_SARIMAX_update_matches_statsmodels(data, order, matrix):
     with pm.Model() as pm_mod:
         x0 = pm.Deterministic("x0", pt.zeros(mod.k_states))
         ma_params = pm.Deterministic(
-            "theta",
+            "ma_params",
             pt.as_tensor_variable(np.array([param_d[k] for k in param_d if k.startswith("ma.")])),
         )
         ar_params = pm.Deterministic(
-            "rho",
+            "ar_params",
             pt.as_tensor_variable(np.array([param_d[k] for k in param_d if k.startswith("ar.")])),
         )
         state_cov = pm.Deterministic(

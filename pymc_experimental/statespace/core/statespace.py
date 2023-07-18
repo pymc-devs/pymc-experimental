@@ -181,7 +181,7 @@ class PyMCStateSpace:
             )
         return pt.concatenate(theta)
 
-    def build_statespace_graph(self, data, mode=None) -> None:
+    def build_statespace_graph(self, data, mode=None, return_updates=False) -> None:
         """
         Given parameter vector theta, constructs the full computational graph describing the state space model.
         Must be called inside a PyMC model context.
@@ -192,16 +192,33 @@ class PyMCStateSpace:
             theta = self.gather_required_random_variables()
             self.update(theta)
 
-            (
-                filtered_states,
-                predicted_states,
-                filtered_covariances,
-                predicted_covariances,
-                log_likelihood,
-                ll_obs,
-            ) = self.kalman_filter.build_graph(
-                pt.as_tensor_variable(data), *self.unpack_statespace(), mode=mode
+            filter_outputs = self.kalman_filter.build_graph(
+                pt.as_tensor_variable(data),
+                *self.unpack_statespace(),
+                mode=mode,
+                return_updates=return_updates,
             )
+
+            if return_updates:
+                (
+                    filtered_states,
+                    predicted_states,
+                    observed_states,
+                    filtered_covariances,
+                    predicted_covariances,
+                    observed_covariances,
+                    ll_obs,
+                ), updates = filter_outputs
+            else:
+                (
+                    filtered_states,
+                    predicted_states,
+                    observed_states,
+                    filtered_covariances,
+                    predicted_covariances,
+                    observed_covariances,
+                    ll_obs,
+                ) = filter_outputs
 
             pm.Deterministic("filtered_states", filtered_states)
             pm.Deterministic("predicted_states", predicted_states)
@@ -209,7 +226,7 @@ class PyMCStateSpace:
             pm.Deterministic("predicted_covariances", predicted_covariances)
             pm.Deterministic("filtered_covariances", filtered_covariances)
 
-            pm.Potential("log_likelihood", log_likelihood)
+            pm.Potential("log_likelihood", ll_obs)
 
     def build_smoother_graph(self, mode=None):
         pymc_model = modelcontext(None)

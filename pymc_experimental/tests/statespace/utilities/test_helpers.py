@@ -39,9 +39,10 @@ def initialize_filter(kfilter):
     (
         filtered_states,
         predicted_states,
+        observed_states,
         filtered_covs,
         predicted_covs,
-        log_likelihood,
+        observed_covs,
         ll_obs,
     ) = kfilter.build_graph(*inputs)
 
@@ -54,7 +55,7 @@ def initialize_filter(kfilter):
         filtered_covs,
         predicted_covs,
         smoothed_covs,
-        log_likelihood,
+        ll_obs.sum(),
         ll_obs,
     ]
 

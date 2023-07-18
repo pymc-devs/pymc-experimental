@@ -46,6 +46,7 @@ filter_names = [
     "SingleTimeSeriesFilter",
     "SteadyStateFilter",
 ]
+
 output_names = [
     "filtered_states",
     "predicted_states",
@@ -119,9 +120,10 @@ def f_standard_nd():
     (
         filtered_states,
         predicted_states,
+        observed_states,
         filtered_covs,
         predicted_covs,
-        log_likelihood,
+        observed_covs,
         ll_obs,
     ) = StandardFilter().build_graph(*inputs)
 
@@ -134,7 +136,7 @@ def f_standard_nd():
         filtered_covs,
         predicted_covs,
         smoothed_covs,
-        log_likelihood,
+        ll_obs.sum(),
         ll_obs,
     ]
 

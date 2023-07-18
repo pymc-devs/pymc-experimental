@@ -108,7 +108,9 @@ class BaseFilter(ABC):
 
         return y, a0, P0, c, d, T, Z, R, H, Q
 
-    def build_graph(self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None) -> List[TensorVariable]:
+    def build_graph(
+        self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None, return_updates=False
+    ) -> List[TensorVariable]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
 
@@ -135,7 +137,7 @@ class BaseFilter(ABC):
         results, updates = pytensor.scan(
             self.kalman_step,
             sequences=[data] + sequences,
-            outputs_info=[None, a0, None, P0, None, None],
+            outputs_info=[None, a0, None, P0, None, None, None],
             non_sequences=non_sequences,
             name="forward_kalman_pass",
             mode=get_mode(mode),
@@ -143,7 +145,9 @@ class BaseFilter(ABC):
 
         filter_results = self._postprocess_scan_results(results, a0, P0)
 
-        return filter_results, updates
+        if return_updates:
+            return filter_results, updates
+        return filter_results
 
     @staticmethod
     def _postprocess_scan_results(results, a0, P0) -> List[TensorVariable]:
@@ -156,10 +160,11 @@ class BaseFilter(ABC):
         (
             filtered_states,
             predicted_states,
+            observed_states,
             filtered_covariances,
             predicted_covariances,
-            obs_mean,
-            obs_cov,
+            observed_covariances,
+            loglike_obs,
         ) = results
 
         predicted_states = pt.concatenate([pt.expand_dims(a0, axis=(0,)), predicted_states], axis=0)
@@ -170,10 +175,11 @@ class BaseFilter(ABC):
         filter_results = [
             filtered_states,
             predicted_states,
+            observed_states,
             filtered_covariances,
             predicted_covariances,
-            obs_mean,
-            obs_cov,
+            observed_covariances,
+            loglike_obs,
         ]
 
         return filter_results
@@ -211,12 +217,20 @@ class BaseFilter(ABC):
     @staticmethod
     def update(
         a, P, y, c, d, Z, H, all_nan_flag
-    ) -> Tuple[TensorVariable, TensorVariable, TensorVariable]:
+    ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
         raise NotImplementedError
 
     def kalman_step(
         self, *args
-    ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
+    ) -> Tuple[
+        TensorVariable,
+        TensorVariable,
+        TensorVariable,
+        TensorVariable,
+        TensorVariable,
+        TensorVariable,
+        TensorVariable,
+    ]:
         """
         The timing convention follows [1]. a0 and P0 are taken to be predicted states, so we begin
         with an update step rather than a predict step.
@@ -227,19 +241,21 @@ class BaseFilter(ABC):
         """
         y, a, P, c, d, T, Z, R, H, Q = self.unpack_args(args)
 
-        # y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
+        y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
 
-        a_filtered, P_filtered, obs_mu, obs_cov = self.update(y=y, a=a, c=c, d=d, P=P, Z=Z, H=H)
+        a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
+            y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
+        )
 
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
-        outputs = (a_filtered, a_hat, P_filtered, P_hat, obs_mu, obs_cov)
+        outputs = (a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll)
         # updates = collect_default_updates(inputs=args, outputs=outputs)
 
         return outputs
 
 
 class StandardFilter(BaseFilter):
-    def update(self, a, P, y, c, d, Z, H):
+    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         """
         Conjugate update rule for the mean and covariance matrix, with log-likelihood en passant
         TODO: Verify these equations are correct if there are multiple endogenous variables.
@@ -258,21 +274,20 @@ class StandardFilter(BaseFilter):
         a_filtered = a + K.dot(v)
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
 
-        # inner_term = matrix_dot(v.T, F_inv, v)
-        # ll = pt.switch(
-        #     all_nan_flag,
-        #     0.0,
-        #     -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
-        # )
+        inner_term = matrix_dot(v.T, F_inv, v)
+        ll = pt.switch(
+            all_nan_flag,
+            0.0,
+            -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
+        )
 
-        # obs_rv = pm.MvNormal.dist(mu=y_hat, cov=F)
-
-        return a_filtered, P_filtered, y_hat, F
+        return a_filtered, P_filtered, y_hat, F, ll
 
 
 class CholeskyFilter(BaseFilter):
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
-        v = y - Z.dot(a) - d
+        y_hat = Z.dot(a) + d
+        v = y - y_hat
 
         PZT = P.dot(Z.T)
 
@@ -301,7 +316,7 @@ class CholeskyFilter(BaseFilter):
             ).ravel()[0],
         )
 
-        return a_filtered, P_filtered, ll
+        return a_filtered, P_filtered, y_hat, F, ll
 
 
 class SingleTimeseriesFilter(BaseFilter):
@@ -333,7 +348,7 @@ class SingleTimeseriesFilter(BaseFilter):
 
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
 
-        return a_filtered, P_filtered, ll
+        return a_filtered, P_filtered, y_hat, F, ll
 
 
 class SteadyStateFilter(BaseFilter):
@@ -373,7 +388,7 @@ class SteadyStateFilter(BaseFilter):
         results, updates = pytensor.scan(
             self.kalman_step,
             sequences=[data],
-            outputs_info=[None, a0, None, P_steady, None],
+            outputs_info=[None, a0, None, P_steady, None, None, None],
             non_sequences=[c, d, F_inv, T, Z, R, H, Q],
             name="forward_kalman_pass",
             mode=get_mode(mode),
@@ -382,7 +397,8 @@ class SteadyStateFilter(BaseFilter):
         return self._postprocess_scan_results(results, a0, P0)
 
     def update(self, a, P, c, d, F_inv, y, Z, H, all_nan_flag):
-        v = y - Z.dot(a)
+        y_hat = Z.dot(a) + d
+        v = y - y_hat
 
         PZT = P.dot(Z.T)
 
@@ -401,7 +417,7 @@ class SteadyStateFilter(BaseFilter):
             -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
         )
 
-        return a_filtered, P_filtered, ll
+        return a_filtered, P_filtered, y_hat, F, ll
 
     def kalman_step(self, y, a, P, c, d, F_inv, T, Z, R, H, Q):
         """
@@ -409,7 +425,7 @@ class SteadyStateFilter(BaseFilter):
         """
 
         y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
-        a_filtered, P_filtered, ll = self.update(
+        a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
             y=y_masked,
             a=a,
             P=P,
@@ -423,7 +439,7 @@ class SteadyStateFilter(BaseFilter):
 
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
-        return a_filtered, a_hat, P_filtered, P_hat, ll
+        return a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll
 
 
 class UnivariateFilter(BaseFilter):
@@ -444,7 +460,8 @@ class UnivariateFilter(BaseFilter):
 
     @staticmethod
     def _univariate_inner_filter_step(y, Z_row, d_row, sigma_H, nan_flag, a, P):
-        v = y - Z_row.dot(a) - d_row
+        y_hat = Z_row.dot(a) + d_row
+        v = y - y_hat
 
         PZT = P.dot(Z_row.T).squeeze()
         F = Z_row.dot(PZT) + sigma_H
@@ -462,7 +479,7 @@ class UnivariateFilter(BaseFilter):
         P_filtered = P - pt.outer(K, K) * F * (1 - F_zero_flag)
         ll_inner = (pt.log(F) + v**2 / F) * (1 - F_zero_flag)
 
-        return a_filtered, P_filtered, ll_inner
+        return a_filtered, P_filtered, y_hat, F, ll_inner
 
     def kalman_step(self, y, a, P, c, d, T, Z, R, H, Q):
         nan_mask = pt.isnan(y)
@@ -475,16 +492,21 @@ class UnivariateFilter(BaseFilter):
         result, updates = pytensor.scan(
             self._univariate_inner_filter_step,
             sequences=[y_masked, Z_masked, d, pt.diag(H_masked), nan_mask],
-            outputs_info=[a, P, None],
+            outputs_info=[a, P, None, None, None],
             mode=get_mode(self.mode),
             name="univariate_inner_scan",
         )
 
-        a_filtered, P_filtered, ll_inner = result
-        a_filtered, P_filtered = a_filtered[-1], P_filtered[-1]
+        a_filtered, P_filtered, obs_mu, obs_cov, ll_inner = result
+        a_filtered, P_filtered, obs_mu, obs_cov = (
+            a_filtered[-1],
+            P_filtered[-1],
+            obs_mu[-1],
+            obs_cov[-1],
+        )
 
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         ll = -0.5 * ((pt.neq(ll_inner, 0).sum()) * MVN_CONST + ll_inner.sum())
 
-        return a_filtered, a_hat, P_filtered, P_hat, ll
+        return a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll

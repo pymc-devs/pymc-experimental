@@ -13,17 +13,24 @@ class BayesianARMA(PyMCStateSpace):
         order: Tuple[int, int],
         stationary_initialization: bool = True,
         filter_type: str = "standard",
+        state_structure: str = "fast",
         verbose=True,
     ):
 
         # Model order
         self.p, self.q = order
         self.stationary_initialization = stationary_initialization
+        self.state_structure = state_structure
 
         # k_states = max(self.p, self.q + 1)
         p_max = max(1, self.p)
         q_max = max(1, self.q)
-        k_states = p_max + q_max
+
+        if self.state_structure == "fast":
+            k_states = max(self.p, self.q + 1)
+        elif self.state_structure == "intrepretable":
+            k_states = p_max + q_max
+
         k_posdef = 1
         k_endog = 1
 
@@ -32,13 +39,19 @@ class BayesianARMA(PyMCStateSpace):
         # Initialize the matrices
         self.ssm["design"] = np.r_[[1.0], np.zeros(k_states - 1)][None]
 
-        transition = np.eye(k_states, k=-1)
-        transition[-q_max, p_max - 1] = 0
-        self.ssm["transition"] = transition
+        if self.state_structure == "fast":
+            transition = np.eye(k_states, k=1)
+            selection = np.r_[[[1.0]], np.zeros(k_states - 1)[:, None]]
 
-        selection = np.r_[[[1.0]], np.zeros(k_states - 1)[:, None]]
-        selection[-q_max, 0] = 1
+        elif self.state_structure == "interpretable":
+            transition = np.eye(k_states, k=-1)
+            transition[-q_max, p_max - 1] = 0
+
+            selection = np.r_[[[1.0]], np.zeros(k_states - 1)[:, None]]
+            selection[-q_max, 0] = 1
+
         self.ssm["selection"] = selection
+        self.ssm["transition"] = transition
 
         self.ssm["initial_state"] = np.zeros((k_states,))
 
@@ -46,14 +59,26 @@ class BayesianARMA(PyMCStateSpace):
 
         # Cache some indices
         self._state_cov_idx = ("state_cov",) + np.diag_indices(k_posdef)
-        self._ar_param_idx = ("transition",) + (
-            np.zeros(self.p, dtype=int),
-            np.arange(self.p, dtype=int),
-        )
-        self._ma_param_idx = ("transition",) + (
-            np.zeros(self.q, dtype=int),
-            np.arange(p_max, p_max + self.q, dtype=int),
-        )
+
+        if self.state_structure == "fast":
+            self._ar_param_idx = ("transition",) + (
+                np.arange(self.p, dtype=int),
+                np.zeros(self.p, dtype=int),
+            )
+            self._ma_param_idx = ("selection",) + (
+                np.arange(1, self.q + 1, dtype=int),
+                np.zeros(self.q, dtype=int),
+            )
+
+        elif self.state_structure == "interpretable":
+            self._ar_param_idx = ("transition",) + (
+                np.zeros(self.p, dtype=int),
+                np.arange(self.p, dtype=int),
+            )
+            self._ma_param_idx = ("transition",) + (
+                np.zeros(self.q, dtype=int),
+                np.arange(p_max, p_max + self.q, dtype=int),
+            )
 
     @property
     def param_names(self):
@@ -69,12 +94,15 @@ class BayesianARMA(PyMCStateSpace):
 
     @property
     def state_names(self):
-        states = ["data"]
-        if self.p > 0:
-            states += [f"L{i+1}.data" for i in range(self.p - 1)]
-        states += ["innovations"]
-        if self.q > 0:
-            states += [f"L{i+1}.innovations" for i in range(self.q - 1)]
+        if self.state_structure == "fast":
+            states = ["data"] + [f"state_{i+1}" for i in range(self.k_states)]
+        else:
+            states = ["data"]
+            if self.p > 0:
+                states += [f"L{i+1}.data" for i in range(self.p - 1)]
+            states += ["innovations"]
+            if self.q > 0:
+                states += [f"L{i+1}.innovations" for i in range(self.q - 1)]
         return states
 
     @property
