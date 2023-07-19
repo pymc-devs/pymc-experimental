@@ -12,12 +12,12 @@ _log = logging.getLogger("pymc.experimental.statespace")
 
 
 class BayesianLocalLevel(PyMCStateSpace):
-    def __init__(self):
+    def __init__(self, verbose=False):
         k_states = 2
         k_posdef = 2
         k_endog = 1
 
-        super().__init__(k_endog, k_states, k_posdef)
+        super().__init__(k_endog, k_states, k_posdef, verbose=verbose)
 
         # Initialize the matrices
         self.ssm["design"] = np.array([[1.0, 0.0]])

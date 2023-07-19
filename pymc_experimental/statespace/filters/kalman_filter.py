@@ -351,7 +351,7 @@ class SingleTimeseriesFilter(BaseFilter):
 
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
 
-        return a_filtered, P_filtered, y_hat, F, ll
+        return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll
 
 
 class SteadyStateFilter(BaseFilter):
