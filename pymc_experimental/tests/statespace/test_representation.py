@@ -12,36 +12,44 @@ floatX = pytensor.config.floatX
 atol = 1e-12 if floatX == "float64" else 1e-6
 
 
+def unpack_ssm_dims(ssm):
+    p = ssm.k_endog
+    m = ssm.k_states
+    r = ssm.k_posdef
+
+    return p, m, r
+
+
 class BasicFunctionality(unittest.TestCase):
     def test_numpy_to_pytensor(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
         X = np.eye(5)
         X_pt = ssm._numpy_to_pytensor("transition", X)
+
         self.assertTrue(isinstance(X_pt, pt.TensorVariable))
+        assert_allclose(ssm["transition"].shape.data, X.shape)
+
+        assert ssm["transition"].name == "transition"
 
     def test_default_shapes_full_rank(self):
         ssm = PytensorRepresentation(k_endog=5, k_states=5, k_posdef=5)
-        p = ssm.k_endog
-        m = ssm.k_states
-        r = ssm.k_posdef
+        p, m, r = unpack_ssm_dims(ssm)
 
-        self.assertTrue(ssm["design"].eval().shape == (p, m))
-        self.assertTrue(ssm["transition"].eval().shape == (m, m))
-        self.assertTrue(ssm["selection"].eval().shape == (m, r))
-        self.assertTrue(ssm["state_cov"].eval().shape == (r, r))
-        self.assertTrue(ssm["obs_cov"].eval().shape == (p, p))
+        assert_allclose(ssm["design"].shape.data, (p, m))
+        assert_allclose(ssm["transition"].shape.data, (m, m))
+        assert_allclose(ssm["selection"].shape.data, (m, r))
+        assert_allclose(ssm["state_cov"].shape.data, (r, r))
+        assert_allclose(ssm["obs_cov"].shape.data, (p, p))
 
     def test_default_shapes_low_rank(self):
         ssm = PytensorRepresentation(k_endog=5, k_states=5, k_posdef=2)
-        p = ssm.k_endog
-        m = ssm.k_states
-        r = ssm.k_posdef
+        p, m, r = unpack_ssm_dims(ssm)
 
-        self.assertTrue(ssm["design"].eval().shape == (p, m))
-        self.assertTrue(ssm["transition"].eval().shape == (m, m))
-        self.assertTrue(ssm["selection"].eval().shape == (m, r))
-        self.assertTrue(ssm["state_cov"].eval().shape == (r, r))
-        self.assertTrue(ssm["obs_cov"].eval().shape == (p, p))
+        assert_allclose(ssm["design"].shape.data, (p, m))
+        assert_allclose(ssm["transition"].shape.data, (m, m))
+        assert_allclose(ssm["selection"].shape.data, (m, r))
+        assert_allclose(ssm["state_cov"].shape.data, (r, r))
+        assert_allclose(ssm["obs_cov"].shape.data, (p, p))
 
     def test_matrix_assignment(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=2)
@@ -54,9 +62,14 @@ class BasicFunctionality(unittest.TestCase):
         assert_allclose(ssm["transition"].eval()[0, :], 2.7, atol=atol)
         assert_allclose(ssm["selection"].eval()[-1, -1], 9.9, atol=atol)
 
+        assert ssm["design"].name == "design"
+        assert ssm["transition"].name == "transition"
+        assert ssm["selection"].name == "selection"
+
     def test_build_representation_from_data(self):
         p, m, r, n = 3, 6, 1, 10
         inputs = [data, a0, P0, c, d, T, Z, R, H, Q] = make_test_inputs(p, m, r, n, missing_data=0)
+
         ssm = PytensorRepresentation(
             k_endog=p,
             k_states=m,
@@ -68,7 +81,10 @@ class BasicFunctionality(unittest.TestCase):
             obs_cov=H,
             initial_state=a0,
             initial_state_cov=P0,
+            state_intercept=c,
+            obs_intercept=d,
         )
+
         names = [
             "initial_state",
             "initial_state_cov",
@@ -80,8 +96,13 @@ class BasicFunctionality(unittest.TestCase):
             "obs_cov",
             "state_cov",
         ]
+
         for name, X in zip(names, inputs[1:]):
             assert_allclose(X, ssm[name].eval(), err_msg=name)
+
+        for name, X in zip(names, inputs[1:]):
+            assert ssm[name].name == name
+            assert_allclose(ssm[name].shape.data, X.shape, err_msg=f"{name} shape test")
 
     def test_assign_time_varying_matrices(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=2)

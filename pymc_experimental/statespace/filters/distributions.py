@@ -164,5 +164,7 @@ def sequence_mvnormal_logp(op, values, mus, covs, steps, mvn_ndim, rng, **kwargs
     return check_parameters(
         logp_values,
         pt.eq(values[0].shape[0], steps),
+        pt.eq(mus.shape[0], steps),
+        pt.eq(covs.shape[0], steps),
         msg="Observed data and parameters must have the same number of timesteps (dimension 0)",
     )

@@ -163,4 +163,5 @@ class BayesianARMA(PyMCStateSpace):
                 pt.linalg.matrix_dot(R, Q, R.T),
                 method="direct" if self.k_states < 5 else "bilinear",
             )
+
             self.ssm["initial_state_cov", :, :] = P0

@@ -391,7 +391,7 @@ class SteadyStateFilter(BaseFilter):
         results, updates = pytensor.scan(
             self.kalman_step,
             sequences=[data],
-            outputs_info=[None, a0, None, P_steady, None, None, None],
+            outputs_info=[None, a0, None, None, P_steady, None, None],
             non_sequences=[c, d, F_inv, T, Z, R, H, Q],
             name="forward_kalman_pass",
             mode=get_mode(mode),
@@ -482,7 +482,7 @@ class UnivariateFilter(BaseFilter):
         P_filtered = P - pt.outer(K, K) * F * (1 - F_zero_flag)
         ll_inner = (pt.log(F) + v**2 / F) * (1 - F_zero_flag)
 
-        return a_filtered, P_filtered, y_hat, F, ll_inner
+        return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll_inner
 
     def kalman_step(self, y, a, P, c, d, T, Z, R, H, Q):
         nan_mask = pt.isnan(y)

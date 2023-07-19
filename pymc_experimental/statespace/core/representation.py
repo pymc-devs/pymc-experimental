@@ -114,7 +114,10 @@ class PytensorRepresentation:
                 setattr(self, name, matrix)
 
             else:
-                setattr(self, name, pt.zeros(shape, dtype=floatX))
+                X_init = pt.zeros(shape, dtype=floatX)
+                X_init = pt.specify_shape(X_init, shape)
+                X_init.name = name
+                setattr(self, name, X_init)
 
     def _validate_key(self, key: KeyLike) -> None:
         if key not in self.shapes:
@@ -230,7 +233,11 @@ class PytensorRepresentation:
                 X = X[..., None]
             elif X.ndim == 2:
                 X = X[..., None]
-        return pt.as_tensor(X, name=name, dtype=floatX)
+
+        X_pt = pt.as_tensor(X, name=name, dtype=floatX)
+        X_pt = pt.specify_shape(X_pt, X.shape)
+        X_pt.name = name
+        return X_pt
 
     def __getitem__(self, key: KeyLike) -> pt.TensorVariable:
         _type = self._validate_key_and_get_type(key)
@@ -242,7 +249,10 @@ class PytensorRepresentation:
 
             # Slice away the time dimension if it's a dummy
             if (self.shapes[key][-1] == 1) and (key not in NEVER_TIME_VARYING):
-                return matrix[(slice(None),) * (matrix.ndim - 1) + (0,)]
+                X = matrix[(slice(None),) * (matrix.ndim - 1) + (0,)]
+                X = pt.specify_shape(X, self.shapes[key][:-1])
+                X.name = key
+                return X
 
             # If it's time varying, return everything
             else:
@@ -264,11 +274,15 @@ class PytensorRepresentation:
 
     def __setitem__(self, key: KeyLike, value: Union[float, int, np.ndarray]) -> None:
         _type = type(key)
+
         # Case 1: key is a string: we are setting an entire matrix.
         if _type is str:
             self._validate_key(key)
             if isinstance(value, np.ndarray):
                 value = self._numpy_to_pytensor(key, value)
+            else:
+                value.name = key
+
             setattr(self, key, value)
             self.update_shape(key, value)
 
@@ -280,6 +294,8 @@ class PytensorRepresentation:
             matrix = getattr(self, name)
 
             slice_ = self._add_time_dim_to_slice(name, slice_, matrix.ndim)
-
             matrix = pt.set_subtensor(matrix[slice_], value)
+            matrix = pt.specify_shape(matrix, self.shapes[name])
+            matrix.name = name
+
             setattr(self, name, matrix)
