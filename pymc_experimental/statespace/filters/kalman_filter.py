@@ -18,6 +18,8 @@ from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
 PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
+JITTER_DEFAULT = 1e-8
+
 solve_lower_triangular = SolveTriangular(lower=True)
 assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")
 assert_time_varying_dim_correct = Assert(
@@ -137,7 +139,7 @@ class BaseFilter(ABC):
         results, updates = pytensor.scan(
             self.kalman_step,
             sequences=[data] + sequences,
-            outputs_info=[None, a0, None, P0, None, None, None],
+            outputs_info=[None, a0, None, None, P0, None, None],
             non_sequences=non_sequences,
             name="forward_kalman_pass",
             mode=get_mode(mode),
@@ -195,8 +197,7 @@ class BaseFilter(ABC):
         """
         nan_mask = pt.isnan(y)
         all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
-
-        W = pt.set_subtensor(pt.eye(y.shape[0])[nan_mask.ravel(), nan_mask.ravel()], 0.0)
+        W = pt.diag(pt.bitwise_not(nan_mask).astype(pytensor.config.floatX))
 
         Z_masked = W.dot(Z)
         H_masked = W.dot(H)
@@ -240,7 +241,6 @@ class BaseFilter(ABC):
                2nd ed, Oxford University Press, 2012.
         """
         y, a, P, c, d, T, Z, R, H, Q = self.unpack_args(args)
-
         y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
 
         a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
@@ -265,9 +265,12 @@ class StandardFilter(BaseFilter):
         v = y - y_hat
 
         PZT = P.dot(Z.T)
-        F = Z.dot(PZT) + H
+        F = stabilize(Z.dot(PZT) + H, jitter=JITTER_DEFAULT)
 
-        F_inv = pt.linalg.solve(stabilize(F), self.eye_endog, assume_a="pos", check_finite=False)
+        F_inv = pt.linalg.solve(
+            F + self.eye_endog * all_nan_flag, self.eye_endog, assume_a="pos", check_finite=False
+        )
+
         K = PZT.dot(F_inv)
         I_KZ = self.eye_states - K.dot(Z)
 
