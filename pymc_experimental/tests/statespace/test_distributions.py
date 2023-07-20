@@ -66,7 +66,9 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
         filter_outputs = kfilter().build_graph(pymc_model["data"], *matrices)
         filter_mus, pred_mus, obs_mu, filter_covs, pred_covs, obs_cov, ll = filter_outputs
 
-        obs = SequenceMvNormal("obs", mus=obs_mu, covs=obs_cov, observed=pymc_model["data"])
+        obs = SequenceMvNormal(
+            "obs", mus=obs_mu, covs=obs_cov, logp=ll, observed=pymc_model["data"]
+        )
 
     test_ll = ll.eval()
     obs_ll = pm.logp(obs, pymc_model["data"]).eval()
