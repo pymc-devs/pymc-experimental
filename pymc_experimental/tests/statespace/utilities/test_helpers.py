@@ -12,7 +12,7 @@ floatX = pytensor.config.floatX
 
 
 def load_nile_test_data():
-    nile = pd.read_csv("pymc_experimental/tests/statespace/test_data/nile.csv")
+    nile = pd.read_csv("pymc_experimental/tests/statespace/test_data/nile.csv", dtype={"x": floatX})
     nile.index = pd.date_range(start="1871-01-01", end="1970-01-01", freq="AS-Jan")
     nile.rename(columns={"x": "height"}, inplace=True)
     nile = (nile - nile.mean()) / nile.std()

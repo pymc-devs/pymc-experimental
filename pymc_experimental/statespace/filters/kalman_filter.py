@@ -338,7 +338,7 @@ class SingleTimeseriesFilter(BaseFilter):
 
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         # y, v are scalar, but a might not be
-        y_hat = Z.dot(a) - d
+        y_hat = (d + Z.dot(a)).squeeze()
         v = y - y_hat
 
         PZT = P.dot(Z.T)

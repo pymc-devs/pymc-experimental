@@ -49,8 +49,7 @@ def pymc_mod(ss_mod):
     with pm.Model() as pymc_mod:
         rho = pm.Normal("rho")
         zeta = pm.Deterministic("zeta", 1 - rho)
-        ss_mod.build_statespace_graph(data=nile)
-        ss_mod.build_smoother_graph()
+        ss_mod.build_statespace_graph(data=nile, include_smoother=True)
 
     return pymc_mod
 
@@ -113,19 +112,6 @@ def test_gather_raises_if_variable_missing(ss_mod):
         msg = "The following required model parameters were not found in the PyMC model: zeta"
         with pytest.raises(ValueError, match=msg):
             theta = ss_mod.gather_required_random_variables()
-
-
-def test_build_smoother_fails_if_statespace_not_built_first(ss_mod):
-    msg = (
-        "Couldn't find Kalman filtered time series among model deterministics. Have you run"
-        ".build_statespace_graph() ?"
-    )
-
-    with pm.Model() as mod:
-        rho = pm.Normal("rho")
-        zeta = pm.Normal("zeta")
-        with pytest.raises(ValueError, match=msg):
-            ss_mod.build_smoother_graph()
 
 
 def test_build_statespace_graph(pymc_mod):

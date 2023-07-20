@@ -162,7 +162,7 @@ class BasicFunctionality(unittest.TestCase):
             ssm["transition"] = T
         msg = str(e.exception)
         self.assertEqual(
-            msg, "The first two dimensions of transition must be (5, 5), found [10 10]"
+            msg, "The first two dimensions of transition must be (5, 5), found (10, 10)"
         )
 
 

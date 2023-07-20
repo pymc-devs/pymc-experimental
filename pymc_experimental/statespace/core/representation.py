@@ -114,10 +114,10 @@ class PytensorRepresentation:
                 setattr(self, name, matrix)
 
             else:
-                X_init = pt.zeros(shape, dtype=floatX)
-                X_init = pt.specify_shape(X_init, shape)
-                X_init.name = name
-                setattr(self, name, X_init)
+                matrix = pt.as_tensor_variable(
+                    np.zeros(shape, dtype=floatX), name=name, ndim=len(shape)
+                )
+                setattr(self, name, matrix)
 
     def _validate_key(self, key: KeyLike) -> None:
         if key not in self.shapes:
@@ -126,7 +126,7 @@ class PytensorRepresentation:
     def update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.TensorType]) -> None:
         # TODO: Get rid of these evals
         if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
-            shape = value.shape.data
+            shape = value.type.shape
         else:
             shape = value.shape
 
@@ -235,7 +235,6 @@ class PytensorRepresentation:
                 X = X[..., None]
 
         X_pt = pt.as_tensor(X, name=name, dtype=floatX)
-        X_pt = pt.specify_shape(X_pt, X.shape)
         return X_pt
 
     def __getitem__(self, key: KeyLike) -> pt.TensorVariable:

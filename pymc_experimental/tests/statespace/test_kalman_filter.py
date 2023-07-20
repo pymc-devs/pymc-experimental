@@ -24,7 +24,9 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 )
 
 floatX = pytensor.config.floatX
+
 ATOL = 1e-7 if floatX.endswith("64") else 1e-4
+RTOL = 0 if floatX.endswith("64") else 1e-4
 
 standard_inout = initialize_filter(StandardFilter())
 cholesky_inout = initialize_filter(CholeskyFilter())
@@ -241,10 +243,10 @@ def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missin
 
     if name == "smoothed_covs":
         # TODO: The smoothed covariance matrices have large errors (1e-2) ONLY in the first few states -- no idea why.
-        assert_allclose(val_to_test[5:], ref_val[5:], atol=ATOL)
+        assert_allclose(val_to_test[5:], ref_val[5:], atol=ATOL, rtol=RTOL)
     else:
         # Need atol = 1e-7 for smoother tests to pass
-        assert_allclose(val_to_test, ref_val, atol=ATOL)
+        assert_allclose(val_to_test, ref_val, atol=ATOL, rtol=RTOL)
 
 
 if __name__ == "__main__":

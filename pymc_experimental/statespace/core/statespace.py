@@ -18,6 +18,9 @@ from pymc_experimental.statespace.filters import (
     SteadyStateFilter,
     UnivariateFilter,
 )
+from pymc_experimental.statespace.filters.distributions import (  # LinearGaussianStateSpace,
+    SequenceMvNormal,
+)
 from pymc_experimental.statespace.utils.simulation import (
     conditional_simulation,
     unconditional_simulations,
@@ -33,6 +36,16 @@ FILTER_FACTORY = {
     "single": SingleTimeseriesFilter,
     "cholesky": CholeskyFilter,
 }
+
+MATRIX_NAMES = ["x0_matrix", "P0_matrix", "c", "d", "T", "Z", "R", "H", "Q"]
+OUTPUT_NAMES = [
+    "filtered_states",
+    "" "predicted_states",
+    "filtered_covariances",
+    "predicted_covariances",
+]
+
+SMOOTHER_OUTPUT_NAMES = ["smoothed_states", "smoothed_covariances"]
 
 
 def get_posterior_samples(posterior_samples, posterior_size):
@@ -181,75 +194,72 @@ class PyMCStateSpace:
             )
         return pt.concatenate(theta)
 
-    def build_statespace_graph(self, data, mode=None, return_updates=False) -> None:
+    def build_statespace_graph(
+        self, data, mode=None, return_updates=False, include_smoother=True
+    ) -> None:
         """
         Given parameter vector theta, constructs the full computational graph describing the state space model.
         Must be called inside a PyMC model context.
         """
 
-        pymc_model = modelcontext(None)
-        with pymc_model:
-            theta = self.gather_required_random_variables()
-            self.update(theta)
+        modelcontext(None)
+        theta = self.gather_required_random_variables()
+        self.update(theta)
 
-            filter_outputs = self.kalman_filter.build_graph(
-                pt.as_tensor_variable(data),
-                *self.unpack_statespace(),
-                mode=mode,
-                return_updates=return_updates,
+        matrices = self.unpack_statespace()
+
+        for matrix, name in zip(matrices, MATRIX_NAMES):
+            pm.Deterministic(name, matrix)
+
+        filter_outputs = self.kalman_filter.build_graph(
+            pt.as_tensor_variable(data),
+            *matrices,
+            mode=mode,
+            return_updates=return_updates,
+        )
+
+        if return_updates:
+            outputs, updates = filter_outputs
+        else:
+            outputs = filter_outputs
+
+        logp = outputs.pop(-1)
+        states, covs = outputs[:3], outputs[3:]
+        filtered_states, predicted_states, observed_states = states
+        filtered_covariances, predicted_covariances, observed_covariances = covs
+
+        outputs_to_use = [
+            filtered_states,
+            predicted_states,
+            filtered_covariances,
+            predicted_covariances,
+        ]
+        names_to_use = OUTPUT_NAMES.copy()
+
+        if include_smoother:
+            smoothed_states, smoothed_covariances = self._build_smoother_graph(
+                filtered_states, filtered_covariances, mode=mode
             )
+            outputs_to_use += [smoothed_states, smoothed_covariances]
+            names_to_use += SMOOTHER_OUTPUT_NAMES.copy()
 
-            if return_updates:
-                (
-                    filtered_states,
-                    predicted_states,
-                    observed_states,
-                    filtered_covariances,
-                    predicted_covariances,
-                    observed_covariances,
-                    ll_obs,
-                ), updates = filter_outputs
-            else:
-                (
-                    filtered_states,
-                    predicted_states,
-                    observed_states,
-                    filtered_covariances,
-                    predicted_covariances,
-                    observed_covariances,
-                    ll_obs,
-                ) = filter_outputs
+        for output, name in zip(outputs_to_use, names_to_use):
+            pm.Deterministic(name, output)
 
-            pm.Deterministic("filtered_states", filtered_states)
-            pm.Deterministic("predicted_states", predicted_states)
+        SequenceMvNormal(
+            "obs", mus=observed_states, covs=observed_covariances, logp=logp, observed=data
+        )
 
-            pm.Deterministic("predicted_covariances", predicted_covariances)
-            pm.Deterministic("filtered_covariances", filtered_covariances)
-
-            pm.Potential("log_likelihood", ll_obs)
-
-    def build_smoother_graph(self, mode=None):
+    def _build_smoother_graph(self, filtered_states, filtered_covariances, mode=None):
         pymc_model = modelcontext(None)
         with pymc_model:
             *_, T, Z, R, H, Q = self.unpack_statespace()
-            det_names = [x.name for x in pymc_model.deterministics]
-            if "filtered_states" not in det_names or "filtered_covariances" not in det_names:
-                raise ValueError(
-                    "Couldn't find Kalman filtered time series among model deterministics. Have you run"
-                    ".build_statespace_graph() ?"
-                )
-            fs_idx = det_names.index("filtered_states")
-            fc_idx = det_names.index("filtered_covariances")
-
-            filtered_states = pymc_model.deterministics[fs_idx]
-            filtered_covariances = pymc_model.deterministics[fc_idx]
 
             smooth_states, smooth_covariances = self.kalman_smoother.build_graph(
                 T, R, Q, filtered_states, filtered_covariances, mode=mode
             )
 
-            pm.Deterministic("smoothed_states", smooth_states)
-            pm.Deterministic("smoothed_covariances", smooth_covariances)
+            return smooth_states, smooth_covariances
 
     def make_matrix_update_funcs(self, pymc_model):
         rvs_on_graph = []
