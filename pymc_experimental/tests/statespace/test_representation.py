@@ -4,6 +4,7 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 from numpy.testing import assert_allclose
+from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace.core.representation import PytensorRepresentation
 from pymc_experimental.tests.statespace.utilities.test_helpers import make_test_inputs
@@ -58,9 +59,9 @@ class BasicFunctionality(unittest.TestCase):
         ssm["transition", 0, :] = 2.7
         ssm["selection", -1, -1] = 9.9
 
-        assert_allclose(ssm["design"].eval()[0, 0], 3.0, atol=atol)
-        assert_allclose(ssm["transition"].eval()[0, :], 2.7, atol=atol)
-        assert_allclose(ssm["selection"].eval()[-1, -1], 9.9, atol=atol)
+        assert_allclose(fast_eval(ssm["design"][0, 0]), 3.0, atol=atol)
+        assert_allclose(fast_eval(ssm["transition"][0, :]), 2.7, atol=atol)
+        assert_allclose(fast_eval(ssm["selection"][-1, -1]), 9.9, atol=atol)
 
         assert ssm["design"].name == "design"
         assert ssm["transition"].name == "transition"
@@ -98,7 +99,7 @@ class BasicFunctionality(unittest.TestCase):
         ]
 
         for name, X in zip(names, inputs[1:]):
-            assert_allclose(X, ssm[name].eval(), err_msg=name)
+            assert_allclose(X, fast_eval(ssm[name]), err_msg=name)
 
         for name, X in zip(names, inputs[1:]):
             assert ssm[name].name == name
@@ -115,10 +116,10 @@ class BasicFunctionality(unittest.TestCase):
         ssm["state_intercept"] = np.zeros((5, n))
         ssm["state_intercept", 0, :] = np.arange(n)
 
-        assert_allclose(ssm["design"].eval()[0, 0], 3.0, atol=atol)
-        assert_allclose(ssm["transition"].eval()[0, :], 2.7, atol=atol)
-        assert_allclose(ssm["selection"].eval()[-1, -1], 9.9, atol=atol)
-        assert_allclose(ssm["state_intercept"][0, :].eval(), np.arange(n), atol=atol)
+        assert_allclose(fast_eval(ssm["design"][0, 0]), 3.0, atol=atol)
+        assert_allclose(fast_eval(ssm["transition"][0, :]), 2.7, atol=atol)
+        assert_allclose(fast_eval(ssm["selection"][-1, -1]), 9.9, atol=atol)
+        assert_allclose(fast_eval(ssm["state_intercept"][0, :]), np.arange(n), atol=atol)
 
     def test_invalid_key_name_raises(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
@@ -145,14 +146,14 @@ class BasicFunctionality(unittest.TestCase):
         T = np.eye(5)
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1, transition=T)
         T_out = ssm["transition", :3, :]
-        assert_allclose(T[:3], T_out.eval())
+        assert_allclose(T[:3], fast_eval(T_out))
 
     def test_update_matrix_via_key(self):
         T = np.eye(5)
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
         ssm["transition"] = T
 
-        assert_allclose(T, ssm["transition"].eval())
+        assert_allclose(T, fast_eval(ssm["transition"]))
 
     def test_update_matrix_with_invalid_shape_raises(self):
         T = np.eye(10)

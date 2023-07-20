@@ -5,9 +5,13 @@ import pytensor.tensor as pt
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Distribution, SymbolicRandomVariable
 from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
+from pymc.gp.util import stabilize
 from pymc.logprob.abstract import _logprob
-from pymc.logprob.basic import logp
+
+# from pymc.logprob.basic import logp
 from pytensor.graph.basic import Node
+
+JITTER_DEFAULT = 1e-8
 
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
@@ -110,7 +114,7 @@ class SequenceMvNormal(Distribution):
         return super().__new__(cls, *args, support_shape=support_shape, **kwargs)
 
     @classmethod
-    def dist(cls, mus, covs, support_shape=None, **kwargs):
+    def dist(cls, mus, covs, logp, support_shape=None, **kwargs):
         support_shape = get_support_shape(
             support_shape=None,
             shape=None,
@@ -122,47 +126,54 @@ class SequenceMvNormal(Distribution):
         if support_shape is None:
             support_shape = pt.as_tensor_variable(())
 
-        return super().dist([mus, covs, support_shape], **kwargs)
+        steps = pm.intX(mus.shape[0])
+
+        return super().dist([mus, covs, logp, steps, support_shape], **kwargs)
 
     @classmethod
-    def rv_op(cls, mus, covs, support_shape, size=None):
+    def rv_op(cls, mus, covs, logp, steps, support_shape, size=None):
         if size is not None:
             batch_size = size
         else:
             batch_size = support_shape
 
-        steps, mvn_ndim = mus.shape[0], mus.shape[1]
         mus_, covs_, support_shape_ = mus.type(), covs.type(), support_shape.type()
-        steps_, mvn_ndim_ = steps.type(), mvn_ndim.type()
+        steps_ = steps.type()
+        logp_ = logp.type()
 
         rng = pytensor.shared(np.random.default_rng())
 
         def step(mu, cov, rng):
-            new_rng, mvn = pm.MvNormal.dist(mu=mu, cov=cov, rng=rng, size=batch_size).owner.outputs
+            new_rng, mvn = pm.MvNormal.dist(
+                mu=mu, cov=stabilize(cov, JITTER_DEFAULT), rng=rng, size=batch_size
+            ).owner.outputs
             return mvn, {rng: new_rng}
 
-        mvn_seq, updates = pytensor.scan(step, sequences=[mus_, covs_], non_sequences=[rng])
+        mvn_seq, updates = pytensor.scan(
+            step, sequences=[mus_, covs_], non_sequences=[rng], n_steps=steps_, strict=True
+        )
+
         (seq_mvn_rng,) = tuple(updates.values())
 
         mvn_seq_op = SequenceMvNormalRV(
-            inputs=[mus_, covs_, steps_, mvn_ndim_], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
+            inputs=[mus_, covs_, logp_, steps_], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
         )
 
-        mvn_seq = mvn_seq_op(mus, covs, steps, mvn_ndim)
+        mvn_seq = mvn_seq_op(mus, covs, logp, steps)
         return mvn_seq
 
 
 @_logprob.register(SequenceMvNormalRV)
-def sequence_mvnormal_logp(op, values, mus, covs, steps, mvn_ndim, rng, **kwargs):
-    def step_logp(x, mu, cov):
-        return logp(pm.MvNormal.dist(mu, cov), x)
-
-    logp_values, updates = pytensor.scan(
-        step_logp, sequences=[values[0], mus, covs], n_steps=steps, strict=True
-    )
+def sequence_mvnormal_logp(op, values, mus, covs, logp, steps, rng, **kwargs):
+    # def step_logp(x, mu, cov):
+    #     return logp(pm.MvNormal.dist(mu, cov), x)
+    #
+    # logp_values, updates = pytensor.scan(
+    #     step_logp, sequences=[values[0], mus, covs], strict=True
+    # )
 
     return check_parameters(
-        logp_values,
+        logp,
         pt.eq(values[0].shape[0], steps),
         pt.eq(mus.shape[0], steps),
         pt.eq(covs.shape[0], steps),

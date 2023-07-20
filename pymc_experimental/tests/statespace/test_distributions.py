@@ -1,4 +1,5 @@
 import pymc as pm
+import pytensor
 import pytensor.tensor as pt
 import pytest
 from numpy.testing import assert_allclose
@@ -15,6 +16,9 @@ from pymc_experimental.statespace.filters.distributions import SequenceMvNormal
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
     load_nile_test_data,
 )
+
+floatX = pytensor.config.floatX
+ATOL = 1e-8 if floatX.endswith("64") else 1e-4
 
 filter_names = [
     "StandardFilter",
@@ -67,4 +71,4 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
     test_ll = ll.eval()
     obs_ll = pm.logp(obs, pymc_model["data"]).eval()
 
-    assert_allclose(test_ll, obs_ll)
+    assert_allclose(test_ll, obs_ll, atol=ATOL)

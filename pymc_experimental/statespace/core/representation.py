@@ -126,7 +126,7 @@ class PytensorRepresentation:
     def update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.TensorType]) -> None:
         # TODO: Get rid of these evals
         if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
-            shape = value.shape.eval()
+            shape = value.shape.data
         else:
             shape = value.shape
 
@@ -236,7 +236,6 @@ class PytensorRepresentation:
 
         X_pt = pt.as_tensor(X, name=name, dtype=floatX)
         X_pt = pt.specify_shape(X_pt, X.shape)
-        X_pt.name = name
         return X_pt
 
     def __getitem__(self, key: KeyLike) -> pt.TensorVariable:

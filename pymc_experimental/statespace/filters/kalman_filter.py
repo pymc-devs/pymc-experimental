@@ -4,7 +4,6 @@ from typing import List, Tuple
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
-from pymc.gp.util import stabilize
 from pytensor.compile.mode import get_mode
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
@@ -143,6 +142,7 @@ class BaseFilter(ABC):
             non_sequences=non_sequences,
             name="forward_kalman_pass",
             mode=get_mode(mode),
+            strict=True,
         )
 
         filter_results = self._postprocess_scan_results(results, a0, P0)
@@ -265,8 +265,9 @@ class StandardFilter(BaseFilter):
         v = y - y_hat
 
         PZT = P.dot(Z.T)
-        F = stabilize(Z.dot(PZT) + H, jitter=JITTER_DEFAULT)
+        # F = stabilize(Z.dot(PZT) + H, jitter=JITTER_DEFAULT)
 
+        F = Z.dot(PZT) + H
         F_inv = pt.linalg.solve(
             F + self.eye_endog * all_nan_flag, self.eye_endog, assume_a="pos", check_finite=False
         )
@@ -278,10 +279,12 @@ class StandardFilter(BaseFilter):
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
 
         inner_term = matrix_dot(v.T, F_inv, v)
+        F_logdet = pt.log(pt.linalg.det(F))
+
         ll = pt.switch(
             all_nan_flag,
             0.0,
-            -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
+            -0.5 * (MVN_CONST + F_logdet + inner_term).ravel()[0],
         )
 
         return a_filtered, P_filtered, y_hat, F, ll
