@@ -234,6 +234,7 @@ def test_last_smoother_is_last_filtered(filter_func, output_idx):
 @pytest.mark.parametrize("filter_func", filter_funcs[:-1], ids=filter_names[:-1])
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
 @pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
+@pytest.mark.skipif(floatX == "float32", reason="Tests are too sensitive for float32")
 def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missing):
     fit_sm_mod, inputs = nile_test_test_helper(n_missing)
     outputs = filter_func(*inputs)
