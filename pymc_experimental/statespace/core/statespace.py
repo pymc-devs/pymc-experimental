@@ -1,15 +1,21 @@
 import logging
+import warnings
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from warnings import catch_warnings, simplefilter
 
 import numpy as np
+import pandas as pd
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 from numpy.typing import ArrayLike
 from pymc.model import modelcontext
+from pytensor.tensor.sharedvar import TensorSharedVariable
 
-from pymc_experimental.statespace.core.representation import PytensorRepresentation
+from pymc_experimental.statespace.core.representation import (
+    SHORT_NAME_TO_LONG,
+    PytensorRepresentation,
+)
 from pymc_experimental.statespace.filters import (
     CholeskyFilter,
     KalmanSmoother,
@@ -18,9 +24,7 @@ from pymc_experimental.statespace.filters import (
     SteadyStateFilter,
     UnivariateFilter,
 )
-from pymc_experimental.statespace.filters.distributions import (  # LinearGaussianStateSpace,
-    SequenceMvNormal,
-)
+from pymc_experimental.statespace.filters.distributions import SequenceMvNormal
 from pymc_experimental.statespace.utils.simulation import (
     conditional_simulation,
     unconditional_simulations,
@@ -37,15 +41,16 @@ FILTER_FACTORY = {
     "cholesky": CholeskyFilter,
 }
 
-MATRIX_NAMES = ["x0_matrix", "P0_matrix", "c", "d", "T", "Z", "R", "H", "Q"]
+MATRIX_NAMES = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
 OUTPUT_NAMES = [
     "filtered_states",
-    "" "predicted_states",
+    "predicted_states",
     "filtered_covariances",
     "predicted_covariances",
 ]
 
 SMOOTHER_OUTPUT_NAMES = ["smoothed_states", "smoothed_covariances"]
+OBSERVED_OUTPUT_NAMES = ["observed_states", "observed_covariances"]
 
 
 def get_posterior_samples(posterior_samples, posterior_size):
@@ -68,6 +73,70 @@ def validate_filter_arg(filter_arg):
         raise ValueError(
             f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_arg}"
         )
+
+
+def find_aux_dim(dim_name, add_on_failure=True):
+    mod = modelcontext(None)
+
+    if dim_name is None:
+        return
+
+    aux_dim = None
+    dim_coords = mod.coords[dim_name]
+    for dim, coords in mod.coords.items():
+        if (dim != dim_name) and (coords == dim_coords):
+            aux_dim = dim
+
+    if add_on_failure and (aux_dim is None):
+        aux_dim = f"{dim_name}_aux"
+        mod.coords[aux_dim] = dim_coords
+
+    return aux_dim
+
+
+def get_data_dims(data):
+    if not isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
+        return
+
+    data_name = getattr(data, "name", None)
+    if not data_name:
+        return
+
+    pm_mod = modelcontext(None)
+    data_dims = pm_mod.named_vars_to_dims.get(data_name, None)
+    return data_dims
+
+
+def validate_dims(data_dims, matrix_dims):
+    if data_dims is None or matrix_dims is None:
+        return
+
+    data_cols = data_dims[1]
+    assert data_cols == matrix_dims["d"][0]
+    assert data_cols == matrix_dims["Z"][0]
+    assert data_cols == matrix_dims["H"][0]
+
+
+def get_filter_output_dims(data_dims, matrix_dims):
+    if data_dims is None or any([x is None for x in matrix_dims.values()]):
+        return dict.fromkeys(OUTPUT_NAMES + OBSERVED_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES, None)
+
+    time_dim = data_dims[0]
+    extended_time_dim = time_dim  # make_and_register_extended_time_dim(time_dim)
+
+    obs_state_dim, obs_state_aux_dim = matrix_dims["H"]
+    all_state_dim, all_state_aux_dim = matrix_dims["Q"]
+
+    return {
+        "filtered_states": (time_dim, all_state_dim),
+        "smoothed_states": (time_dim, all_state_dim),
+        "predicted_states": (extended_time_dim, all_state_dim),
+        "observed_states": (time_dim, obs_state_dim),
+        "filtered_covariances": (time_dim, all_state_dim, all_state_aux_dim),
+        "smoothed_covariances": (time_dim, all_state_dim, all_state_aux_dim),
+        "predicted_covariances": (extended_time_dim, all_state_dim, all_state_aux_dim),
+        "observed_covariances": (time_dim, obs_state_dim, obs_state_aux_dim),
+    }
 
 
 class PyMCStateSpace:
@@ -150,6 +219,45 @@ class PyMCStateSpace:
     def add_default_priors(self):
         raise NotImplementedError
 
+    def _determine_matrix_dims(self):
+        raise NotImplementedError
+
+    def _register_data_with_pymc(
+        self, data, obs_state_dim, warn_if_tensor=True, strict_name_check=False
+    ):
+        if isinstance(data, (pt.TensorVariable, TensorSharedVariable)) and warn_if_tensor:
+            warnings.warn(
+                "Automatic registration of data not possible if it is already a PyMC model variable. It is "
+                "suggested to pass a pandas DataFrame with a DateTime index as data. The index can then "
+                "automatically be used as a dimension for Kalman Filter outputs. Otherwise, outputs will not "
+                "be automatically provided with dimensions"
+            )
+
+        pymc_mod = modelcontext(None)
+        obs_state_names = pymc_mod.coords.get(obs_state_dim)
+        if obs_state_names is None:
+            obs_state_names = np.arange(self.ssm.shapes["obs_intercept"][0], dtype=int)
+
+        if data.shape[1] != len(obs_state_names):
+            raise ValueError(
+                f"Data has more columns than statespace model has observed states. "
+                f"Expected {len(obs_state_names)} but found {data.shape[1]}"
+            )
+
+        if isinstance(data, np.ndarray):
+            data_coords = np.arange(data.shape[0], dtype=int)
+            extended_data_coords = np.r_[data_coords[0] - 1, data_coords]
+
+        if isinstance(data, pd.DataFrame):
+            if strict_name_check:
+                for col in data:
+                    if col not in obs_state_names:
+                        raise ValueError(
+                            f"Found data column {col} not associated with any observed model state. "
+                            f"Rename data columns to match model state names, or set "
+                            f"strict_name_check = False to skip this name check."
+                        )
+
     def update(self, theta: pt.TensorVariable) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
@@ -161,7 +269,7 @@ class PyMCStateSpace:
         """
         raise NotImplementedError
 
-    def gather_required_random_variables(self) -> pt.TensorVariable:
+    def _gather_required_random_variables(self) -> pt.TensorVariable:
         """
         Iterates through random variables in the model on the context stack, matches their names with the statespace
         model's named parameters, and returns a single vector of parameters to pass to the update method.
@@ -195,21 +303,27 @@ class PyMCStateSpace:
         return pt.concatenate(theta)
 
     def build_statespace_graph(
-        self, data, mode=None, return_updates=False, include_smoother=True
+        self, data, register_data_dims=True, mode=None, return_updates=False, include_smoother=True
     ) -> None:
         """
         Given parameter vector theta, constructs the full computational graph describing the state space model.
         Must be called inside a PyMC model context.
         """
 
-        modelcontext(None)
-        theta = self.gather_required_random_variables()
+        pm_mod = modelcontext(None)
+
+        theta = self._gather_required_random_variables()
         self.update(theta)
 
         matrices = self.unpack_statespace()
+        matrix_dims = {}  # self._determine_matrix_dims()
+        obs_state_dim = matrix_dims.get("d", None)
+
+        # register_data_with_pymc(data, obs_state_dim)
 
         for matrix, name in zip(matrices, MATRIX_NAMES):
-            pm.Deterministic(name, matrix)
+            if not getattr(pm_mod, name, None):
+                pm.Deterministic(name, matrix, dims=matrix_dims.get(name, None))
 
         filter_outputs = self.kalman_filter.build_graph(
             pt.as_tensor_variable(data),
@@ -244,7 +358,7 @@ class PyMCStateSpace:
             names_to_use += SMOOTHER_OUTPUT_NAMES.copy()
 
         for output, name in zip(outputs_to_use, names_to_use):
-            pm.Deterministic(name, output)
+            pm.Deterministic(name, output, dims=None)  # output_dims[name])
 
         SequenceMvNormal(
             "obs", mus=observed_states, covs=observed_covariances, logp=logp, observed=data
@@ -260,6 +374,11 @@ class PyMCStateSpace:
             )
 
             return smooth_states, smooth_covariances
+
+    def _build_dummy_graph(self):
+        pm_mod = modelcontext(None)
+        for name in MATRIX_NAMES:
+            pm.Flat(name, shape=self.ssm.shapes[SHORT_NAME_TO_LONG[name]])
 
     def make_matrix_update_funcs(self, pymc_model):
         rvs_on_graph = []

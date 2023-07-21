@@ -102,7 +102,7 @@ def test_gather_pymc_variables(ss_mod):
     with pm.Model() as mod:
         rho = pm.Normal("rho")
         zeta = pm.Deterministic("zeta", 1 - rho)
-        theta = ss_mod.gather_required_random_variables()
+        theta = ss_mod._gather_required_random_variables()
 
     assert_allclose(fast_eval(pm.math.stack([rho, zeta])), fast_eval(theta))
 
@@ -112,7 +112,7 @@ def test_gather_raises_if_variable_missing(ss_mod):
         rho = pm.Normal("rho")
         msg = "The following required model parameters were not found in the PyMC model: zeta"
         with pytest.raises(ValueError, match=msg):
-            theta = ss_mod.gather_required_random_variables()
+            theta = ss_mod._gather_required_random_variables()
 
 
 def test_build_statespace_graph(pymc_mod):

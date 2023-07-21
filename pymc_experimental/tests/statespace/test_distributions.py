@@ -49,7 +49,7 @@ def pymc_model(data):
 def test_loglike_vectors_agree(kfilter, pymc_model):
     ss_mod = BayesianLocalLevel(verbose=False, filter_type=kfilter)
     with pymc_model:
-        theta = ss_mod.gather_required_random_variables()
+        theta = ss_mod._gather_required_random_variables()
         ss_mod.update(theta)
         matrices = ss_mod.unpack_statespace(include_constants=True)
 

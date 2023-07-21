@@ -4,8 +4,13 @@ from typing import Any, Dict, Sequence
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
+from pymc import modelcontext
 
-from pymc_experimental.statespace.core.statespace import PyMCStateSpace
+from pymc_experimental.statespace.core.statespace import (
+    MATRIX_NAMES,
+    PyMCStateSpace,
+    find_aux_dim,
+)
 from pymc_experimental.statespace.models.utilities import default_prior_factory
 
 _log = logging.getLogger("pymc.experimental.statespace")
@@ -75,6 +80,32 @@ class BayesianLocalLevel(PyMCStateSpace):
         }
         return {name: info[name] for name in self.param_names}
 
+    def _determine_matrix_dims(self):
+        pm_mod = modelcontext(None)
+
+        params_to_dims = pm_mod.named_vars_to_dims
+        all_state_dim = params_to_dims.get("x0", [None])[0]
+        obs_state_dim = params_to_dims.get("sigma_obs", [None])[0]
+        state_posdef_dim = params_to_dims.get("sigma_state", [None])[0]
+
+        if all_state_dim is None or obs_state_dim is None or state_posdef_dim is None:
+            return dict.fromkeys(MATRIX_NAMES, None)
+
+        all_state_aux_dim = find_aux_dim(all_state_dim)
+        obs_state_aux_dim = find_aux_dim(obs_state_dim)
+
+        return {
+            "x0": (all_state_dim,),
+            "P0": (all_state_dim, all_state_aux_dim),
+            "c": (all_state_dim,),
+            "d": (obs_state_dim,),
+            "T": (all_state_dim, all_state_aux_dim),
+            "Z": (obs_state_dim, all_state_dim),
+            "R": (all_state_dim, state_posdef_dim),
+            "H": (obs_state_dim, obs_state_aux_dim),
+            "Q": (all_state_dim, all_state_aux_dim),
+        }
+
     def add_default_priors(self):
         use_coords = True
         mod = pm.modelcontext(None)
@@ -107,10 +138,10 @@ class BayesianLocalLevel(PyMCStateSpace):
             Vector of all variables in the state space model
         """
         # initial states
-        self.ssm["initial_state", :] = theta[:2]
+        self.ssm["initial_state"] = theta[:2].reshape((2,))
 
         # initial covariance
-        self.ssm["initial_state_cov", :, :] = theta[2:6].reshape((2, 2))
+        self.ssm["initial_state_cov"] = theta[2:6].reshape((2, 2))
 
         # Observation covariance
         self.ssm["obs_cov", 0, 0] = theta[6]

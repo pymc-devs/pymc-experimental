@@ -13,6 +13,18 @@ KeyLike = Union[Tuple[Union[str, int]], str]
 NEVER_TIME_VARYING = ["initial_state", "initial_state_cov", "a0", "P0"]
 VECTOR_VALUED = ["initial_state", "state_intercept", "obs_intercept", "a0", "c", "d"]
 
+SHORT_NAME_TO_LONG = {
+    "x0": "initial_state",
+    "P0": "initial_state_cov",
+    "c": "state_intercept",
+    "d": "obs_intercept",
+    "T": "transition",
+    "Z": "design",
+    "R": "selection",
+    "H": "obs_cov",
+    "Q": "state_cov",
+}
+
 
 def _preprocess_data(data: Union[DataFrame, np.ndarray], expected_dims=3):
     if isinstance(data, pandas.DataFrame):

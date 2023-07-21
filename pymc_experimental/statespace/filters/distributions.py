@@ -119,8 +119,20 @@ class _LinearGaussianStateSpace(Distribution):
 
 class LinearGaussianStateSpace:
     def __new__(cls, name, a0, P0, c, d, T, Z, R, H, Q, *, init_dist=None, steps=None, **kwargs):
-        latent_obs_combined = _LinearGaussianStateSpace.dist(
-            a0, P0, c, d, T, Z, R, H, Q, init_dist=init_dist, steps=steps, **kwargs
+        latent_obs_combined = _LinearGaussianStateSpace(
+            f"{name}_combined",
+            a0,
+            P0,
+            c,
+            d,
+            T,
+            Z,
+            R,
+            H,
+            Q,
+            init_dist=init_dist,
+            steps=steps,
+            **kwargs,
         )
         k_states = T.type.shape[0]
 
