@@ -5,6 +5,7 @@ import pymc as pm
 import pytensor
 import pytest
 from numpy.testing import assert_allclose
+from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
@@ -81,7 +82,7 @@ def test_unpack_matrices():
 
     outputs = mod.unpack_statespace()
     for x, y in zip(inputs, outputs):
-        assert_allclose(np.zeros_like(x), y.eval())
+        assert_allclose(np.zeros_like(x), fast_eval(y))
 
 
 def test_param_names_raises_on_base_class():
@@ -103,7 +104,7 @@ def test_gather_pymc_variables(ss_mod):
         zeta = pm.Deterministic("zeta", 1 - rho)
         theta = ss_mod.gather_required_random_variables()
 
-    assert_allclose(pm.math.stack([rho, zeta]).eval(), theta.eval())
+    assert_allclose(fast_eval(pm.math.stack([rho, zeta])), fast_eval(theta))
 
 
 def test_gather_raises_if_variable_missing(ss_mod):

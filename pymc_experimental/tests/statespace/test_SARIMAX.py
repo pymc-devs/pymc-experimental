@@ -8,6 +8,7 @@ import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose
+from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace import BayesianARMA
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
@@ -38,7 +39,7 @@ def test_SARIMAX_init_matches_statsmodels(data, order, matrix):
         warnings.simplefilter("ignore")
         sm_sarimax = sm.tsa.SARIMAX(data, order=(p, 0, q))
 
-    assert_allclose(mod.ssm[matrix].eval(), sm_sarimax.ssm[matrix])
+    assert_allclose(fast_eval(mod.ssm[matrix]), sm_sarimax.ssm[matrix])
 
 
 @pytest.mark.parametrize("order", orders, ids=ids)
@@ -71,4 +72,4 @@ def test_SARIMAX_update_matches_statsmodels(data, order, matrix):
         )
         mod.build_statespace_graph(data=data)
 
-    assert_allclose(mod.ssm[matrix].eval(), sm_sarimax.ssm[matrix])
+    assert_allclose(fast_eval(mod.ssm[matrix]), sm_sarimax.ssm[matrix])
