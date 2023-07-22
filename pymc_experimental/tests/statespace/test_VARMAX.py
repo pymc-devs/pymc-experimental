@@ -9,6 +9,7 @@ import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose
+from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace import BayesianVARMAX
 
@@ -17,10 +18,13 @@ floatX = pytensor.config.floatX
 
 @pytest.fixture
 def data():
-    return pd.read_csv(
+    df = pd.read_csv(
         "pymc_experimental/tests/statespace/test_data/statsmodels_macrodata_processed.csv",
         index_col=0,
+        parse_dates=True,
     ).astype(floatX)
+    df.index.freq = df.index.inferred_freq
+    return df
 
 
 ps = [0, 1, 2, 3]
@@ -39,7 +43,7 @@ def test_VARMAX_init_matches_statsmodels(data, order, matrix):
         warnings.simplefilter("ignore")
         sm_var = sm.tsa.VARMAX(data, order=(p, q))
 
-    assert_allclose(mod.ssm[matrix].eval(), sm_var.ssm[matrix])
+    assert_allclose(fast_eval(mod.ssm[matrix]), sm_var.ssm[matrix])
 
 
 @pytest.mark.parametrize("order", orders, ids=ids)
@@ -96,4 +100,4 @@ def test_VARMAX_update_matches_statsmodels(data, order, matrix):
         state_cov = pm.Deterministic("state_cov", pt.as_tensor_variable(state_chol @ state_chol.T))
         mod.build_statespace_graph(data=data)
 
-    assert_allclose(mod.ssm[matrix].eval(), sm_var.ssm[matrix])
+    assert_allclose(fast_eval(mod.ssm[matrix]), sm_var.ssm[matrix])

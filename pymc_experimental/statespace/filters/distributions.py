@@ -27,51 +27,102 @@ class _LinearGaussianStateSpace(Distribution):
     rv_op = LinearGaussianStateSpaceRV
 
     def __new__(
-        cls, name, a0, P0, c, d, T, Z, R, H, Q, init_dist=None, steps=None, k_states=None, **kwargs
+        cls,
+        name,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        init_dist=None,
+        steps=None,
+        k_states=None,
+        mode=None,
+        **kwargs,
     ):
+        k_states = cls._get_k_states(T)
+
+        # Ignore dims in support shape because they are just passed along to the "observed" and "latent" distributions
+        # created by LinearGaussianStateSpace. This "combined" distribution shouldn't ever be directly used.
         steps = get_support_shape_1d(
             support_shape=steps,
             shape=None,
-            dims=kwargs.get("dims", None),
+            dims=None,
             observed=kwargs.get("observed", None),
             support_shape_offset=0,
         )
 
-        k_states = cls._get_k_states(T)
         return super().__new__(
-            cls, name, a0, P0, c, d, T, Z, R, H, Q, steps=steps, k_states=k_states, **kwargs
+            cls,
+            name,
+            a0,
+            P0,
+            c,
+            d,
+            T,
+            Z,
+            R,
+            H,
+            Q,
+            steps=steps,
+            k_states=k_states,
+            mode=mode,
+            **kwargs,
         )
 
     @classmethod
-    def dist(cls, a0, P0, c, d, T, Z, R, H, Q, init_dist=None, steps=None, k_states=None, **kwargs):
+    def dist(
+        cls,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        init_dist=None,
+        steps=None,
+        k_states=None,
+        mode=None,
+        **kwargs,
+    ):
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
         )
-
         k_states = cls._get_k_states(T)
 
         if steps is None:
             raise ValueError("Must specify steps or shape parameter")
+
         steps = pt.as_tensor_variable(intX(steps), ndim=0)
 
         init_dist = pm.MvNormal.dist(a0, P0)
         init_y = pm.MvNormal.dist(Z @ init_dist, stabilize(H))
         init_dist = pt.concatenate([init_dist, init_y], axis=0)
 
-        return super().dist([a0, P0, c, d, T, Z, R, H, Q, init_dist, steps, k_states], **kwargs)
+        return super().dist(
+            [a0, P0, c, d, T, Z, R, H, Q, init_dist, steps, k_states], mode=mode, **kwargs
+        )
 
     @classmethod
     def _get_k_states(cls, T):
         return T.shape[0]
 
     @classmethod
-    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, init_dist, steps, k_states, size=None):
+    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, init_dist, steps, k_states, size=None, mode=None):
         if size is not None:
             batch_size = size
 
         a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_ = map(
             lambda x: x.type(), [a0, P0, c, d, T, Z, R, H, Q]
         )
+
         steps_ = steps.type()
         init_dist_ = init_dist.type()
         rng = pytensor.shared(np.random.default_rng())
@@ -102,6 +153,8 @@ class _LinearGaussianStateSpace(Distribution):
             outputs_info=[init_dist_],
             non_sequences=[c_, d_, T_, Z_, R_, H_, Q_, rng],
             n_steps=steps_,
+            mode=mode,
+            strict=True,
         )
 
         statespace_ = pt.concatenate([init_dist_[None], statespace], axis=0)
@@ -118,9 +171,22 @@ class _LinearGaussianStateSpace(Distribution):
 
 
 class LinearGaussianStateSpace:
-    def __new__(cls, name, a0, P0, c, d, T, Z, R, H, Q, *, init_dist=None, steps=None, **kwargs):
-        latent_obs_combined = _LinearGaussianStateSpace(
-            f"{name}_combined",
+    def __new__(
+        cls, name, a0, P0, c, d, T, Z, R, H, Q, *, init_dist=None, steps=None, mode=None, **kwargs
+    ):
+        dims = kwargs.pop("dims", None)
+        latent_dims = None
+        obs_dims = None
+        if dims is not None:
+            if len(dims) != 3:
+                ValueError(
+                    "LinearGaussianStateSpace expects 3 dims: time, all_states, and observed_states"
+                )
+            time_dim, state_dim, obs_dim = dims
+            latent_dims = [time_dim, state_dim]
+            obs_dims = [time_dim, obs_dim]
+
+        matrices = (
             a0,
             P0,
             c,
@@ -130,17 +196,18 @@ class LinearGaussianStateSpace:
             R,
             H,
             Q,
-            init_dist=init_dist,
-            steps=steps,
-            **kwargs,
         )
+        latent_obs_combined = _LinearGaussianStateSpace(
+            f"{name}_combined", *matrices, init_dist=init_dist, steps=steps, mode=mode, **kwargs
+        )
+
         k_states = T.type.shape[0]
 
         latent_states = latent_obs_combined[..., :k_states]
         obs_states = latent_obs_combined[..., k_states:]
 
-        latent_states = pm.Deterministic(f"{name}_latent", latent_states)
-        obs_states = pm.Deterministic(f"{name}_observed", obs_states)
+        latent_states = pm.Deterministic(f"{name}_latent", latent_states, dims=latent_dims)
+        obs_states = pm.Deterministic(f"{name}_observed", obs_states, dims=obs_dims)
 
         return latent_states, obs_states
 

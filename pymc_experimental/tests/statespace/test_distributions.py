@@ -8,6 +8,12 @@ from pymc.model_graph import fast_eval
 from scipy.stats import multivariate_normal
 
 from pymc_experimental.statespace import BayesianLocalLevel
+from pymc_experimental.statespace.filters.distributions import LinearGaussianStateSpace
+from pymc_experimental.statespace.utils.constants import (
+    ALL_STATE_DIM,
+    OBS_STATE_DIM,
+    TIME_DIM,
+)
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
     load_nile_test_data,
 )
@@ -67,3 +73,48 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
     for y, mu, cov in zip(data_np, obs_mu_np, obs_cov_np):
         scipy_lls.append(multivariate_normal.logpdf(y, mean=mu, cov=cov))
     assert_allclose(test_ll, np.array(scipy_lls).ravel(), atol=ATOL)
+
+
+def test_lgss_distribution_from_steps():
+    ss_mod = BayesianLocalLevel(verbose=False)
+    coords = ss_mod.coords
+    coords.update({"time": np.arange(100, dtype="int")})
+    with pm.Model(coords=coords):
+        ss_mod.add_default_priors()
+        theta = ss_mod._gather_required_random_variables()
+        ss_mod.update(theta)
+        matrices = ss_mod.unpack_statespace()
+
+        # pylint: disable=unpacking-non-sequence
+        latent_states, obs_states = LinearGaussianStateSpace("states", *matrices, steps=100)
+        # pylint: enable=unpacking-non-sequence
+        idata = pm.sample_prior_predictive(samples=10)
+
+        assert idata.prior.coords["states_latent_dim_0"].shape == (101,)
+
+
+def test_lgss_distribution_with_dims():
+    ss_mod = BayesianLocalLevel(verbose=False)
+    coords = ss_mod.coords
+    coords.update({"time": np.arange(101, dtype="int")})
+
+    with pm.Model(coords=coords):
+        ss_mod.add_default_priors()
+        theta = ss_mod._gather_required_random_variables()
+        ss_mod.update(theta)
+        matrices = ss_mod.unpack_statespace()
+
+        # pylint: disable=unpacking-non-sequence
+        latent_states, obs_states = LinearGaussianStateSpace(
+            "states", *matrices, steps=100, dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+        )
+        # pylint: enable=unpacking-non-sequence
+        idata = pm.sample_prior_predictive(samples=10)
+
+        assert idata.prior.coords["time"].shape == (101,)
+        assert all(
+            [dim in idata.prior.states_latent.coords.keys() for dim in [TIME_DIM, ALL_STATE_DIM]]
+        )
+        assert all(
+            [dim in idata.prior.states_observed.coords.keys() for dim in [TIME_DIM, OBS_STATE_DIM]]
+        )
