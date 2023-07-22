@@ -59,7 +59,8 @@ def _validate_data_shape(data_shape, n_obs, obs_coords=None, check_col_names=Fal
 def preprocess_tensor_data(data, n_obs, obs_coords=None):
     data_shape = data.shape.eval()
     _validate_data_shape(data_shape, n_obs, obs_coords)
-    warnings.warn(NO_TIME_INDEX_WARNING)
+    if obs_coords is not None:
+        warnings.warn(NO_TIME_INDEX_WARNING)
     index = np.arange(data_shape[0], dtype="int")
     extended_index = np.r_[[index[0] - 1], index]
 
@@ -68,7 +69,9 @@ def preprocess_tensor_data(data, n_obs, obs_coords=None):
 
 def preprocess_numpy_data(data, n_obs, obs_coords=None):
     _validate_data_shape(data.shape, n_obs, obs_coords)
-    warnings.warn(NO_TIME_INDEX_WARNING)
+    if obs_coords is not None:
+        warnings.warn(NO_TIME_INDEX_WARNING)
+
     index = np.arange(data.shape[0], dtype="int")
     extended_index = np.r_[[index[0] - 1], index]
 
@@ -81,9 +84,12 @@ def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=Fals
 
     col_names = data.columns
     _validate_data_shape(data.shape, n_obs, obs_coords, check_column_names, col_names)
+
     if isinstance(data.index, pd.RangeIndex):
-        warnings.warn(NO_TIME_INDEX_WARNING)
+        if obs_coords is not None:
+            warnings.warn(NO_TIME_INDEX_WARNING)
         return preprocess_numpy_data(data.values, n_obs, obs_coords)
+
     elif isinstance(data.index, pd.DatetimeIndex):
         if data.index.freq is None:
             warnings.warn(NO_FREQ_INFO_WARNING)
@@ -93,6 +99,7 @@ def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=Fals
         extended_index = index.shift(-1).union(index)
 
         return data.values, index, extended_index
+
     else:
         raise IndexError(
             f"Expected pd.DatetimeIndex or pd.RangeIndex on data, found {type(data.index)}"
@@ -110,7 +117,11 @@ def register_data_with_pymc(data, n_obs, obs_coords):
         raise ValueError("Data should be one of pytensor tensor, numpy array, or pandas dataframe")
 
     pymc_mod = modelcontext(None)
-    pymc_mod.add_coord(TIME_DIM, index, mutable=True)
-    pymc_mod.add_coord(EXTENDED_TIME_DIM, extended_index, mutable=True)
 
-    pm.MutableData("data", values, dims=[TIME_DIM, OBS_STATE_DIM])
+    if OBS_STATE_DIM in pymc_mod.coords:
+        pymc_mod.add_coord(TIME_DIM, index, mutable=True)
+        pymc_mod.add_coord(EXTENDED_TIME_DIM, extended_index, mutable=True)
+        data = pm.MutableData("data", values, dims=[TIME_DIM, OBS_STATE_DIM])
+        return data
+
+    return data

@@ -3,6 +3,7 @@ ALL_STATE_AUX_DIM = "states_aux"
 OBS_STATE_DIM = "observed_states"
 OBS_STATE_AUX_DIM = "observed_states_aux"
 SHOCK_DIM = "shocks"
+SHOCK_AUX_DIM = "shocks_aux"
 TIME_DIM = "time"
 EXTENDED_TIME_DIM = "extended_time"
 
@@ -27,7 +28,7 @@ MATRIX_DIMS = {
     "Z": (OBS_STATE_DIM, ALL_STATE_DIM),
     "R": (ALL_STATE_DIM, SHOCK_DIM),
     "H": (OBS_STATE_DIM, OBS_STATE_AUX_DIM),
-    "Q": (ALL_STATE_DIM, ALL_STATE_AUX_DIM),
+    "Q": (SHOCK_DIM, SHOCK_AUX_DIM),
 }
 
 FILTER_OUTPUT_DIMS = {

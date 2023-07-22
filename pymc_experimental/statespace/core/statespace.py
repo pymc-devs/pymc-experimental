@@ -33,9 +33,7 @@ from pymc_experimental.statespace.utils.constants import (
     FILTER_OUTPUT_NAMES,
     MATRIX_DIMS,
     MATRIX_NAMES,
-    OBS_STATE_AUX_DIM,
     OBS_STATE_DIM,
-    SHOCK_DIM,
     SMOOTHER_OUTPUT_NAMES,
     TIME_DIM,
 )
@@ -135,23 +133,19 @@ class PyMCStateSpace:
         raise NotImplementedError
 
     @property
+    def shock_names(self):
+        raise NotImplementedError
+
+    @property
     def default_priors(self):
         raise NotImplementedError
 
     @property
     def coords(self) -> Dict[str, Sequence]:
-        coords = {
-            ALL_STATE_DIM: self.state_names,
-            ALL_STATE_AUX_DIM: self.state_names,
-            OBS_STATE_DIM: self.observed_states,
-            OBS_STATE_AUX_DIM: self.observed_states,
-            SHOCK_DIM: self.shock_names,
-        }
-
-        return coords
+        raise NotImplementedError
 
     @property
-    def param_to_coord(self):
+    def param_dims(self):
         raise NotImplementedError
 
     def add_default_priors(self):
@@ -164,6 +158,28 @@ class PyMCStateSpace:
         shape = self.ssm[SHORT_NAME_TO_LONG[name]].type.shape if dims is None else None
 
         return shape, dims
+
+    def _get_output_shape_and_dims(self, idata, filter_output):
+        mu_dims = None
+        cov_dims = None
+
+        mu_shape = idata[f"{filter_output}_states"].values.shape[2:]
+        cov_shape = idata[f"{filter_output}_covariances"].values.shape[2:]
+
+        if all(
+            [
+                dim in self._fit_coords
+                for dim in [TIME_DIM, EXTENDED_TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]
+            ]
+        ):
+            time_dim = EXTENDED_TIME_DIM if filter_output == "predicted" else TIME_DIM
+            mu_dims = [time_dim, ALL_STATE_DIM]
+            cov_dims = [time_dim, ALL_STATE_DIM, ALL_STATE_AUX_DIM]
+
+            mu_shape = None
+            cov_shape = None
+
+        return mu_shape, cov_shape, mu_dims, cov_dims
 
     def update(self, theta: pt.TensorVariable) -> None:
         """
@@ -357,24 +373,9 @@ class PyMCStateSpace:
 
         """
         validate_filter_arg(filter_output)
-        mu_dims = None
-        cov_dims = None
-
-        mu_shape = idata.posterior[f"{filter_output}_states"].values.shape[2:]
-        cov_shape = idata.posterior[f"{filter_output}_covariances"].values.shape[2:]
-
-        if all(
-            [
-                dim in self._fit_coords
-                for dim in [TIME_DIM, EXTENDED_TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]
-            ]
-        ):
-            time_dim = EXTENDED_TIME_DIM if filter_output == "predicted" else TIME_DIM
-            mu_dims = [time_dim, ALL_STATE_DIM]
-            cov_dims = [time_dim, ALL_STATE_AUX_DIM]
-
-            mu_shape = None
-            cov_shape = None
+        mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
+            idata.posterior, filter_output
+        )
 
         with pm.Model(coords=self._fit_coords):
             mus = pm.Flat(f"{filter_output}_states", shape=mu_shape, dims=mu_dims)
@@ -445,20 +446,30 @@ class PyMCStateSpace:
         -------
         idata: InferenceData
         """
+        dims = None
         temp_coords = self._fit_coords.copy()
 
         if not use_data_time_dim:
             temp_coords.update({TIME_DIM: np.arange(1 + steps, dtype="int")})
-        else:
-            steps = len(temp_coords["time"]) - 1
+            steps = len(temp_coords[TIME_DIM]) - 1
+        elif steps is not None:
+            n_dimsteps = len(temp_coords[TIME_DIM])
+            if n_dimsteps != steps:
+                raise ValueError(
+                    f"Length of time dimension does not match specified number of steps, expected"
+                    f" {n_dimsteps} steps, or steps=None."
+                )
 
-        with pm.Model(coords=temp_coords):
+        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]]):
+            dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+
+        with pm.Model(coords=temp_coords if dims is not None else None):
             matrices = self._build_dummy_graph()
             _ = LinearGaussianStateSpace(
                 "posterior",
                 *matrices,
                 steps=steps,
-                dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM],
+                dims=dims,
                 mode=self._fit_mode,
             )
             idata_unconditional_post = pm.sample_posterior_predictive(

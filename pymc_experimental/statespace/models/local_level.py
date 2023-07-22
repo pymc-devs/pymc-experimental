@@ -1,12 +1,15 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
-from pymc_experimental.statespace.models.utilities import default_prior_factory
+from pymc_experimental.statespace.models.utilities import (
+    default_prior_factory,
+    make_default_coords,
+)
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
@@ -52,7 +55,7 @@ class BayesianLocalLevel(PyMCStateSpace):
         return ["level", "trend"]
 
     @property
-    def param_to_coord(self):
+    def param_dims(self):
         return {
             "x0": (ALL_STATE_DIM,),
             "P0": (ALL_STATE_DIM, ALL_STATE_AUX_DIM),
@@ -61,27 +64,31 @@ class BayesianLocalLevel(PyMCStateSpace):
         }
 
     @property
+    def coords(self) -> Dict[str, Sequence]:
+        return make_default_coords(self)
+
+    @property
     def param_info(self) -> Dict[str, Dict[str, Any]]:
         info = {
             "x0": {
                 "shape": (self.k_states,),
                 "constraints": None,
-                "dims": self.param_to_coord["x0"],
+                "dims": self.param_dims["x0"],
             },
             "P0": {
                 "shape": (self.k_states, self.k_states),
                 "constraints": "Positive Semi-definite",
-                "dims": self.param_to_coord["P0"],
+                "dims": self.param_dims["P0"],
             },
             "sigma_obs": {
                 "shape": (self.k_endog,),
                 "constraints": "Positive",
-                "dims": self.param_to_coord["sigma_obs"],
+                "dims": self.param_dims["sigma_obs"],
             },
             "sigma_state": {
                 "shape": (self.k_posdef,),
                 "constraints": "Positive",
-                "dims": self.param_to_coord["sigma_state"],
+                "dims": self.param_dims["sigma_state"],
             },
         }
         return {name: info[name] for name in self.param_names}
@@ -101,7 +108,7 @@ class BayesianLocalLevel(PyMCStateSpace):
 
         for param_name in self.param_names:
             if not getattr(mod, param_name, False):
-                dims = self.param_to_coord[param_name] if use_coords else None
+                dims = self.param_dims[param_name] if use_coords else None
                 shape = self.param_info[param_name]["shape"]
 
                 _ = default_prior_factory(shape=shape, dims=dims)[param_name]()
