@@ -1,5 +1,4 @@
 import warnings
-from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -14,7 +13,6 @@ from pymc_experimental.statespace.utils.constants import (
     TIME_DIM,
 )
 
-DataContainer = Union[pt.TensorVariable, TensorSharedVariable]
 NO_TIME_INDEX_WARNING = (
     "No time index found on the supplied data. A simple range index will be automatically "
     "generated."
@@ -102,7 +100,7 @@ def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=Fals
 
 
 def register_data_with_pymc(data, n_obs, obs_coords):
-    if isinstance(data, DataContainer):
+    if isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
         values, index, extended_index = preprocess_tensor_data(data, n_obs, obs_coords)
     elif isinstance(data, np.ndarray):
         values, index, extended_index = preprocess_numpy_data(data, n_obs, obs_coords)

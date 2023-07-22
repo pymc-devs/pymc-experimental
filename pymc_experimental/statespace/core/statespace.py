@@ -229,14 +229,18 @@ class PyMCStateSpace:
         if register_data:
             register_data_with_pymc(data, n_obs=n_obs, obs_coords=obs_coords)
 
-        for matrix, name in zip(matrices, MATRIX_NAMES):
+        registered_matrices = []
+        for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
             if not getattr(pm_mod, name, None):
                 shape, dims = self._get_matrix_shape_and_dims(name)
-                pm.Deterministic(name, matrix, dims=dims)
+                x = pm.Deterministic(name, matrix, dims=dims)
+                registered_matrices.append(x)
+            else:
+                registered_matrices.append(matrices[i])
 
         filter_outputs = self.kalman_filter.build_graph(
             pt.as_tensor_variable(data),
-            *matrices,
+            *registered_matrices,
             mode=mode,
             return_updates=return_updates,
         )
