@@ -119,9 +119,10 @@ def register_data_with_pymc(data, n_obs, obs_coords):
     pymc_mod = modelcontext(None)
 
     if OBS_STATE_DIM in pymc_mod.coords:
-        pymc_mod.add_coord(TIME_DIM, index, mutable=True)
-        pymc_mod.add_coord(EXTENDED_TIME_DIM, extended_index, mutable=True)
-        data = pm.MutableData("data", values, dims=[TIME_DIM, OBS_STATE_DIM])
-        return data
+        data_dims = [TIME_DIM, OBS_STATE_DIM]
+
+    pymc_mod.add_coord(TIME_DIM, index, mutable=True)
+    pymc_mod.add_coord(EXTENDED_TIME_DIM, extended_index, mutable=True)
+    data = pm.MutableData("data", values, dims=data_dims)
 
     return data
