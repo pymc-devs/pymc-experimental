@@ -64,7 +64,8 @@ def load_dataset():
 def generate_timeseries():
     def _generate_timeseries(freq):
         index = pd.date_range(start="2000-01-01", freq=freq, periods=100)
-        df = pd.DataFrame(np.random.normal(size=100, dtype=floatX), index=index, columns=["level"])
+        data = np.random.normal(size=100).astype(floatX)
+        df = pd.DataFrame(data, index=index, columns=["level"])
         return df
 
     return _generate_timeseries
