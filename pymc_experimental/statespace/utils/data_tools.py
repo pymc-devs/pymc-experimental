@@ -117,6 +117,7 @@ def register_data_with_pymc(data, n_obs, obs_coords):
         raise ValueError("Data should be one of pytensor tensor, numpy array, or pandas dataframe")
 
     pymc_mod = modelcontext(None)
+    data_dims = None
 
     if OBS_STATE_DIM in pymc_mod.coords:
         data_dims = [TIME_DIM, OBS_STATE_DIM]
