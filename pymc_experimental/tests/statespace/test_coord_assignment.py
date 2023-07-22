@@ -3,6 +3,7 @@ from contextlib import nullcontext as does_not_raise
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytensor
 import pytensor.tensor as pt
 import pytest
 
@@ -33,6 +34,7 @@ expected_warning = [
     pytest.warns(UserWarning, match=NO_TIME_INDEX_WARNING),
 ]
 func_inputs = list(zip(function_names, expected_warning))
+floatX = pytensor.config.floatX
 
 
 @pytest.fixture
@@ -62,7 +64,7 @@ def load_dataset():
 def generate_timeseries():
     def _generate_timeseries(freq):
         index = pd.date_range(start="2000-01-01", freq=freq, periods=100)
-        df = pd.DataFrame(np.random.normal(size=100), index=index, columns=["level"])
+        df = pd.DataFrame(np.random.normal(size=100, dtype=floatX), index=index, columns=["level"])
         return df
 
     return _generate_timeseries
