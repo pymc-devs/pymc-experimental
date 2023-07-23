@@ -2,6 +2,7 @@ import logging
 from typing import Any, Dict, List, Sequence, Tuple
 
 import numpy as np
+import pandas as pd
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
@@ -163,8 +164,8 @@ class PyMCStateSpace:
         mu_dims = None
         cov_dims = None
 
-        mu_shape = idata[f"{filter_output}_states"].values.shape[2:]
-        cov_shape = idata[f"{filter_output}_covariances"].values.shape[2:]
+        mu_shape = idata[f"{filter_output}_state"].values.shape[2:]
+        cov_shape = idata[f"{filter_output}_covariance"].values.shape[2:]
 
         if all(
             [
@@ -291,7 +292,7 @@ class PyMCStateSpace:
             dims = dims if all([dim in pm_mod.coords.keys() for dim in dims]) else None
             pm.Deterministic(name, output, dims=dims)
 
-        obs_dims = FILTER_OUTPUT_DIMS.get(OBS_STATE_DIM, None)
+        obs_dims = FILTER_OUTPUT_DIMS.get("obs", None)
         obs_dims = obs_dims if all([dim in pm_mod.coords.keys() for dim in obs_dims]) else None
         SequenceMvNormal(
             "obs",
@@ -305,6 +306,9 @@ class PyMCStateSpace:
         self._fit_coords = pm_mod.coords.copy()
         self._fit_mode = mode
 
+        if return_updates:
+            return updates
+
     def _build_smoother_graph(self, filtered_states, filtered_covariances, mode=None):
         pymc_model = modelcontext(None)
         with pymc_model:
@@ -316,10 +320,16 @@ class PyMCStateSpace:
 
             return smooth_states, smooth_covariances
 
-    def _build_dummy_graph(self):
+    def _build_dummy_graph(self, skip_matrices=None):
         modelcontext(None)
+        if skip_matrices is None:
+            skip_matrices = []
+
         matrices = []
         for name in MATRIX_NAMES:
+            if name in skip_matrices:
+                continue
+
             shape, dims = self._get_matrix_shape_and_dims(name)
             x = pm.Flat(name, shape=shape, dims=dims)
             matrices.append(x)
@@ -378,8 +388,8 @@ class PyMCStateSpace:
         )
 
         with pm.Model(coords=self._fit_coords):
-            mus = pm.Flat(f"{filter_output}_states", shape=mu_shape, dims=mu_dims)
-            covs = pm.Flat(f"{filter_output}_covariances", shape=cov_shape, dims=cov_dims)
+            mus = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
+            covs = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
 
             SequenceMvNormal(
                 f"{filter_output}_posterior",
@@ -479,3 +489,93 @@ class PyMCStateSpace:
             )
 
         return idata_unconditional_post
+
+    def forecast(self, idata, start, periods=None, end=None, filter_output="predicted"):
+        validate_filter_arg(filter_output)
+        if periods is None and end is None:
+            raise ValueError("Must specify one of either periods or end")
+        if periods is not None and end is not None:
+            raise ValueError("Must specify exactly one of either periods or end")
+
+        dims = None
+        temp_coords = self._fit_coords.copy()
+
+        filter_time_dim = EXTENDED_TIME_DIM if filter_output == "predicted" else TIME_DIM
+
+        if all([dim in temp_coords for dim in [filter_time_dim, ALL_STATE_DIM, OBS_STATE_DIM]]):
+            dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+
+        time_index = temp_coords[filter_time_dim]
+
+        if start not in time_index:
+            raise ValueError("Start date is not in the provided data")
+
+        is_datetime = isinstance(time_index[0], pd.Timestamp)
+
+        forecast_index = None
+
+        if is_datetime:
+            time_index = pd.DatetimeIndex(time_index)
+            freq = time_index.inferred_freq
+
+            if end is not None:
+                forecast_index = pd.date_range(start, end=end, freq=freq)
+            if periods is not None:
+                forecast_index = pd.date_range(start, periods=periods, freq=freq)
+            t0 = forecast_index[0]
+
+        else:
+            if end is not None:
+                forecast_index = np.arange(start, end, dtype="int")
+            if periods is not None:
+                forecast_index = np.arange(start, start + periods, dtype="int")
+            t0 = forecast_index[0]
+
+        t0_idx = np.flatnonzero(time_index == t0)[0]
+        temp_coords["data_time"] = time_index
+        temp_coords[TIME_DIM] = forecast_index
+
+        mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
+            idata.posterior, filter_output
+        )
+
+        if mu_dims is not None:
+            mu_dims = ["data_time"] + mu_dims[1:]
+        if cov_dims is not None:
+            cov_dims = ["data_time"] + cov_dims[1:]
+
+        with pm.Model(coords=temp_coords):
+            c, d, T, Z, R, H, Q = self._build_dummy_graph(skip_matrices=["x0", "P0"])
+            mu = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
+            cov = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
+
+            x0 = pm.Deterministic(
+                "x0_slice", mu[t0_idx], dims=mu_dims[1:] if mu_dims is not None else None
+            )
+            P0 = pm.Deterministic(
+                "P0_slice", cov[t0_idx], dims=cov_dims[1:] if cov_dims is not None else None
+            )
+
+            _ = LinearGaussianStateSpace(
+                "forecast",
+                x0,
+                P0,
+                c,
+                d,
+                T,
+                Z,
+                R,
+                H,
+                Q,
+                steps=len(forecast_index[:-1]),
+                dims=dims,
+                mode=self._fit_mode,
+            )
+
+            idata_forecast = pm.sample_posterior_predictive(
+                idata,
+                var_names=["forecast_latent", "forecast_observed"],
+                compile_kwargs={"mode": self._fit_mode},
+            )
+
+            return idata_forecast

@@ -27,22 +27,7 @@ class _LinearGaussianStateSpace(Distribution):
     rv_op = LinearGaussianStateSpaceRV
 
     def __new__(
-        cls,
-        name,
-        a0,
-        P0,
-        c,
-        d,
-        T,
-        Z,
-        R,
-        H,
-        Q,
-        init_dist=None,
-        steps=None,
-        k_states=None,
-        mode=None,
-        **kwargs,
+        cls, name, a0, P0, c, d, T, Z, R, H, Q, steps=None, k_states=None, mode=None, **kwargs
     ):
         k_states = cls._get_k_states(T)
 
@@ -75,23 +60,7 @@ class _LinearGaussianStateSpace(Distribution):
         )
 
     @classmethod
-    def dist(
-        cls,
-        a0,
-        P0,
-        c,
-        d,
-        T,
-        Z,
-        R,
-        H,
-        Q,
-        init_dist=None,
-        steps=None,
-        k_states=None,
-        mode=None,
-        **kwargs,
-    ):
+    def dist(cls, a0, P0, c, d, T, Z, R, H, Q, steps=None, k_states=None, mode=None, **kwargs):
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
         )
@@ -102,20 +71,14 @@ class _LinearGaussianStateSpace(Distribution):
 
         steps = pt.as_tensor_variable(intX(steps), ndim=0)
 
-        init_dist = pm.MvNormal.dist(a0, P0)
-        init_y = pm.MvNormal.dist(Z @ init_dist, stabilize(H))
-        init_dist = pt.concatenate([init_dist, init_y], axis=0)
-
-        return super().dist(
-            [a0, P0, c, d, T, Z, R, H, Q, init_dist, steps, k_states], mode=mode, **kwargs
-        )
+        return super().dist([a0, P0, c, d, T, Z, R, H, Q, steps, k_states], mode=mode, **kwargs)
 
     @classmethod
     def _get_k_states(cls, T):
         return T.shape[0]
 
     @classmethod
-    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, init_dist, steps, k_states, size=None, mode=None):
+    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, k_states, size=None, mode=None):
         if size is not None:
             batch_size = size
 
@@ -124,7 +87,6 @@ class _LinearGaussianStateSpace(Distribution):
         )
 
         steps_ = steps.type()
-        init_dist_ = init_dist.type()
         rng = pytensor.shared(np.random.default_rng())
 
         def step_fn(*args):
@@ -132,21 +94,23 @@ class _LinearGaussianStateSpace(Distribution):
             k = T.shape[0]
             a = state[:k]
 
-            a_next = c + T @ a
-            y_next = d + Z @ a_next
             middle_rng, a_innovation = pm.MvNormal.dist(
-                mu=0, cov=stabilize(Q), rng=rng
+                mu=0, cov=stabilize(Q, JITTER_DEFAULT), rng=rng
             ).owner.outputs
             next_rng, y_innovation = pm.MvNormal.dist(
-                mu=0, cov=stabilize(H), rng=middle_rng
+                mu=0, cov=stabilize(H, JITTER_DEFAULT), rng=middle_rng
             ).owner.outputs
 
-            a_next += R @ a_innovation
-            y_next += y_innovation
+            a_next = c + T @ a + R @ a_innovation
+            y_next = d + Z @ a_next + y_innovation
 
             next_state = pt.concatenate([a_next, y_next], axis=0)
 
             return next_state, {rng: next_rng}
+
+        init_x_ = pm.MvNormal.dist(a0_, stabilize(P0_, JITTER_DEFAULT), rng=rng)
+        init_y_ = pm.MvNormal.dist(Z_ @ init_x_, stabilize(H_, JITTER_DEFAULT), rng=rng)
+        init_dist_ = pt.concatenate([init_x_, init_y_], axis=0)
 
         statespace, updates = pytensor.scan(
             step_fn,
@@ -161,19 +125,17 @@ class _LinearGaussianStateSpace(Distribution):
 
         (ss_rng,) = tuple(updates.values())
         linear_gaussian_ss_op = LinearGaussianStateSpaceRV(
-            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, init_dist_, steps_],
+            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, steps_],
             outputs=[ss_rng, statespace_],
             ndim_supp=1,
         )
 
-        linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, init_dist, steps)
+        linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, steps)
         return linear_gaussian_ss
 
 
 class LinearGaussianStateSpace:
-    def __new__(
-        cls, name, a0, P0, c, d, T, Z, R, H, Q, *, init_dist=None, steps=None, mode=None, **kwargs
-    ):
+    def __new__(cls, name, a0, P0, c, d, T, Z, R, H, Q, *, steps=None, mode=None, **kwargs):
         dims = kwargs.pop("dims", None)
         latent_dims = None
         obs_dims = None
@@ -186,19 +148,9 @@ class LinearGaussianStateSpace:
             latent_dims = [time_dim, state_dim]
             obs_dims = [time_dim, obs_dim]
 
-        matrices = (
-            a0,
-            P0,
-            c,
-            d,
-            T,
-            Z,
-            R,
-            H,
-            Q,
-        )
+        matrices = (a0, P0, c, d, T, Z, R, H, Q)
         latent_obs_combined = _LinearGaussianStateSpace(
-            f"{name}_combined", *matrices, init_dist=init_dist, steps=steps, mode=mode, **kwargs
+            f"{name}_combined", *matrices, steps=steps, mode=mode, **kwargs
         )
 
         k_states = T.type.shape[0]
@@ -212,9 +164,9 @@ class LinearGaussianStateSpace:
         return latent_states, obs_states
 
     @classmethod
-    def dist(cls, a0, P0, c, d, T, Z, R, H, Q, *, init_dist=None, steps=None, **kwargs):
+    def dist(cls, a0, P0, c, d, T, Z, R, H, Q, *, steps=None, **kwargs):
         latent_obs_combined = _LinearGaussianStateSpace.dist(
-            a0, P0, c, d, T, Z, R, H, Q, init_dist=init_dist, steps=steps, **kwargs
+            a0, P0, c, d, T, Z, R, H, Q, steps=steps, **kwargs
         )
         k_states = T.type.shape[0]
 

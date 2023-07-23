@@ -1,4 +1,4 @@
-from typing import Dict, Sequence, Tuple
+from typing import Any, Dict, Sequence, Tuple
 
 import numpy as np
 import pytensor.tensor as pt
@@ -8,13 +8,13 @@ from pymc_experimental.statespace.models.utilities import make_default_coords
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
+    AR_PARAM_DIM,
+    MA_PARAM_DIM,
     OBS_STATE_DIM,
 )
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lyapunov
 
 STATE_STRUCTURES = ["fast", "interpretable"]
-AR_PARAM_DIM = "ar_param"
-MA_PARAM_DIM = "ma_param"
 
 
 class BayesianARMA(PyMCStateSpace):
@@ -120,6 +120,40 @@ class BayesianARMA(PyMCStateSpace):
         return names
 
     @property
+    def param_info(self) -> Dict[str, Dict[str, Any]]:
+        info = {
+            "x0": {
+                "shape": (self.k_states,),
+                "constraints": None,
+            },
+            "P0": {
+                "shape": (self.k_states, self.k_states),
+                "constraints": "Positive Semi-definite",
+            },
+            "sigma_obs": {
+                "shape": (self.k_endog,),
+                "constraints": "Positive",
+            },
+            "sigma_state": {
+                "shape": (self.k_posdef,),
+                "constraints": "Positive",
+            },
+            "ar_params": {
+                "shape": (self.p,),
+                "constraints": "None",
+            },
+            "ma_params": {
+                "shape": (self.q,),
+                "constraints": "None",
+            },
+        }
+
+        for name in self.param_names:
+            info[name]["dims"] = self.param_dims[name]
+
+        return {name: info[name] for name in self.param_names}
+
+    @property
     def state_names(self):
         if self.state_structure == "fast":
             states = ["data"] + [f"state_{i + 1}" for i in range(self.k_states - 1)]
@@ -172,9 +206,9 @@ class BayesianARMA(PyMCStateSpace):
     def coords(self) -> Dict[str, Sequence]:
         coords = make_default_coords(self)
         if self.p > 0:
-            coords.update({AR_PARAM_DIM: [f"L{i+1}.ar_param" for i in range(self.p)]})
+            coords.update({AR_PARAM_DIM: list(range(1, self.p + 1))})
         if self.q > 0:
-            coords.update({MA_PARAM_DIM: [f"L{i+1}.ma_param" for i in range(self.q)]})
+            coords.update({MA_PARAM_DIM: list(range(1, self.q + 1))})
 
         return coords
 

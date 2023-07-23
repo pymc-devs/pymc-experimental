@@ -1,23 +1,25 @@
-ALL_STATE_DIM = "states"
-ALL_STATE_AUX_DIM = "states_aux"
-OBS_STATE_DIM = "observed_states"
-OBS_STATE_AUX_DIM = "observed_states_aux"
-SHOCK_DIM = "shocks"
-SHOCK_AUX_DIM = "shocks_aux"
+ALL_STATE_DIM = "state"
+ALL_STATE_AUX_DIM = "state_aux"
+OBS_STATE_DIM = "observed_state"
+OBS_STATE_AUX_DIM = "observed_state_aux"
+SHOCK_DIM = "shock"
+SHOCK_AUX_DIM = "shock_aux"
 TIME_DIM = "time"
 EXTENDED_TIME_DIM = "extended_time"
+AR_PARAM_DIM = "ar_lag"
+MA_PARAM_DIM = "ma_lag"
 
 
 MATRIX_NAMES = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
 FILTER_OUTPUT_NAMES = [
-    "filtered_states",
-    "predicted_states",
-    "filtered_covariances",
-    "predicted_covariances",
+    "filtered_state",
+    "predicted_state",
+    "filtered_covariance",
+    "predicted_covariance",
 ]
 
-SMOOTHER_OUTPUT_NAMES = ["smoothed_states", "smoothed_covariances"]
-OBSERVED_OUTPUT_NAMES = ["observed_states", "observed_covariances"]
+SMOOTHER_OUTPUT_NAMES = ["smoothed_state", "smoothed_covariance"]
+OBSERVED_OUTPUT_NAMES = ["observed_state", "observed_covariance"]
 
 MATRIX_DIMS = {
     "x0": (ALL_STATE_DIM,),
@@ -32,13 +34,11 @@ MATRIX_DIMS = {
 }
 
 FILTER_OUTPUT_DIMS = {
-    "filtered_states": (TIME_DIM, ALL_STATE_DIM),
-    "smoothed_states": (TIME_DIM, ALL_STATE_DIM),
-    "predicted_states": (EXTENDED_TIME_DIM, ALL_STATE_DIM),
-    "observed_states": (TIME_DIM, OBS_STATE_DIM),
-    "filtered_covariances": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
-    "smoothed_covariances": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
-    "predicted_covariances": (EXTENDED_TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
-    "observed_covariances": (TIME_DIM, OBS_STATE_DIM, OBS_STATE_AUX_DIM),
+    "filtered_state": (TIME_DIM, ALL_STATE_DIM),
+    "smoothed_state": (TIME_DIM, ALL_STATE_DIM),
+    "predicted_state": (EXTENDED_TIME_DIM, ALL_STATE_DIM),
+    "filtered_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
+    "smoothed_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
+    "predicted_covariance": (EXTENDED_TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
     "obs": (TIME_DIM, OBS_STATE_DIM),
 }
