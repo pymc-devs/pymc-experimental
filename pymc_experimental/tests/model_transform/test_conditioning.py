@@ -222,6 +222,23 @@ def test_do_prune(prune):
         assert set(do_m.named_vars) == orig_named_vars
 
 
+def test_do_self_reference():
+    """Check we can replace a variable by an expression that refers to the same variable."""
+    with pm.Model() as m:
+        x = pm.Normal("x", 0, 1)
+
+    with pytest.warns(
+        UserWarning,
+        match="Intervention expression references the variable that is being intervened",
+    ):
+        new_m = do(m, {x: x + 100})
+
+    x = new_m["x"]
+    do_x = new_m["do_x"]
+    draw_x, draw_do_x = pm.draw([x, do_x], draws=5)
+    np.testing.assert_allclose(draw_x + 100, draw_do_x)
+
+
 def test_change_value_transforms():
     with pm.Model() as base_m:
         p = pm.Uniform("p", 0, 1, transform=None)
