@@ -620,7 +620,7 @@ class PyMCStateSpace:
         simulation_coords[TIME_DIM] = np.arange(steps, dtype="int")
 
         with pm.Model(coords=simulation_coords):
-            x0 = pm.DiracDelta("x0_new", pt.zeros(self.k_states), dims=[ALL_STATE_DIM])
+            x0 = pm.Deterministic("x0_new", pt.zeros(self.k_states), dims=[ALL_STATE_DIM])
             matrices = self._build_dummy_graph(
                 skip_matrices=["x0"] if Q_value is None else ["x0", "Q"]
             )
@@ -631,7 +631,7 @@ class PyMCStateSpace:
             else:
                 # Neither x0 nor Q was loaded into the model
                 P0, c, _, T, _, R, _ = matrices
-                Q = pm.DiracDelta("Q_new", Q_value, dims=[SHOCK_DIM, SHOCK_AUX_DIM])
+                Q = pm.Deterministic("Q_new", Q_value, dims=[SHOCK_DIM, SHOCK_AUX_DIM])
 
             if shock_trajectory is None:
                 shock_trajectory = pt.zeros((steps, self.k_posdef))
