@@ -1,3 +1,4 @@
+from copy import copy
 from typing import Dict, Optional, Sequence, Tuple
 
 import pytensor
@@ -5,10 +6,12 @@ from pymc.logprob.transforms import RVTransform
 from pymc.model import Model
 from pymc.pytensorf import find_rng_nodes
 from pytensor import Variable, shared
+from pytensor.compile import SharedVariable
 from pytensor.graph import Apply, FunctionGraph, Op, node_rewriter
 from pytensor.graph.rewriting.basic import out2in
 from pytensor.scalar import Identity
 from pytensor.tensor.elemwise import Elemwise
+from pytensor.tensor.sharedvar import ScalarSharedVariable
 
 from pymc_experimental.utils.pytensorf import StringType
 
@@ -182,10 +185,28 @@ def fgraph_from_model(
 
     memo = {}
 
-    # Replace RNG nodes so that seeding does not interfere with old model
-    for rng in find_rng_nodes(model_vars):
-        new_rng = shared(rng.get_value(borrow=False))
-        memo[rng] = new_rng
+    # Replace the following shared variables in the model:
+    # 1. RNGs
+    # 2. MutableData (could increase memory usage significantly)
+    # 3. Mutable coords dim lengths
+    shared_vars_to_copy = find_rng_nodes(model_vars)
+    shared_vars_to_copy += [v for v in model.dim_lengths.values() if isinstance(v, SharedVariable)]
+    shared_vars_to_copy += [v for v in model.named_vars.values() if isinstance(v, SharedVariable)]
+    for var in shared_vars_to_copy:
+        # FIXME: ScalarSharedVariables are converted to 0d numpy arrays internally,
+        #  so calling shared(shared(5).get_value()) returns a different type: TensorSharedVariables!
+        #  Furthermore, PyMC silently ignores mutable dim changes that are SharedTensorVariables...
+        #  https://github.com/pymc-devs/pytensor/issues/396
+        if isinstance(var, ScalarSharedVariable):
+            new_var = shared(var.get_value(borrow=False).item())
+        else:
+            new_var = shared(var.get_value(borrow=False))
+
+        assert new_var.type == var.type
+        new_var.name = var.name
+        new_var.tag = copy(var.tag)
+        # We can replace input variables by placing them in the memo
+        memo[var] = new_var
 
     fgraph = FunctionGraph(
         outputs=model_vars,
@@ -196,7 +217,7 @@ def fgraph_from_model(
     )
     # Copy model meta-info to fgraph
     fgraph._coords = model._coords.copy()
-    fgraph._dim_lengths = model._dim_lengths.copy()
+    fgraph._dim_lengths = {k: memo.get(v, v) for k, v in model._dim_lengths.items()}
 
     rvs_to_transforms = model.rvs_to_transforms
     named_vars_to_dims = model.named_vars_to_dims

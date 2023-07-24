@@ -2,6 +2,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 import pytest
+from pytensor import config, shared
 from pytensor.graph import Constant, FunctionGraph, node_rewriter
 from pytensor.graph.rewriting.basic import in2out
 from pytensor.tensor.exceptions import NotScalarConstantError
@@ -13,6 +14,7 @@ from pymc_experimental.utils.model_fgraph import (
     ModelObservedRV,
     ModelPotential,
     ModelVar,
+    clone_model,
     fgraph_from_model,
     model_deterministic,
     model_free_rv,
@@ -76,17 +78,22 @@ def test_basic():
     )
 
 
+def same_storage(shared_1, shared_2) -> bool:
+    """Check if two shared variables have the same storage containers (i.e., they point to the same memory)."""
+    return shared_1.container.storage is shared_2.container.storage
+
+
 @pytest.mark.parametrize("inline_views", (False, True))
 def test_data(inline_views):
-    """Test shared RNGs, MutableData, ConstantData and Dim lengths are handled correctly.
+    """Test shared RNGs, MutableData, ConstantData and dim lengths are handled correctly.
 
-    Everything should be preserved across new and old models, except for shared RNGs
+    All model-related shared variables should be copied to become independent across models.
     """
     with pm.Model(coords_mutable={"test_dim": range(3)}) as m_old:
         x = pm.MutableData("x", [0.0, 1.0, 2.0], dims=("test_dim",))
         y = pm.MutableData("y", [10.0, 11.0, 12.0], dims=("test_dim",))
-        b0 = pm.ConstantData("b0", np.zeros(3))
-        b1 = pm.Normal("b1")
+        b0 = pm.ConstantData("b0", np.zeros((1,)))
+        b1 = pm.DiracDelta("b1", 1.0)
         mu = pm.Deterministic("mu", b0 + b1 * x, dims=("test_dim",))
         obs = pm.Normal("obs", mu, sigma=1e-5, observed=y, dims=("test_dim",))
 
@@ -109,22 +116,46 @@ def test_data(inline_views):
 
     m_new = model_from_fgraph(m_fgraph)
 
-    # ConstantData is preserved
-    assert np.all(m_new["b0"].data == m_old["b0"].data)
-
-    # Shared non-rng shared variables are preserved
-    assert m_new["x"].container is x.container
-    assert m_new["y"].container is y.container
+    # The rv-data mapping is preserved
     assert m_new.rvs_to_values[m_new["obs"]] is m_new["y"]
 
-    # Shared rng shared variables are not preserved
-    assert m_new["b1"].owner.inputs[0].container is not m_old["b1"].owner.inputs[0].container
+    # ConstantData is still accessible as a model variable
+    np.testing.assert_array_equal(m_new["b0"], m_old["b0"])
 
-    with m_old:
+    # Shared model variables, dim lengths, and rngs are copied and no longer point to the same memory
+    assert not same_storage(m_new["x"], x)
+    assert not same_storage(m_new["y"], y)
+    assert not same_storage(m_new["b1"].owner.inputs[0], b1.owner.inputs[0])
+    assert not same_storage(m_new.dim_lengths["test_dim"], m_old.dim_lengths["test_dim"])
+
+    # Updating model shared variables in new model, doesn't affect old one
+    with m_new:
         pm.set_data({"x": [100.0, 200.0]}, coords={"test_dim": range(2)})
-
     assert m_new.dim_lengths["test_dim"].eval() == 2
-    np.testing.assert_array_almost_equal(pm.draw(m_new["x"], random_seed=63), [100.0, 200.0])
+    assert m_old.dim_lengths["test_dim"].eval() == 3
+    np.testing.assert_allclose(pm.draw(m_new["mu"]), [100.0, 200.0])
+    np.testing.assert_allclose(pm.draw(m_old["mu"]), [0.0, 1.0, 2.0], atol=1e-6)
+
+
+@config.change_flags(floatX="float64")  # Avoid downcasting Ops in the graph
+def test_shared_variable():
+    """Test that user defined shared variables (other than RNGs) aren't copied."""
+    x = shared(np.array([1, 2, 3.0]), name="x")
+    y = shared(np.array([1, 2, 3.0]), name="y")
+
+    with pm.Model() as m_old:
+        test = pm.Normal("test", mu=x, observed=y)
+
+    assert test.owner.inputs[3] is x
+    assert m_old.rvs_to_values[test] is y
+
+    m_new = clone_model(m_old)
+    test_new = m_new["test"]
+    # Shared Variables are cloned but still point to the same memory
+    assert test_new.owner.inputs[3] is not x
+    assert m_new.rvs_to_values[test_new] is not y
+    assert same_storage(test_new.owner.inputs[3], x)
+    assert same_storage(m_new.rvs_to_values[test_new], y)
 
 
 @pytest.mark.parametrize("inline_views", (False, True))
