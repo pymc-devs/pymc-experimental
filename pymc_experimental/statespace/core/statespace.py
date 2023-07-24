@@ -35,6 +35,8 @@ from pymc_experimental.statespace.utils.constants import (
     MATRIX_DIMS,
     MATRIX_NAMES,
     OBS_STATE_DIM,
+    SHOCK_AUX_DIM,
+    SHOCK_DIM,
     SMOOTHER_OUTPUT_NAMES,
     TIME_DIM,
 )
@@ -358,11 +360,7 @@ class PyMCStateSpace:
         validate_filter_arg(filter_output)
         raise NotImplementedError
 
-    def sample_conditional_posterior(
-        self,
-        idata,
-        filter_output: str = "filtered",
-    ):
+    def sample_conditional_posterior(self, idata):
         """
         Sample from the conditional posterior; that is, given parameter draws from the posterior distribution,
         compute kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
@@ -382,25 +380,25 @@ class PyMCStateSpace:
 
 
         """
-        validate_filter_arg(filter_output)
-        mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
-            idata.posterior, filter_output
-        )
-
         with pm.Model(coords=self._fit_coords):
-            mus = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
-            covs = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
+            for filter_output in ["filtered", "predicted", "smoothed"]:
+                mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
+                    idata.posterior, filter_output
+                )
 
-            SequenceMvNormal(
-                f"{filter_output}_posterior",
-                mus=mus,
-                covs=covs,
-                logp=pt.zeros(mus.shape[0]),
-                dims=mu_dims,
-            )
+                mus = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
+                covs = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
+
+                SequenceMvNormal(
+                    f"{filter_output}_posterior",
+                    mus=mus,
+                    covs=covs,
+                    logp=pt.zeros(mus.shape[0]),
+                    dims=mu_dims,
+                )
             idata_post = pm.sample_posterior_predictive(
                 idata,
-                var_names=[f"{filter_output}_posterior"],
+                var_names=["filtered_posterior", "predicted_posterior", "smoothed_posterior"],
                 compile_kwargs={"mode": get_mode(self._fit_mode)},
             )
         return idata_post
@@ -579,3 +577,85 @@ class PyMCStateSpace:
             )
 
             return idata_forecast
+
+    def impulse_response_function(
+        self,
+        idata,
+        steps: int = None,
+        shock_size: Sequence[float] = None,
+        shock_cov: Sequence[float] = None,
+        shock_trajectory: Sequence[float] = None,
+        orthogonalize_shocks=False,
+    ):
+
+        options = [shock_size, shock_cov, shock_trajectory]
+        Q_value = None  # default case -- sample from posterior
+
+        if sum(x is not None for x in options) > 1:
+            raise ValueError("Specify exactly 0 or 1 of shock_size, shock_cov, or shock_trajectory")
+        elif shock_size is not None:
+            Q_value = pt.eye(self.k_posdef) * shock_size
+        elif shock_cov is not None:
+            Q_value = pt.as_tensor_variable(shock_cov)
+        elif shock_trajectory is not None:
+            n, k = shock_trajectory.shape
+            if k != self.k_posdef:
+                raise ValueError(
+                    "If shock_trajectory is provided, there must be a trajectory provided for each shock. "
+                    f"Model has {self.k_posdef} shocks, but shock_trajectory has only {k} columns"
+                )
+            if steps is not None and steps != n:
+                _log.warning(
+                    "Both steps and shock_trajectory were provided but do not agree. Length of "
+                    "shock_trajectory will take priority, and steps will be ignored."
+                )
+                steps = n
+
+            shock_trajectory = pt.as_tensor_variable(shock_trajectory)
+
+        if steps is None:
+            steps = 40
+
+        simulation_coords = self._fit_coords.copy()
+        simulation_coords[TIME_DIM] = np.arange(steps, dtype="int")
+
+        with pm.Model(coords=simulation_coords):
+            x0 = pm.DiracDelta("x0_new", pt.zeros(self.k_states), dims=[ALL_STATE_DIM])
+            matrices = self._build_dummy_graph(
+                skip_matrices=["x0"] if Q_value is None else ["x0", "Q"]
+            )
+
+            if Q_value is None:
+                # x0 was not loaded into the model
+                P0, c, _, T, _, R, _, Q = matrices
+            else:
+                # Neither x0 nor Q was loaded into the model
+                P0, c, _, T, _, R, _ = matrices
+                Q = pm.DiracDelta("Q_new", Q_value, dims=[SHOCK_DIM, SHOCK_AUX_DIM])
+
+            if shock_trajectory is None:
+                shock_trajectory = pt.zeros((steps, self.k_posdef))
+                if orthogonalize_shocks:
+                    Q = pt.linalg.cholesky(Q)
+                initial_shock = pm.MvNormal("initial_shock", mu=0, cov=Q, dims=[SHOCK_DIM])
+                shock_trajectory = pt.set_subtensor(shock_trajectory[0], initial_shock)
+
+            def irf_step(shock, x, c, T, R):
+                next_x = c + T @ x + R @ shock
+                return next_x
+
+            irf, updates = pytensor.scan(
+                irf_step,
+                sequences=[shock_trajectory],
+                outputs_info=[x0],
+                non_sequences=[c, T, R],
+                n_steps=steps,
+                strict=True,
+                mode=self._fit_mode,
+            )
+            irf = pm.Deterministic("irf", irf, dims=[TIME_DIM, ALL_STATE_DIM])
+            irf_idata = pm.sample_posterior_predictive(
+                idata, var_names=["irf"], compile_kwargs={"mode": self._fit_mode}
+            )
+
+            return irf_idata

@@ -130,16 +130,16 @@ def test_gather_raises_if_variable_missing(ss_mod):
 
 def test_build_statespace_graph(pymc_mod):
     for name in [
-        "filtered_states",
-        "predicted_states",
-        "predicted_covariances",
-        "filtered_covariances",
+        "filtered_state",
+        "predicted_state",
+        "predicted_covariance",
+        "filtered_covariance",
     ]:
         assert name in [x.name for x in pymc_mod.deterministics]
 
 
 def test_build_smoother_graph(ss_mod, pymc_mod):
-    names = ["smoothed_states", "smoothed_covariances"]
+    names = ["smoothed_state", "smoothed_covariance"]
     for name in names:
         assert name in [x.name for x in pymc_mod.deterministics]
 
@@ -161,18 +161,10 @@ def test_build_smoother_graph(ss_mod, pymc_mod):
 #             )
 
 
-@pytest.mark.parametrize(
-    "filter_output",
-    ["filtered", "predicted", "smoothed", "invalid"],
-    ids=["filtered", "predicted", "smoothed", "invalid"],
-)
-def test_sample_conditional_posterior(ss_mod, idata, filter_output):
-    if filter_output == "invalid":
-        msg = "filter_output should be one of filtered, predicted, or smoothed, recieved invalid"
-        with pytest.raises(ValueError, match=msg):
-            ss_mod.sample_conditional_posterior(idata, filter_output=filter_output)
-    else:
-        conditional_post = ss_mod.sample_conditional_posterior(idata, filter_output=filter_output)
+def test_sample_conditional_posterior(ss_mod, idata):
+    conditional_post = ss_mod.sample_conditional_posterior(idata)
+    for filter_output in ["filtered", "predicted", "smoothed"]:
+        assert f"{filter_output}_posterior" in conditional_post.posterior_predictive
 
 
 #
