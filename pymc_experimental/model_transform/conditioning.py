@@ -1,9 +1,11 @@
+import warnings
 from typing import Any, List, Mapping, Optional, Sequence, Union
 
 from pymc import Model
 from pymc.logprob.transforms import RVTransform
 from pymc.pytensorf import _replace_vars_in_graphs
 from pymc.util import get_transformed_name, get_untransformed_name
+from pytensor.graph import ancestors
 from pytensor.tensor import TensorVariable
 
 from pymc_experimental.model_transform.basic import (
@@ -199,7 +201,15 @@ def do(
         # Just a sanity check
         assert model_var in fgraph.variables
 
-        intervention.name = model_var.name
+        # If the intervention references the original variable we must give it a different name
+        if model_var in ancestors([intervention]):
+            intervention.name = f"do_{model_var.name}"
+            warnings.warn(
+                f"Intervention expression references the variable that is being intervened: {model_var.name}. "
+                f"Intervention will be given the name: {intervention.name}"
+            )
+        else:
+            intervention.name = model_var.name
         dims = extract_dims(model_var)
         # If there are any RVs in the graph we introduce the intervention as a deterministic
         if rvs_in_graph([intervention]):
