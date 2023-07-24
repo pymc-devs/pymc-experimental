@@ -118,7 +118,7 @@ def test_data(inline_views):
     assert m_new.rvs_to_values[m_new["obs"]] is m_new["y"]
 
     # Shared rng shared variables are not preserved
-    m_new["b1"].owner.inputs[0].container is not m_old["b1"].owner.inputs[0].container
+    assert m_new["b1"].owner.inputs[0].container is not m_old["b1"].owner.inputs[0].container
 
     with m_old:
         pm.set_data({"x": [100.0, 200.0]}, coords={"test_dim": range(2)})

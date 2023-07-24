@@ -4,7 +4,7 @@ import pytensor
 from pymc.logprob.transforms import RVTransform
 from pymc.model import Model
 from pymc.pytensorf import find_rng_nodes
-from pytensor import Variable
+from pytensor import Variable, shared
 from pytensor.graph import Apply, FunctionGraph, Op, node_rewriter
 from pytensor.graph.rewriting.basic import out2in
 from pytensor.scalar import Identity
@@ -184,8 +184,7 @@ def fgraph_from_model(
 
     # Replace RNG nodes so that seeding does not interfere with old model
     for rng in find_rng_nodes(model_vars):
-        new_rng = rng.clone()
-        new_rng.set_value(rng.get_value(borrow=False))
+        new_rng = shared(rng.get_value(borrow=False))
         memo[rng] = new_rng
 
     fgraph = FunctionGraph(
