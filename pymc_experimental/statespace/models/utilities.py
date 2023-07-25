@@ -13,7 +13,38 @@ from pymc_experimental.statespace.utils.constants import (
 )
 
 
-def get_slice_and_move_cursor(cursor, param_count, last_slice=False):
+def get_slice_and_move_cursor(cursor: int, param_count: int, last_slice: bool = False):
+    """Create a slice object and update the cursor position.
+
+    This function generates a slice object starting from the current cursor position
+    up to `cursor + param_count` (exclusive). It also updates the cursor position to
+    the end of the generated slice.
+
+    Parameters:
+        cursor, int:
+            The current cursor position. It should be an integer value indicating the starting index of the slice.
+
+        param_count, int: The number of elements to include in the slice. It should be
+        a positive integer representing the size of the slice.
+
+        last_slice, bool (optional)
+            If True, the slice will extend to the end of the iterable (exclusive). If False (default), the slice will
+            be limited to `param_count` elements.
+
+    Returns:
+        Tuple, (slice, int):
+            A tuple containing the generated slice object and the updated cursor position.
+
+    Example:
+        >>> cursor = 0
+        >>> param_count = 3
+        >>> slice_obj, cursor = get_slice_and_move_cursor(cursor, param_count)
+        >>> print(slice_obj)
+        slice(0, 3, None)
+        >>> print(cursor)
+        3
+    """
+
     param_slice = slice(cursor, None if last_slice else cursor + param_count)
     cursor += param_count
 

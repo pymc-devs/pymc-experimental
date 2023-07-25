@@ -1,11 +1,12 @@
 import logging
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
+from arviz import InferenceData
 from numpy.typing import ArrayLike
 from pymc.model import modelcontext
 from pytensor.compile import get_mode
@@ -154,7 +155,31 @@ class PyMCStateSpace:
     def add_default_priors(self):
         raise NotImplementedError
 
-    def _get_matrix_shape_and_dims(self, name):
+    def _get_matrix_shape_and_dims(self, name: str) -> Tuple[Tuple, Tuple]:
+        """
+        Get the shape and dimensions of a matrix associated with the specified name.
+
+        This method retrieves the shape and dimensions of a matrix associated with the given name.
+
+        Parameters
+        ----------
+        name : str
+            The name of the matrix whose shape and dimensions need to be retrieved.
+
+        Returns
+        -------
+        tuple:
+            Tuple of two tuples, containing the shape and named dims of the requested matrix. Of the two, one is always
+            None. Named dimensions are preferred, so if the default dimension names are found in the dimensions of the
+            model on the context stack, (None, dim_names) is returned. Otherwise, (shape, None) is returned, where
+            shape is inferred from the PyMCStateSpace model.
+
+        Notes
+        -----
+        This model will only return named dimension if they are the "default" dimension names defined in the
+         statespace.utils.constant.py file.
+        """
+
         pm_mod = modelcontext(None)
         dims = MATRIX_DIMS.get(name, None)
         dims = dims if all([dim in pm_mod.coords.keys() for dim in dims]) else None
@@ -162,7 +187,40 @@ class PyMCStateSpace:
 
         return shape, dims
 
-    def _get_output_shape_and_dims(self, idata, filter_output):
+    def _get_output_shape_and_dims(
+        self, idata: InferenceData, filter_output: str
+    ) -> Optional[
+        Tuple[Tuple[int, int]],
+        Optional[Tuple[int, int, int]],
+        Optional[Tuple[str, str]],
+        Optional[Tuple[str, str, str]],
+    ]:
+        """
+        Get the shapes and dimensions of the output variables from the provided InferenceData.
+
+        This method extracts the shapes and dimensions of the output variables representing the state estimates
+        and covariances from the provided ArviZ InferenceData object. The state estimates are obtained from the
+        specified `filter_output` mode, which can be one of "filtered", "predicted", or "smoothed".
+
+        Parameters
+        ----------
+        idata : arviz.InferenceData
+            The ArviZ InferenceData object containing the posterior samples.
+
+        filter_output : str
+            The name of the filter output whose shape is being checked. It can be one of "filtered",
+            "predicted", or "smoothed".
+
+        Returns
+        -------
+        tuple:
+            A tuple containing four tuples: mu_shape, cov_shape, mu_dims, cov_dims. Two of the four will always be
+            None. Named dimensions are preferred. Thus, if named dimensions are found, it will return
+            (None, None, tuple, tuple). Otherwise, it will return (tuple, tuple, None, None).
+
+            The pairs (mu_shape, mu_dims) and (cov_shape, cov_dims) always form a valid parameterization for a PyMC
+            random variable, for example pm.Flat('filtered_states', ..., shape=mu_shape, dims=mu_dims) is always valid.
+        """
         mu_dims = None
         cov_dims = None
 
@@ -229,11 +287,46 @@ class PyMCStateSpace:
         return pt.concatenate(theta)
 
     def build_statespace_graph(
-        self, data, register_data=True, mode=None, return_updates=False, include_smoother=True
+        self,
+        data: Union[np.ndarray, pd.DataFrame, pt.TensorVariable],
+        register_data: bool = True,
+        mode: Optional[str] = None,
+        return_updates: bool = False,
+        include_smoother: bool = True,
     ) -> None:
         """
-        Given parameter vector theta, constructs the full computational graph describing the state space model.
-        Must be called inside a PyMC model context.
+        Given a parameter vector `theta`, constructs the full computational graph describing the state space model and
+        the associated log probability of the data. Hidden states and log probabilities are computed via the Kalman
+        Filter. All statespace matrices, as well as Kalman Filter outputs, will be added to the PyMC model on the
+        context stack as pm.Deterministic variables.
+
+        Parameters
+        ----------
+        data : Union[np.ndarray, pd.DataFrame, pt.TensorVariable]
+            The observed data used to fit the state space model. It can be a NumPy array, a Pandas DataFrame,
+            or a Pytensor tensor variable.
+
+        register_data : bool, optional, default=True
+            If True, the observed data will be registered with PyMC as a pm.MutableData variable. In addition,
+            "time" and "extended_time" dims will be created an added to the model's coords.
+
+        mode : Optional[str], optional, default=None
+            The Pytensor mode used for the computation graph construction. If None, the default mode will be used.
+            Other options include "JAX" and "NUMBA".
+
+        return_updates : bool, optional, default=False
+            If True, the method will return the update dictionary used by pytensor.Scan to update random variables.
+            Only useful for diagnostic purposes.
+
+        include_smoother : bool, optional, default=True
+            If True, the Kalman smoother will be included in the computation graph to generate smoothed states
+            and covariances. These will be added to the PyMC model on the context stack as pm.Deterministic variables
+
+        Returns
+        -------
+        None or Dict
+            If `return_updates` is True, the method will return a dictionary of updates from the Kalman filter.
+            If `return_updates` is False, the method will return None.
         """
 
         pm_mod = modelcontext(None)
@@ -311,7 +404,42 @@ class PyMCStateSpace:
         if return_updates:
             return updates
 
-    def _build_smoother_graph(self, filtered_states, filtered_covariances, mode=None):
+    def _build_smoother_graph(
+        self,
+        filtered_states: pt.TensorVariable,
+        filtered_covariances: pt.TensorVariable,
+        mode: Optional[str] = None,
+    ):
+        """
+        Build the computation graph for the Kalman smoother.
+
+        This method constructs the computation graph for applying the Kalman smoother to the filtered states
+        and covariances obtained from the Kalman filter. The Kalman smoother is used to generate smoothed
+        estimates of the latent states and their covariances in a state space model.
+
+        The Kalman smoother provides a more accurate estimate of the latent states by incorporating future
+        information in the backward pass, resulting in smoothed state trajectories.
+
+        Parameters
+        ----------
+        filtered_states : pytensor.tensor.TensorVariable
+            The filtered states obtained from the Kalman filter. Returned by the `build_statespace_graph` method.
+
+        filtered_covariances : pytensor.tensor.TensorVariable
+            The filtered state covariances obtained from the Kalman filter. Returned by the `build_statespace_graph`
+            method.
+
+        mode : Optional[str], default=None
+            The mode used by pytensor for the construction of the logp graph. If None, the mode provided to
+            `build_statespace_graph` will be used.
+
+        Returns
+        -------
+        Tuple[pytensor.tensor.TensorVariable, pytensor.tensor.TensorVariable]
+            A tuple containing TensorVariables representing the smoothed states and smoothed state covariances
+            obtained from the Kalman smoother.
+        """
+
         pymc_model = modelcontext(None)
         with pymc_model:
             *_, T, Z, R, H, Q = self.unpack_statespace()
@@ -323,6 +451,26 @@ class PyMCStateSpace:
             return smooth_states, smooth_covariances
 
     def _build_dummy_graph(self, skip_matrices=None):
+        """
+        Build a dummy computation graph for the state space model matrices.
+
+        This method creates "dummy" pm.Flat variables representing the matrices used in the state space model.
+        The shape and dimensions of each matrix are determined based on the model specifications. These variables
+        are used by the `sample_posterior`, `forecast`, and `impulse_response_functions` methods.
+
+        Parameters
+        ----------
+        skip_matrices : Optional[List[str]], default=None
+            A list of matrix names to skip during the dummy graph construction. If provided, the matrices
+            specified in this list will not be created in the dummy graph.
+
+        Returns
+        -------
+        List[pm.Flat]
+            A list of pm.Flat variables representing the dummy matrices used in the state space model. The return
+            order is always x0, P0, c, d, T, Z, R, H, Q, skipping any matrices indicated in `skip_matrices`.
+        """
+
         modelcontext(None)
         if skip_matrices is None:
             skip_matrices = []
@@ -360,26 +508,25 @@ class PyMCStateSpace:
         validate_filter_arg(filter_output)
         raise NotImplementedError
 
-    def sample_conditional_posterior(self, idata):
+    def sample_conditional_posterior(self, idata: InferenceData):
         """
         Sample from the conditional posterior; that is, given parameter draws from the posterior distribution,
-        compute kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
-        covariance computed via either the kalman filter, smoother, or predictions.
+        compute Kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
+        covariance computed via either the Kalman filter, smoother, or predictions.
 
         Parameters
         ----------
-        idata: InferenceData
-            Arviz InferenceData object with a "posterior" group
-        filter_output: string, default = 'filtered'
-            One of 'filtered', 'smoothed', or 'predicted'. Corresponds to which Kalman filter output you would like to
-            sample from.
+        idata : InferenceData
+            An Arviz InferenceData object containing the posterior distribution over model parameters.
 
         Returns
         -------
-        idata: InferenceData
-
-
+        InferenceData
+            An Arviz InferenceData object containing sampled trajectories from the conditional posterior.
+            The trajectories are stored in the posterior_predictive group with names "filtered_posterior",
+             "predicted_posterior", and "smoothed_posterior".
         """
+
         with pm.Model(coords=self._fit_coords):
             for filter_output in ["filtered", "predicted", "smoothed"]:
                 mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
@@ -436,7 +583,7 @@ class PyMCStateSpace:
 
     def sample_unconditional_posterior(
         self, idata, steps=None, use_data_time_dim=False
-    ) -> Tuple[ArrayLike, ArrayLike]:
+    ) -> InferenceData:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the
         posterior distribution over model parameters. The state space update equations are:
@@ -447,13 +594,32 @@ class PyMCStateSpace:
 
         Parameters
         ----------
-        idata: InferenceData
-            Arviz InferenceData object with a posterior group
+        idata : InferenceData
+            An Arviz InferenceData object with a posterior group containing samples from the
+            posterior distribution over model parameters.
+
+        steps : Optional[int], default=None
+            The number of time steps to sample for the unconditional trajectories. If not provided (None),
+            the function will sample trajectories for the entire available time dimension in the posterior.
+            Otherwise, it will generate trajectories for the specified number of steps.
+
+        use_data_time_dim : bool, default=False
+            If True, the function uses the time dimension present in the provided `idata` object to sample
+            unconditional trajectories. If False, a custom time dimension is created based on the number of steps
+            specified, or if steps is None, it uses the entire available time dimension in the posterior.
 
         Returns
         -------
-        idata: InferenceData
+        InferenceData
+            An Arviz InfereceData with two groups, posterior_latent and posterior_observed
+
+            - posterior_latent represents the latent state trajectories `X[t]`, which follows the dynamics:
+              `x[t+1] = T @ x[t] + R @ eta[t]`, where `eta ~ N(0, Q)`.
+
+            - posterior_observed represents the observed state trajectories `Y[t]`, which is obtained from
+              the latent state trajectories: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
         """
+
         dims = None
         temp_coords = self._fit_coords.copy()
 
@@ -488,7 +654,60 @@ class PyMCStateSpace:
 
         return idata_unconditional_post
 
-    def forecast(self, idata, start, periods=None, end=None, filter_output="predicted"):
+    def forecast(
+        self,
+        idata: InferenceData,
+        start: Union[int, pd.Timestamp],
+        periods: int = None,
+        end: Union[int, pd.Timestamp] = None,
+        filter_output="smoothed",
+    ) -> InferenceData:
+        """
+        Generate forecasts of state space model trajectories into the future.
+
+        This function combines posterior parameter samples in the provided idata with model dynamics to generate
+        forecasts for out-of-sample data. The trajectory is initialized using the filter output specified in
+        the filter_output argument.
+
+        Parameters
+        ----------
+        idata : InferenceData
+            An Arviz InferenceData object containing the posterior distribution over model parameters.
+
+        start : Union[int, pd.Timestamp]
+            The starting date index or time step from which to generate the forecasts. If the data provided to
+            `PyMCStateSpace.build_statespace_graph` had a datetime index, `start` should be a datetime.
+            If using integer time series, `start` should be an integer indicating the starting time step. In either
+            case, `start` should be in the data index used to build the statespace graph.
+
+        periods : Optional[int], default=None
+            The number of time steps to forecast into the future. If `periods` is specified, the `end`
+            parameter will be ignored. If `None`, then the `end` parameter must be provided.
+
+        end : Union[int, pd.Timestamp], default=None
+            The ending date index or time step up to which to generate the forecasts. If the data provided to
+            `PyMCStateSpace.build_statespace_graph` had a datetime index, `start` should be a datetime.
+            If using integer time series, `end` should be an integer indicating the ending time step.
+            If `end` is provided, the `periods` parameter will be ignored.
+
+        filter_output : str, default="smoothed"
+            The type of Kalman Filter output used to initialize the forecasts. The 0th timestep of the forecast will
+            be sampled from x[0] ~ N(filter_output_mean[start], filter_output_covariance[start]). Default is "smoothed",
+            which uses past and future data to make the best possible hidden state estimate.
+
+        Returns
+        -------
+        InferenceData
+            An Arviz InferenceData object containing forecast samples for the latent and observed state
+            trajectories of the state space model, named  "forecast_latent" and "forecast_observed".
+
+                - forecast_latent represents the latent state trajectories `X[t]`, which follows the dynamics:
+                  `x[t+1] = T @ x[t] + R @ eta[t]`, where `eta ~ N(0, Q)`.
+
+                - forecast_observed represents the observed state trajectories `Y[t]`, which is obtained from
+                  the latent state trajectories: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
+
+        """
         validate_filter_arg(filter_output)
         if periods is None and end is None:
             raise ValueError("Must specify one of either periods or end")
@@ -582,12 +801,50 @@ class PyMCStateSpace:
         self,
         idata,
         steps: int = None,
-        shock_size: Sequence[float] = None,
-        shock_cov: Sequence[float] = None,
-        shock_trajectory: Sequence[float] = None,
-        orthogonalize_shocks=False,
+        shock_size: Optional[Union[float, np.ndarray]] = None,
+        shock_cov: Optional[np.ndarray] = None,
+        shock_trajectory: Optional[np.ndarray] = None,
+        orthogonalize_shocks: bool = False,
     ):
+        """
+        Generate impulse response functions (IRF) from state space model dynamics.
 
+        An impulse response function represents the dynamic response of the state space model
+        to an instantaneous shock applied to the system. This function calculates the IRF
+        based on either provided shock specifications or the posterior state covariance matrix.
+
+        Parameters
+        ----------
+        idata : az.InferenceData
+            An Arviz InferenceData object containing the posterior distribution over model parameters.
+
+        steps : Optional[int], default=None
+            The number of time steps to calculate the impulse response. If not provided, it defaults to 40, unless
+            a shock trajectory is provided.
+
+        shock_size : Optional[Union[float, np.ndarray]], default=None
+            The size of the shock applied to the system. If specified, it will create a covariance
+            matrix for the shock with diagonal elements equal to `shock_size`. If float, the diagonal will be filled
+            with `shock_size`. If an array, `shock_size` must match the number of shocks in the state space model.
+
+        shock_cov : Optional[np.ndarray], default=None
+            A user-specified covariance matrix for the shocks. It should be a 2D numpy array with
+            dimensions (n_shocks, n_shocks), where n_shocks is the number of shocks in the state space model.
+
+        shock_trajectory : Optional[np.ndarray], default=None
+            A pre-defined trajectory of shocks applied to the system. It should be a 2D numpy array
+            with dimensions (n, n_shocks), where n is the number of time steps and k_posdef is the
+            number of shocks in the state space model.
+
+        orthogonalize_shocks : bool, default=False
+            If True, orthogonalize the shocks using Cholesky decomposition when generating the impulse
+            response. This option is only relevant when `shock_trajectory` is not provided.
+
+        Returns
+        -------
+        pm.InferenceData
+            An Arviz InferenceData object containing impulse response function in a variable named "irf".
+        """
         options = [shock_size, shock_cov, shock_trajectory]
         Q_value = None  # default case -- sample from posterior
 
