@@ -175,9 +175,9 @@ class BayesianVARMAX(PyMCStateSpace):
     def coords(self) -> Dict[str, Sequence]:
         coords = make_default_coords(self)
         if self.p > 0:
-            coords.update({AR_PARAM_DIM: [f"L{i + 1}.ar_param" for i in range(self.p)]})
+            coords.update({AR_PARAM_DIM: list(range(1, self.p + 1))})
         if self.q > 0:
-            coords.update({MA_PARAM_DIM: [f"L{i + 1}.ma_param" for i in range(self.q)]})
+            coords.update({MA_PARAM_DIM: list(range(1, self.q + 1))})
 
         return coords
 
