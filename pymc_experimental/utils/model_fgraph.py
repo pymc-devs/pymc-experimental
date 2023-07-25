@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, Optional, Tuple
 
 import pytensor
 from pymc.logprob.transforms import RVTransform
@@ -10,7 +10,7 @@ from pytensor.graph.rewriting.basic import out2in
 from pytensor.scalar import Identity
 from pytensor.tensor.elemwise import Elemwise
 
-from pymc_experimental.utils.pytensorf import StringType
+from pymc_experimental.utils.pytensorf import StringType, toposort_replace
 
 
 class ModelVar(Op):
@@ -87,19 +87,6 @@ model_observed_rv = ModelObservedRV()
 model_potential = ModelPotential()
 model_deterministic = ModelDeterministic()
 model_named = ModelNamed()
-
-
-def toposort_replace(
-    fgraph: FunctionGraph, replacements: Sequence[Tuple[Variable, Variable]], reverse: bool = False
-) -> None:
-    """Replace multiple variables in topological order."""
-    toposort = fgraph.toposort()
-    sorted_replacements = sorted(
-        replacements,
-        key=lambda pair: toposort.index(pair[0].owner) if pair[0].owner else -1,
-        reverse=reverse,
-    )
-    fgraph.replace_all(sorted_replacements, import_missing=True)
 
 
 @node_rewriter([Elemwise])
