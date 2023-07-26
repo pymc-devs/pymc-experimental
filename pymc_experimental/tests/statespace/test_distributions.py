@@ -57,7 +57,7 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
     with pymc_model:
         theta = ss_mod._gather_required_random_variables()
         ss_mod.update(theta)
-        matrices = ss_mod.unpack_statespace(include_constants=True)
+        matrices = ss_mod.unpack_statespace()
 
         filter_outputs = ss_mod.kalman_filter.build_graph(pymc_model["data"], *matrices)
         filter_mus, pred_mus, obs_mu, filter_covs, pred_covs, obs_cov, ll = filter_outputs

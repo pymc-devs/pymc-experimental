@@ -72,6 +72,28 @@ class PyMCStateSpace:
         verbose: bool = True,
     ):
 
+        """
+        Base class for Linear Gaussian Statespace models in PyMC.
+
+        Parameters
+        ----------
+        k_endog : int
+            The number of endogenous variables (observed time series).
+
+        k_states : int
+            The number of state variables.
+
+        k_posdef : int
+            The number of shocks in the model
+
+        filter_type : str, optional
+            The type of Kalman filter to use. Valid options are "standard", "univariate", "single", "cholesky", and
+            "steady_state". For more information, see the docs for each filter. Default is "standard".
+
+        verbose : bool, optional
+            If True, displays information about the initialized model. Defaults to True.
+        """
+
         self._fit_mode = None
         self._fit_coords = None
         self._prior_mod = pm.Model()
@@ -95,19 +117,37 @@ class PyMCStateSpace:
         self.kalman_smoother = KalmanSmoother()
 
         if verbose:
-            _log.info(
-                "Model successfully initialized! The following parameters should be assigned priors inside a PyMC "
-                f"model block: \n"
-                f"{self._print_prior_requirements()}"
-            )
+            self._print_prior_requirements()
 
-    def _print_prior_requirements(self):
+    def _print_prior_requirements(self) -> None:
+        """
+        Prints a short report to the terminal about the priors needed for the model, including their names,
+        shapes, named dimensions, and any parameter constraints.
+
+        Returns
+        -------
+        None
+        """
         out = ""
         for param, info in self.param_info.items():
             out += f'\t{param} -- shape: {info["shape"]}, constraints: {info["constraints"]}, dims: {info["dims"]}\n'
-        return out.rstrip()
+        out = out.rstrip()
 
-    def unpack_statespace(self, include_constants=False):
+        _log.info(
+            "The following parameters should be assigned priors inside a PyMC "
+            f"model block: \n"
+            f"{out}"
+        )
+
+    def unpack_statespace(self) -> Tuple:
+        """
+        Helper function to quickly obtain all statespace matrices in the standard order.
+
+        Returns
+        -------
+        tuple of 9 TensorVariable
+        """
+
         a0 = self.ssm["initial_state"]
         P0 = self.ssm["initial_state_cov"]
         c = self.ssm["state_intercept"]
@@ -159,7 +199,10 @@ class PyMCStateSpace:
         """
         Get the shape and dimensions of a matrix associated with the specified name.
 
-        This method retrieves the shape and dimensions of a matrix associated with the given name.
+        This method retrieves the shape and dimensions of a matrix associated with the given name. Importantly,
+        it will only find named dimension if they are the "default" dimension names defined in the
+        statespace.utils.constant.py file.
+
 
         Parameters
         ----------
@@ -168,16 +211,11 @@ class PyMCStateSpace:
 
         Returns
         -------
-        tuple:
-            Tuple of two tuples, containing the shape and named dims of the requested matrix. Of the two, one is always
-            None. Named dimensions are preferred, so if the default dimension names are found in the dimensions of the
-            model on the context stack, (None, dim_names) is returned. Otherwise, (shape, None) is returned, where
-            shape is inferred from the PyMCStateSpace model.
+        shape: tuple or None
+            If no named dimension are found, the shape of the requested matrix, otherwise None.
 
-        Notes
-        -----
-        This model will only return named dimension if they are the "default" dimension names defined in the
-         statespace.utils.constant.py file.
+        dims: tuple or None
+            If named dimensions are found, a tuple of strings, otherwise None
         """
 
         pm_mod = modelcontext(None)
@@ -187,14 +225,7 @@ class PyMCStateSpace:
 
         return shape, dims
 
-    def _get_output_shape_and_dims(
-        self, idata: InferenceData, filter_output: str
-    ) -> Optional[
-        Tuple[Tuple[int, int]],
-        Optional[Tuple[int, int, int]],
-        Optional[Tuple[str, str]],
-        Optional[Tuple[str, str, str]],
-    ]:
+    def _get_output_shape_and_dims(self, idata: InferenceData, filter_output: str) -> Tuple:
         """
         Get the shapes and dimensions of the output variables from the provided InferenceData.
 
@@ -213,14 +244,24 @@ class PyMCStateSpace:
 
         Returns
         -------
-        tuple:
-            A tuple containing four tuples: mu_shape, cov_shape, mu_dims, cov_dims. Two of the four will always be
-            None. Named dimensions are preferred. Thus, if named dimensions are found, it will return
-            (None, None, tuple, tuple). Otherwise, it will return (tuple, tuple, None, None).
+        mu_shape: tuple(int, int) or None
+            Shape of the mean vectors returned by the Kalman filter. Should be (n_data_timesteps, k_states).
+            If named dimensions are found, this will be None.
 
-            The pairs (mu_shape, mu_dims) and (cov_shape, cov_dims) always form a valid parameterization for a PyMC
-            random variable, for example pm.Flat('filtered_states', ..., shape=mu_shape, dims=mu_dims) is always valid.
+        cov_shape: tuple (int, int, int) or None
+            Shape of the hidden state covariance matrices returned by the Kalman filter. Should be
+            (n_data_timesteps, k_states, k_states).
+            If named dimensions are found, this will be None.
+
+        mu_dims: tuple(str, str) or None
+            *Default* named dimensions associated with the mean vectors returned by the Kalman filter, or None if
+            the default names are not found.
+
+        cov_dims: tuple (str, str, str) or None
+            *Default* named dimensions associated with the covariance matrices returned by the Kalman filter, or None if
+            the default names are not found.
         """
+
         mu_dims = None
         cov_dims = None
 
@@ -244,13 +285,71 @@ class PyMCStateSpace:
 
     def update(self, theta: pt.TensorVariable) -> None:
         """
-        Put parameter values from vector theta into the correct positions in the state space matrices.
+        Put parameter values from vector theta into the correct positions in their respective state space matrices.
+
+        The purpose of the update function is to hide tedious parameter allocations from the user. In statespace models,
+        it is extremely rare for an entire matrix to be defined by a single prior distribution. Instead, users expect
+        to place priors over single entries of the matrix. The purpose of this function is to meet that expectation.
+
+        The tensor `theta` should **only** be that returned by `PyMCStateSpace._gather_required_random_variables`.
+        This ensures the parameters are provided in the expected order. Passing parameters in an arbitrary order will
+        result in incorrect results.
 
         Parameters
         ----------
         theta: TensorVariable
             Vector of all variables in the state space model
+
+        Returns
+        ----------
+        None
+
+        Examples
+        ----------
+        As an example, consider an ARMA(2,2) model, which has five parameters (excluding the initial state distribution):
+        2 AR parameters (:math:`\rho_1` and :math:`\rho_2`), 2 MA parameters (:math:`\theta_1` and :math:`theta_2`),
+        and a single innovation covariance (:math:`\\sigma`). A common way of writing this statespace is:
+
+        ..math::
+
+            \begin{align}
+                T &= \begin{bmatrix} \rho_1 & 1 & 0 \\
+                                     \rho_2 & 0 & 1 \\
+                                     0      & 0 & 0
+                      \\end{bmatrix} \\
+                R & = \begin{bmatrix} 1 \\ \theta_1 \\ \theta_2 \\end{bmatrix} \\
+                Q &= \begin{bmatrix} \\sigma \\end{bmatrix}
+            \\end{align}
+
+        Define `theta` as a flat array of these five parameters, arranged in an arbitrarily fixed order
+        :math:`\\left [\rho_1 \rho_2 \theta_1 \theta_2 \\sigma \right ]. `update(theta)` is equivalent to:
+
+        >>> import pytensor.tensor as pt
+        >>> T = pt.eye(2, k=1)
+        >>> R = pt.concatenate([pt.ones(1,1), pt.zeros((2, 1))], axis=0)
+        >>> Q = pt.zeros((1, 1))
+        >>> T = pt.set_subtensor(T[:2, 0], theta[:2])
+        >>> R = pt.set_subtensor(R[1:, 0], theta[2:4])
+        >>> Q = pt.set_subtensor(Q[0, 0], theta[4])
+
+        In real usage, `theta` will be automatically constructed by `PyMCStateSpace._gather_required_random_variables`
+        inside a PyMC model context:
+
+        >>> import pymc as pm
+        >>> import pymc_experimental.statespace as pmss
+        >>> ss_mod = pmss.BayesianARMA(order=(2, 2), verbose=False, stationary_initialization=True)
+        >>> with pm.Model():
+        >>>      x0 = pm.Normal('x0', size=ss_mod.k_states)
+        >>>      ar_params = pm.Normal('ar_params', size=ss_mod.p)
+        >>>      ma_parama = pm.Normal('ma_params', size=ss_mod.q)
+        >>>      sigma_state = pm.Normal('sigma_state')
+        >>>      theta = ss_mod._gather_required_random_variables()
+        >>>      ss_mod.update(theta)
+        >>> ss_mod.ssm['transition'].eval()
+        >>> ss_mod.ssm['selection'].eval()
+        >>> ss_mod.ssm['state_cov'].eval()
         """
+
         raise NotImplementedError
 
     def _gather_required_random_variables(self) -> pt.TensorVariable:
@@ -500,6 +599,7 @@ class PyMCStateSpace:
         filter_output: string, default = 'filtered'
             One of 'filtered', 'smoothed', or 'predicted'. Corresponds to which Kalman filter output you would like to
             sample from.
+
         Returns
         -------
         idata: InferenceData

@@ -1,10 +1,11 @@
 from abc import ABC
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
 from pytensor.compile.mode import get_mode
+from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
 from pytensor.tensor.nlinalg import matrix_dot
@@ -29,26 +30,75 @@ assert_time_varying_dim_correct = Assert(
 
 class BaseFilter(ABC):
     def __init__(self, mode=None):
-        self.mode = mode
-        self.seq_names = []
-        self.non_seq_names = []
-
-        self.eye_states = None
-        self.eye_posdef = None
-        self.eye_endog = None
-
-    def initialize_eyes(self, R, Z):
         """
-        It's surprisingly expensive for pytensor to create an identity matrix every time we need one for e.g. a matrix
-        inversion (see [1] for benchmarks). This function creates some identity matrices of useful sizes for the model
+        Kalman Filter Abstract Class.
+
+        Parameters
+        ----------
+        mode : str, optional
+            The mode used for Pytensor compilation. Defaults to None.
+
+        Notes
+        -----
+        The BaseFilter class is an abstract base class (ABC) for implementing kalman filters.
+        It defines common attributes and methods used by kalman filter implementations.
+
+        Attributes
+        ----------
+        mode : str or None
+            The mode used for Pytensor compilation.
+
+        seq_names : List[str]
+            A list of name representing time-varying statespace matrices. That is, inputs that will need to be
+            provided to the `sequences` argument of `pytensor.scan`
+
+        non_seq_names : List[str]
+            A list of names representing static statespace matrices. That is, inputs that will need to be provided
+            to the `non_sequences` argument of `pytensor.scan`
+
+        eye_states : TensorVariable
+            An identity matrix of shape (k_states, k_states), stored for computational efficiency
+
+        eye_posdef : TensorVariable
+            An identity matrix of shape (k_posdef, k_posdef), stored for computational efficiency
+
+        eye_endog : TensorVariable
+            An identity matrix of shape (k_endog, k_endog), stored for computational efficiency
+        """
+
+        self.mode: str = mode
+        self.seq_names: List[str] = []
+        self.non_seq_names: List[str] = []
+
+        self.eye_states: Optional[TensorVariable] = None
+        self.eye_posdef: Optional[TensorVariable] = None
+        self.eye_endog: Optional[TensorVariable] = None
+
+    def initialize_eyes(self, R: TensorVariable, Z: TensorVariable) -> None:
+        """
+        Initialize identity matrices for of shapes repeated used in the kalman filtering equations and store them.
+
+        It's surprisingly expensive for pytensor to create an identity matrix every time we need one
+        (see [1] for benchmarks). This function creates some identity matrices of useful sizes for the model
         to re-use as a small optimization.
 
-        Also, we're not sure whether R or Z are time-varying when this function is called, so the states are indexed
-        from the back.
+        Parameters
+        ----------
+        R : TensorVariable
+            The tensor representing the selection matrix, called R in [2]
+
+        Z : TensorVariable
+            The tensor representing the design matrix, called Z in [2].
+
+        Returns
+        -------
+        None
 
         References
         ----------
         .. [1] https://gist.github.com/jessegrabowski/acd3235833163943a11654d78a72f04b
+        .. [2] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
+               2nd ed, Oxford University Press, 2012.
         """
 
         n_states, n_posdef, n_endog = R.shape[-2], R.shape[-1], Z.shape[-2]
@@ -63,19 +113,40 @@ class BaseFilter(ABC):
         return data, a0, P0, c, d, T, Z, R, H, Q
 
     @staticmethod
-    def check_time_varying_shapes(data, sequence_params):
+    def add_check_on_time_varying_shapes(
+        data: TensorVariable, sequence_params: List[TensorVariable]
+    ) -> List[Variable]:
         """
-        If any matrices are time-varying, make sure the number of matrices is equal to the number of time steps.
+        Insert a check that time-varying matrices match the data shape to the computational graph.
+
+        If any matrices are time-varying, they need to have the same length as the data. This function wraps each
+        element of `sequence_params` in an assert `Op` that makes sure all inputs have the correct shape.
+
+        Parameters
+        ----------
+        data : TensorVariable
+            The tensor representing the data.
+
+        sequence_params : List[TensorVariable]
+            A list of tensors to be provided to `pytensor.scan` as `sequences`.
+
+        Returns
+        -------
+        List[TensorVariable]
+            A list of tensors wrapped in an `Assert` `Op` that checks the shape of the 0th dimension on each is equal
+             to the shape of the 0th dimension on the data.
+
         # TODO: The PytensorRepresentation object puts the time dimension last, should the reshaping happen here in
             the Kalman filter, or in the StateSpaceModel, before passing into the KF?
         """
+
         n_steps = data.shape[0]
         return [
             assert_time_varying_dim_correct(param, pt.eq(param.shape[0], n_steps))
             for param in sequence_params
         ]
 
-    def unpack_args(self, args):
+    def unpack_args(self, args) -> Tuple:
         """
         The order of inputs to the inner scan function is not known, since some, all, or none of the input matrices
         can be time varying. The order arguments are fed to the inner function is sequences, outputs_info,
@@ -133,7 +204,7 @@ class BaseFilter(ABC):
         self.non_seq_names = non_seq_names
 
         if len(sequences) > 0:
-            sequences = self.check_time_varying_shapes(data, sequences)
+            sequences = self.add_check_on_time_varying_shapes(data, sequences)
 
         results, updates = pytensor.scan(
             self.kalman_step,
@@ -189,11 +260,40 @@ class BaseFilter(ABC):
     @staticmethod
     def handle_missing_values(y, Z, H):
         """
-        Adjust Z and H matrices according to [1] in the presence of missing data. Fill missing values with zeros
-        to avoid propagating the NaNs. Return a flag if everything is missing (needed for numerical adjustments in the
-        update methods)
+        This function handles missing values in the observation data `y` and adjusts the design matrix `Z` and the
+        observation noise covariance matrix `H` accordingly. Missing values are replaced with zeros to prevent
+        propagating NaNs through the computation. The function also returns a binary flag tensor `all_nan_flag`,
+        indicating if all values in the observation data are missing. This flag is used for numerical adjustments in
+        the update method.
 
-        # TODO: Do the intercepts need to be masked as well?
+        Parameters
+        ----------
+        y : TensorVariable
+            The observation data at time t.
+        Z : TensorVariable
+            The design matrix.
+        H : TensorVariable
+            The observation noise covariance matrix.
+
+        Returns
+        -------
+        y_masked : TensorVariable
+            Observation vector with missing values replaced by zeros.
+
+        Z_masked: TensorVariable
+            Design matrix adjusted to exclude the missing states from the information set of observed variables in the
+            update step
+
+        H_masked: TensorVariable
+            Noise covariance matrix, adjusted to exclude the missing states
+
+        all_nan_flag: bool
+            True if the entire state vector is missing
+
+        References
+        ----------
+        .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
+               2nd ed, Oxford University Press, 2012.
         """
         nan_mask = pt.isnan(y)
         all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
@@ -207,10 +307,51 @@ class BaseFilter(ABC):
 
     @staticmethod
     def predict(a, P, c, T, R, Q) -> Tuple[TensorVariable, TensorVariable]:
+        """
+        Perform the prediction step of the Kalman filter.
+
+        This function computes the one-step forecast of the hidden states and the covariance matrix of the forecasted
+        states, based on the current state estimates and model parameters. For computational stability, the estimated
+        covariance matrix is forced to by symmetric by averaging it with its own transpose. The prediction equations
+        are:
+
+        .. math::
+
+            \begin{align}
+            a_{t+1 | t} &= T_t a_{t | t} \\
+            P_{t+1 | t} &= T_t P_{t | t} T_t^T + R_t Q_t R_t^T
+            \\end{align}
+
+
+        Parameters
+        ----------
+        a : TensorVariable
+            The current state vector estimate computed by the update step, a[t | t].
+        P : TensorVariable
+            The current covariance matrix estimate computed by the update step, P[t | t].
+        c : TensorVariable
+            The hidden state intercept/bias vector.
+        T : TensorVariable
+            The state transition matrix.
+        R : TensorVariable
+            The selection matrix.
+        Q : TensorVariable
+            The state innovation covariance matrix.
+
+        Returns
+        -------
+        a_hat : TensorVariable
+            One-step forecast of the hidden states
+        P_hat : TensorVariable
+            Covariance matrix of the forecasted hidden states
+
+        References
+        ----------
+        .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
+               2nd ed, Oxford University Press, 2012.
+        """
         a_hat = T.dot(a) + c
         P_hat = matrix_dot(T, P, T.T) + matrix_dot(R, Q, R.T)
-
-        # Force P_hat to be symmetric
         P_hat = 0.5 * (P_hat + P_hat.T)
 
         return a_hat, P_hat
@@ -219,22 +360,116 @@ class BaseFilter(ABC):
     def update(
         a, P, y, c, d, Z, H, all_nan_flag
     ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
+        """
+        Perform the update step of the Kalman filter.
+
+        This function updates the state vector and covariance matrix estimates based on the current observation data,
+        previous predictions, and model parameters. The filtering equations are:
+
+        .. math::
+
+            \begin{align}
+            \\hat{y}_t &= Z_t a_{t | t-1} \\
+            v_t &= y_t - \\hat{y}_t \\
+            F_t &= Z_t P_{t | t-1} Z_t^T + H_t \\
+            a_{t|t} &= a_{t | t-1} + P_{t | t-1} Z_t^T F_t^{-1} v_t \\
+            P_{t|t} &= P_{t | t-1} - P_{t | t-1} Z_t^T F_t^{-1} Z_t P_{t | t-1}
+            \\end{align}
+
+
+        Parameters
+        ----------
+        a : TensorVariable
+            The current state vector estimate, conditioned on information up to time t-1.
+        P : TensorVariable
+            The current covariance matrix estimate, conditioned on information up to time t-1.
+        y : TensorVariable
+            The observation data at time t.
+        c : TensorVariable
+            The matrix c.
+        d : TensorVariable
+            The matrix d.
+        Z : TensorVariable
+            The matrix Z.
+        H : TensorVariable
+            The matrix H.
+        all_nan_flag : TensorVariable
+            A binary flag tensor indicating whether there are any missing values in the observation data.
+
+        Returns
+        -------
+        Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]
+            A tuple containing the updated state vector `a_filtered`, the updated covariance matrix `P_filtered`, the
+            predicted observation `obs_mu`, the predicted observation covariance matrix `obs_cov`, and the log-likelihood `ll`.
+        """
         raise NotImplementedError
 
-    def kalman_step(
-        self, *args
-    ) -> Tuple[
-        TensorVariable,
-        TensorVariable,
-        TensorVariable,
-        TensorVariable,
-        TensorVariable,
-        TensorVariable,
-        TensorVariable,
-    ]:
+    def kalman_step(self, *args) -> Tuple:
         """
-        The timing convention follows [1]. a0 and P0 are taken to be predicted states, so we begin
-        with an update step rather than a predict step.
+        Performs a single iteration of the Kalman filter, which is composed of two steps : an update step and a
+        prediction step. The timing convention follows [1], in which initial state and covariance estimates a0 and P0
+        are taken to be predictions. As a result, the update step is applied first. The update step computes:
+
+        .. math::
+
+            \begin{align}
+            \\hat{y}_t &= Z_t a_{t | t-1} \\
+            v_t &= y_t - \\hat{y}_t \\
+            F_t &= Z_t P_{t | t-1} Z_t^T + H_t \\
+            a_{t|t} &= a_{t | t-1} + P_{t | t-1} Z_t^T F_t^{-1} v_t \\
+            P_{t|t} &= P_{t | t-1} - P_{t | t-1} Z_t^T F_t^{-1} Z_t P_{t | t-1}
+            \\end{align}
+
+        Where the quantities :math:`a_{t|t}` and :math:`P_{t|t}` are the best linear estimates of the hidden states
+        at time t, incorporating all information up to and including the observation :math:`y_t`. After the update step,
+        new one-step forecasts of the hidden states can be obtained by applying the model transition dynamics in
+        the prediction step:
+
+        .. math::
+
+            \begin{align}
+            a_{t+1 | t} &= T_t a_{t | t} \\
+            P_{t+1 | t} &= T_t P_{t | t} T_t^T + R_t Q_t R_t^T
+            \\end{align}
+
+        Recursive application of these two steps results in the best linear estimate of the hidden states, including
+        missing values and observations subject to measurement error.
+
+        Parameters
+        ----------
+        Kalman filter inputs:
+            y, a, P, c, d, T, Z, R, H, Q. See the docstring for the kalman filter class for details.
+
+        Returns
+        ----------
+        a_filtered : TensorVariable
+            Best linear estimate of hidden states given all information up to and including the present
+             observation, a[t | t].
+
+        a_hat: TensorVariable
+            One-step forecast of next-period hidden states given all information up to and including the present
+            observation, a[t+1 | t]
+
+        obs_mu: TensorVariable
+            Estimates of the current observation given all information available prior to the current state,
+             d + Z @ a[t | t-1]
+
+        P_filtered: TensorVariable
+            Best linear estimate of the covariance between hidden states, given all information up to and including
+            the present observation, P[t | t]
+
+        P_hat: TensorVariable
+            Covariance between the one-step forecasted hidden states given all information up to and including the
+            present observation, P[t+1 | t]
+
+        obs_cov: TensorVariable
+            Covariance between estimated present observations, given all information available prior to the current
+            state, Z @ P[t | t-1] @ Z.T + H
+
+        ll: float
+            Likelihood of the time t observation vector under the multivariate normal distribution parameterized by
+            `obs_mu` and `obs_cov`
+
         References
         ----------
         .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
@@ -257,10 +492,53 @@ class BaseFilter(ABC):
 class StandardFilter(BaseFilter):
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         """
-        Conjugate update rule for the mean and covariance matrix, with log-likelihood en passant
-        TODO: Verify these equations are correct if there are multiple endogenous variables.
-        TODO: Is there a more elegant way to handle nans?
+        Compute one-step forecasts for observed states conditioned on information up to, but not including, the current
+        timestep, `y_hat`, along with the forcast covariance matrix, `F`. Marginalize over observed states to obtain
+        the best linear estimate of the unobserved states, `a_filtered`, as well as the associated covariance matrix,
+        `P_filtered`,  conditioned on all information, up to and including the present.
+
+        Derivation of the Kalman filter, along with a deeper discussion of the computational elements, can be found in
+        [1].
+
+        Parameters
+        ----------
+        a : TensorVariable
+            The current state vector estimate, conditioned on information up to time t-1.
+
+        P : TensorVariable
+            The current covariance matrix estimate, conditioned on information up to time t-1.
+
+        y : TensorVariable
+            Observations at time t.
+
+        c : TensorVariable
+            Latent state bias term.
+
+        d : TensorVariable
+            Observed state bias term.
+
+        Z : TensorVariable
+            Linear map between unobserved and observed states.
+
+        H : TensorVariable
+            Observation noise covariance matrix
+
+        all_nan_flag : TensorVariable
+            A flag indicating whether all elements in the data `y` are NaNs.
+
+        Returns
+        -------
+        Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, float]
+            A tuple containing the updated state vector `a_filtered`, the updated covariance matrix `P_filtered`,
+            the one-step forecast mean `y_hat`, one-step forcast covariance matrix  `F`, and the log-likelihood of
+            the data, given the one-step forecasts, `ll`.
+
+        References
+        ----------
+        .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
+               2nd ed, Oxford University Press, 2012.
         """
+
         y_hat = d + Z.dot(a)
         v = y - y_hat
 
@@ -291,6 +569,14 @@ class StandardFilter(BaseFilter):
 
 
 class CholeskyFilter(BaseFilter):
+    """ "
+    Kalman filter implementation using a Cholesky factorization plus pt.solve_triangular to (attempt) to speed up
+    inversion of the observation covariance matrix `F`.
+
+    #TODO: Can the entire Kalman filter process be re-written, starting from P0_chol, so it's not necessary to compute
+        cholesky(F) at every iteration?
+    """
+
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         y_hat = Z.dot(a) + d
         v = y - y_hat
@@ -329,9 +615,14 @@ class SingleTimeseriesFilter(BaseFilter):
     """
     If there is only a single observed timeseries, regardless of the number of hidden states, there is no need to
     perform a matrix inversion anywhere in the filter.
+
+    # TODO: This class should eventually be made irrelevant by pytensor re-writes.
     """
 
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
+        """ "
+        Wrap the data in an `Assert` `Op` to ensure there is only one observed state.
+        """
         data = assert_data_is_1d(data, pt.eq(data.shape[1], 1))
 
         return data, a0, P0, c, d, T, Z, R, H, Q

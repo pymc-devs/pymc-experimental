@@ -40,7 +40,6 @@ class BayesianARMA(PyMCStateSpace):
             )
         self.state_structure = state_structure
 
-        # k_states = max(self.p, self.q + 1)
         p_max = max(1, self.p)
         q_max = max(1, self.q)
 
