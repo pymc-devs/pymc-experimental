@@ -61,20 +61,10 @@ Utils
 
 Statespace Models
 =====
-.. currentmodule:: pymc_experimental.statespace
-.. autosummary::
-   :toctree: generated/
+.. automodule:: pymc_experimental.statespace
+   :toctree:
+   :maxdepth: 2
 
-   core.representation.PytensorRepresentation
-   core.statespace.PyMCStateSpace
-   models.local_level.BayesianLocalLevel
-   models.SARIMAX.BayesianARIMA
-   models.VARMAX.BayesianVARMAX
-   filters.kalman_filter.BaseFilter
-   filters.kalman_filter.StandardFilter
-   filters.kalman_filter.CholeskyFilter
-   filters.kalman_filter.SingleTimeseriesFilter
-   filters.kalman_filter.UnivariateFilter
-   filters.kalman_filter.SteadyStateFilter
-   filters.kalman_smoother.KalmanSmoother
-   filters.distributions.LinearGaussianStateSpace
+   statespace/core
+   statespace/models
+   statespace/filters
