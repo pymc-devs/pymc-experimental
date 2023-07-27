@@ -226,7 +226,7 @@ def test_model_config_formatting():
     }
     model_builder = test_ModelBuilder()
     converted_model_config = model_builder._model_config_formatting(model_config)
-    np.testing.asser_equal(converted_model_config["a"]["dims"], ("x",))
+    np.testing.assert_equal(converted_model_config["a"]["dims"], ("x",))
     np.testing.assert_equal(converted_model_config["a"]["loc"], np.array([0, 0]))
 
 
