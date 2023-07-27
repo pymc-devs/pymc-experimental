@@ -63,7 +63,7 @@ Statespace Models
 =====
 .. automodule:: pymc_experimental.statespace
    :toctree:
-   :maxdepth: 2
+   :maxdepth: 1
 
    statespace/core
    statespace/models

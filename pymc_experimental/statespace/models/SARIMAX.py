@@ -34,7 +34,7 @@ class BayesianARIMA(PyMCStateSpace):
     Given this 3-tuple, the model can be written:
 
     .. math::
-        (1- \phi_1 B - \cdots - \phi_p B^p) & (1-B)^d y_{t} = c + (1 + \theta_1 B + \cdots + \theta_q B^q) \varepsilon_t
+        (1- \phi_1 B - \cdots - \phi_p B^p) (1-B)^d y_{t} = c + (1 + \theta_1 B + \cdots + \theta_q B^q) \varepsilon_t
 
     Where B is the backshift operator, :math:`By_{t} = y_{t-1}`.
 
@@ -49,7 +49,7 @@ class BayesianARIMA(PyMCStateSpace):
     The process:
 
     .. math::
-        \\Delta y_{t} = y_{t} - y_{t-1} = \rho \\Delta y_{t-1} + \\Delta \varepsilon_t
+        \Delta y_{t} = y_{t} - y_{t-1} = \rho \Delta y_{t-1} + \Delta \varepsilon_t
 
     is stationary, as the non-stationary component :math:`c` was eliminated by the operation of differencing. This
     process is said to be "integrated of order 1", as it requires 1 difference to render stationary. This is the
@@ -60,9 +60,9 @@ class BayesianARIMA(PyMCStateSpace):
 
     .. math::
         \begin{align}
-        y_{t} &= X\beta + \\eta_t \\
-        (1- \\phi_1 B - \\cdots - \\phi_p B^p) & (1-B)^d \\eta_{t} &= (1 + \theta_1 B + \\cdots + \theta_q B^q)\varepsilon_t
-        \\end{align}
+        y_{t} &= X\beta + \eta_t \\
+        (1- \phi_1 B - \cdots - \phi_p B^p) (1-B)^d \eta_{t} &= (1 + \theta_1 B + \cdots + \theta_q B^q) \varepsilon_t
+        \end{align}
 
     Where the design matrix `X` can include a constant, trends, or exogenous regressors.
 
