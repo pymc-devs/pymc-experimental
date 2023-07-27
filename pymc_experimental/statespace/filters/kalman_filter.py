@@ -492,6 +492,10 @@ class BaseFilter(ABC):
 
 
 class StandardFilter(BaseFilter):
+    """
+    Basic Kalman Filter
+    """
+
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         """
         Compute one-step forecasts for observed states conditioned on information up to, but not including, the current
@@ -572,12 +576,15 @@ class StandardFilter(BaseFilter):
 
 class CholeskyFilter(BaseFilter):
     """ "
+    Kalman filter with Cholesky factorization
+
     Kalman filter implementation using a Cholesky factorization plus pt.solve_triangular to (attempt) to speed up
     inversion of the observation covariance matrix `F`.
 
-    #TODO: Can the entire Kalman filter process be re-written, starting from P0_chol, so it's not necessary to compute
-        cholesky(F) at every iteration?
     """
+
+    # TODO: Can the entire Kalman filter process be re-written, starting from P0_chol, so it's not necessary to compute
+    #     cholesky(F) at every iteration?
 
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
         y_hat = Z.dot(a) + d
@@ -615,12 +622,13 @@ class CholeskyFilter(BaseFilter):
 
 class SingleTimeseriesFilter(BaseFilter):
     """
+    Kalman filter optimized for univariate timeseries
+
     If there is only a single observed timeseries, regardless of the number of hidden states, there is no need to
     perform a matrix inversion anywhere in the filter.
-
-    # TODO: This class should eventually be made irrelevant by pytensor re-writes.
     """
 
+    # TODO: This class should eventually be made irrelevant by pytensor re-writes.
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
         """ "
         Wrap the data in an `Assert` `Op` to ensure there is only one observed state.
@@ -633,8 +641,7 @@ class SingleTimeseriesFilter(BaseFilter):
         y_hat = d + Z.dot(a)
         v = y - y_hat.ravel()
 
-        # TODO: What caused this to be necessary? --07/27/23
-        PZT = pt.specify_broadcastable(P.dot(Z.T), 1)
+        PZT = P.dot(Z.T)
 
         # F is scalar, K is a column vector
         F = (Z.dot(PZT) + H + all_nan_flag).ravel()
@@ -652,6 +659,8 @@ class SingleTimeseriesFilter(BaseFilter):
 
 class SteadyStateFilter(BaseFilter):
     """
+    Kalman Filter using Steady State Covariance
+
     This filter avoids the need to invert the covariance matrix of innovations at each time step by solving the
     Discrete Algebraic Riccati Equation associated with the filtering problem once and for all at initialization and
     uses the resulting steady-state covariance matrix in each step.
