@@ -62,9 +62,9 @@ Utils
 Statespace Models
 =====
 .. automodule:: pymc_experimental.statespace
-   :toctree:
+.. toctree::
    :maxdepth: 1
 
    statespace/core
-   statespace/models
    statespace/filters
+   statespace/models
