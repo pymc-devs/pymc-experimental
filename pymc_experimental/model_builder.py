@@ -381,14 +381,21 @@ class ModelBuilder:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
     @classmethod
-    def _convert_dims_to_tuple(cls, model_config: Dict) -> Dict:
+    def _model_config_formatting(cls, model_config: Dict) -> Dict:
+        """
+        Because of json serialization, model_config values that were originally tuples or numpy are being encoded as lists.
+        This function converts them back to tuples and numpy arrays to ensure correct id encoding.
+        """
         for key in model_config:
-            if (
-                isinstance(model_config[key], dict)
-                and "dims" in model_config[key]
-                and isinstance(model_config[key]["dims"], list)
-            ):
-                model_config[key]["dims"] = tuple(model_config[key]["dims"])
+            if isinstance(model_config[key], dict):
+                for sub_key in model_config[key]:
+                    if isinstance(model_config[key][sub_key], list):
+                        # Check if "dims" key to convert it to tuple
+                        if sub_key == "dims":
+                            model_config[key][sub_key] = tuple(model_config[key][sub_key])
+                        # Convert all other lists to numpy arrays
+                        else:
+                            model_config[key][sub_key] = np.array(model_config[key][sub_key])
         return model_config
 
     @classmethod
@@ -420,7 +427,7 @@ class ModelBuilder:
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
         # needs to be converted, because json.loads was changing tuple to list
-        model_config = cls._convert_dims_to_tuple(json.loads(idata.attrs["model_config"]))
+        model_config = cls._model_config_formatting(json.loads(idata.attrs["model_config"]))
         model = cls(
             model_config=model_config,
             sampler_config=json.loads(idata.attrs["sampler_config"]),

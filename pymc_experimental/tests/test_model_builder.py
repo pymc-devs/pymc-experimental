@@ -160,7 +160,7 @@ def test_convert_dims_to_tuple(fitted_model_instance):
             ],
         },
     }
-    converted_model_config = fitted_model_instance._convert_dims_to_tuple(model_config)
+    converted_model_config = fitted_model_instance._model_config_formatting(model_config)
     assert converted_model_config["a"]["dims"] == ("x",)
 
 
