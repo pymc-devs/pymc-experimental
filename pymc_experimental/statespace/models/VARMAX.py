@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pytensor.tensor as pt
@@ -105,6 +105,7 @@ class BayesianVARMAX(PyMCStateSpace):
         names = ["x0", "P0", "ar_params", "ma_params", "state_cov", "obs_cov"]
         if self.stationary_initialization:
             names.remove("P0")
+            names.remove("x0")
         if not self.measurement_error:
             names.remove("obs_cov")
         if self.p == 0:
@@ -200,13 +201,14 @@ class BayesianVARMAX(PyMCStateSpace):
             del coord_map["ma_params"]
         if self.stationary_initialization:
             del coord_map["P0"]
+            del coord_map["x0"]
 
         return coord_map
 
     def add_default_priors(self):
         raise NotImplementedError
 
-    def update(self, theta: pt.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
 
@@ -214,14 +216,18 @@ class BayesianVARMAX(PyMCStateSpace):
         ----------
         theta: TensorVariable
             Vector of all variables in the state space model
+
+        mode: optional, str
+            Compile mode used by pytensor
         """
 
         cursor = 0
-        # initial states
-        param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["x0"])
-        self.ssm["initial_state", :] = theta[param_slice]
 
         if not self.stationary_initialization:
+            # initial states
+            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["x0"])
+            self.ssm["initial_state", :] = theta[param_slice]
+
             # initial covariance
             param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["P0"])
             self.ssm["initial_state_cov", :, :] = theta[param_slice].reshape(
@@ -259,10 +265,13 @@ class BayesianVARMAX(PyMCStateSpace):
             T = self.ssm["transition"]
             R = self.ssm["selection"]
             Q = self.ssm["state_cov"]
+            c = self.ssm["state_intercept"]
 
+            x0 = pt.linalg.solve(pt.eye(T.shape[0]) - T, c, assume_a="gen", check_finite=False)
             P0 = solve_discrete_lyapunov(
                 T,
                 pt.linalg.matrix_dot(R, Q, R.T),
                 method="direct" if self.k_states < 10 else "bilinear",
             )
+            self.ssm["initial_state", :] = x0
             self.ssm["initial_state_cov", :, :] = P0

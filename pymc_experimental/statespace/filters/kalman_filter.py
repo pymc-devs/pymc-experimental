@@ -258,7 +258,9 @@ class BaseFilter(ABC):
         return filter_results
 
     @staticmethod
-    def handle_missing_values(y, Z, H):
+    def handle_missing_values(
+        y, Z, H
+    ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, float]:
         """
         This function handles missing values in the observation data `y` and adjusts the design matrix `Z` and the
         observation noise covariance matrix `H` accordingly. Missing values are replaced with zeros to prevent
@@ -287,8 +289,8 @@ class BaseFilter(ABC):
         H_masked: TensorVariable
             Noise covariance matrix, adjusted to exclude the missing states
 
-        all_nan_flag: bool
-            True if the entire state vector is missing
+        all_nan_flag: float
+            1 if the entire state vector is missing
 
         References
         ----------
@@ -628,19 +630,19 @@ class SingleTimeseriesFilter(BaseFilter):
         return data, a0, P0, c, d, T, Z, R, H, Q
 
     def update(self, a, P, y, c, d, Z, H, all_nan_flag):
-        # y, v are scalar, but a might not be
-        y_hat = (d + Z.dot(a)).squeeze()
-        v = y - y_hat
+        y_hat = d + Z.dot(a)
+        v = y - y_hat.ravel()
 
-        PZT = P.dot(Z.T)
+        # TODO: What caused this to be necessary? --07/27/23
+        PZT = pt.specify_broadcastable(P.dot(Z.T), 1)
 
         # F is scalar, K is a column vector
-        F = (Z.dot(PZT) + H).ravel()[0] + all_nan_flag
-        K = PZT / F
+        F = (Z.dot(PZT) + H + all_nan_flag).ravel()
 
+        K = PZT / F
         I_KZ = self.eye_states - K.dot(Z)
 
-        a_filtered = a + K.ravel() * v
+        a_filtered = a + (K * v).ravel()
         P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
 
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]

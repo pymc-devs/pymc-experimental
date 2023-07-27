@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
 import pymc as pm
@@ -113,7 +113,7 @@ class BayesianLocalLevel(PyMCStateSpace):
 
                 _ = default_prior_factory(shape=shape, dims=dims)[param_name]()
 
-    def update(self, theta: pt.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
 
@@ -121,7 +121,11 @@ class BayesianLocalLevel(PyMCStateSpace):
         ----------
         theta: TensorVariable
             Vector of all variables in the state space model
+
+        mode: str, optional
+            Compile mode used by pytensor
         """
+
         # initial states
         self.ssm["initial_state"] = theta[:2].reshape((2,))
 

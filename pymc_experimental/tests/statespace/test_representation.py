@@ -26,9 +26,8 @@ class BasicFunctionality(unittest.TestCase):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
         X = np.eye(5)
         X_pt = ssm._numpy_to_pytensor("transition", X)
-
         self.assertTrue(isinstance(X_pt, pt.TensorVariable))
-        assert_allclose(ssm["transition"].shape.data, X.shape)
+        assert_allclose(ssm["transition"].type.shape, X.shape)
 
         assert ssm["transition"].name == "transition"
 
@@ -36,21 +35,21 @@ class BasicFunctionality(unittest.TestCase):
         ssm = PytensorRepresentation(k_endog=5, k_states=5, k_posdef=5)
         p, m, r = unpack_ssm_dims(ssm)
 
-        assert_allclose(ssm["design"].shape.data, (p, m))
-        assert_allclose(ssm["transition"].shape.data, (m, m))
-        assert_allclose(ssm["selection"].shape.data, (m, r))
-        assert_allclose(ssm["state_cov"].shape.data, (r, r))
-        assert_allclose(ssm["obs_cov"].shape.data, (p, p))
+        assert_allclose(ssm["design"].type.shape, (p, m))
+        assert_allclose(ssm["transition"].type.shape, (m, m))
+        assert_allclose(ssm["selection"].type.shape, (m, r))
+        assert_allclose(ssm["state_cov"].type.shape, (r, r))
+        assert_allclose(ssm["obs_cov"].type.shape, (p, p))
 
     def test_default_shapes_low_rank(self):
         ssm = PytensorRepresentation(k_endog=5, k_states=5, k_posdef=2)
         p, m, r = unpack_ssm_dims(ssm)
 
-        assert_allclose(ssm["design"].shape.data, (p, m))
-        assert_allclose(ssm["transition"].shape.data, (m, m))
-        assert_allclose(ssm["selection"].shape.data, (m, r))
-        assert_allclose(ssm["state_cov"].shape.data, (r, r))
-        assert_allclose(ssm["obs_cov"].shape.data, (p, p))
+        assert_allclose(ssm["design"].type.shape, (p, m))
+        assert_allclose(ssm["transition"].type.shape, (m, m))
+        assert_allclose(ssm["selection"].type.shape, (m, r))
+        assert_allclose(ssm["state_cov"].type.shape, (r, r))
+        assert_allclose(ssm["obs_cov"].type.shape, (p, p))
 
     def test_matrix_assignment(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=2)
@@ -103,7 +102,7 @@ class BasicFunctionality(unittest.TestCase):
 
         for name, X in zip(names, inputs[1:]):
             assert ssm[name].name == name
-            assert_allclose(ssm[name].shape.data, X.shape, err_msg=f"{name} shape test")
+            assert_allclose(ssm[name].type.shape, X.shape, err_msg=f"{name} shape test")
 
     def test_assign_time_varying_matrices(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=2)

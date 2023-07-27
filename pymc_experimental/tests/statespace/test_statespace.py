@@ -37,7 +37,7 @@ def ss_mod():
         def shock_names(self):
             return ["a"]
 
-        def update(self, theta):
+        def update(self, theta, mode=None):
             self.ssm["transition", 0, :] = theta
 
     T = np.zeros((2, 2)).astype(floatX)

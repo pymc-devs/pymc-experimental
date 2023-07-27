@@ -58,3 +58,22 @@ Utils
    prior.prior_from_idata
    model_fgraph.fgraph_from_model
    model_fgraph.model_from_fgraph
+
+Statespace Models
+=====
+.. currentmodule:: pymc_experimental.statespace
+.. autosumary::
+    :toctree: generated/
+
+    core.representation.PytensorRepresentation
+    core.statespace.PyMCStatespace
+    models.local_level.BayesianLocalLevel
+    models.SARIMAX.BayesianARIMA
+    models.VARMAX.BayesianVARMAX
+    filters.kalman_filter.StandardFilter
+    filters.kalman_filter.CholeskyFilter
+    filters.kalman_filter.SingleTimeSeriesFilter
+    filters.kalman_filter.UnivariateFilter
+    filters.kalman_filter.SteadyStateFilter
+    filters.kalman_smoother.KalmanSmoother
+    filters.distributions.LinearGaussianStateSpace
