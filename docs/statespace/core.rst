@@ -1,5 +1,5 @@
 ********************
-Core Statespace Classes
+Statespace Core
 ********************
 
 .. automodule:: pymc_experimental.statespace.core

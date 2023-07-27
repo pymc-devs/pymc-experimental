@@ -45,8 +45,16 @@ class PytensorRepresentation:
     Core class to hold all objects required by linear gaussian statespace models
 
     Shamelessly copied from the Statsmodels.api implementationfound here:
-
     https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py
+
+    Notation for the linear statespace model is taken from [1]. A linear statespace system is formed by a collection
+    of nine matrices:
+
+    =====                               ======
+    Name                                Symbol
+    =====                               ======
+    Initial hidden state mean           :math:`x_0`
+    Initial hidden state covariance     :math:`P_0`
 
     Parameters
     ----------
