@@ -7,7 +7,6 @@ import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 from arviz import InferenceData
-from numpy.typing import ArrayLike
 from pymc.model import modelcontext
 from pytensor.compile import get_mode
 
@@ -60,6 +59,20 @@ def validate_filter_arg(filter_arg):
         raise ValueError(
             f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_arg}"
         )
+
+
+def _verify_group(group):
+    if group not in ["prior", "posterior"]:
+        raise ValueError(f'Argument "group" must be one of "prior" or "posterior", found {group}')
+
+
+def _spoof_posterior_from_prior(idata, group):
+    if group == "posterior":
+        return idata
+
+    new_idata = idata.copy()
+    new_idata.add_groups({"posterior": idata.prior})
+    return new_idata
 
 
 class PyMCStateSpace:
@@ -588,28 +601,153 @@ class PyMCStateSpace:
 
         return matrices
 
-    @staticmethod
-    def sample_conditional_prior(idata, filter_output="filtered") -> ArrayLike:
+    def _sample_conditional(self, idata: InferenceData, group: str):
         """
-        Sample from the conditional prior; that is, given parameter draws from the prior distribution, compute kalman
-        filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and covariance
-        computed via either the kalman filter, smoother, or predictions.
+        Common functionality shared between `sample_conditional_prior` and `sample_conditional_posterior`. See those
+        methods for details.
+
 
         Parameters
         ----------
-        idata: InferenceData
-            Arviz InfereData object with a prior group
-        filter_output: string, default = 'filtered'
-            One of 'filtered', 'smoothed', or 'predicted'. Corresponds to which Kalman filter output you would like to
-            sample from.
+        idata : InferenceData
+            An Arviz InferenceData object containing the posterior distribution over model parameters.
+        group : str
+            InferenceData group from which to draw samples. Should be one of "prior" or "posterior".
 
         Returns
         -------
-        idata: InferenceData
+        InferenceData
+            An Arviz InferenceData object containing sampled trajectories from the requested conditional distribution,
+            with data variables "filtered_{group}", "predicted_{group}", and "smoothed_{group}".
         """
 
-        validate_filter_arg(filter_output)
-        raise NotImplementedError
+        _verify_group(group)
+        group_idata = getattr(idata, group)
+
+        with pm.Model(coords=self._fit_coords):
+            for filter_output in ["filtered", "predicted", "smoothed"]:
+                mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
+                    group_idata, filter_output
+                )
+
+                mus = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
+                covs = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
+
+                SequenceMvNormal(
+                    f"{filter_output}_{group}",
+                    mus=mus,
+                    covs=covs,
+                    logp=pt.zeros(mus.shape[0]),
+                    dims=mu_dims,
+                )
+            idata_conditional = pm.sample_posterior_predictive(
+                group_idata,
+                var_names=[f"filtered_{group}", f"predicted_{group}", f"smoothed_{group}"],
+                compile_kwargs={"mode": get_mode(self._fit_mode)},
+            )
+        return idata_conditional.posterior_predictive
+
+    def _sample_unconditional(
+        self,
+        idata: InferenceData,
+        group: str,
+        steps: Optional[int] = None,
+        use_data_time_dim: bool = False,
+    ):
+        """
+        Draw unconditional sample trajectories according to state space dynamics, using random samples from the
+        a provided trace. The state space update equations are:
+
+            X[t+1] = T @ X[t] + R @ eta[t], eta ~ N(0, Q)
+            Y[t] = Z @ X[t] + nu[t], nu ~ N(0, H)
+            x[0] ~ N(a0, P0)
+
+        Parameters
+        ----------
+        idata : InferenceData
+            An Arviz InferenceData object with a posterior group containing samples from the
+            posterior distribution over model parameters.
+
+        steps : Optional[int], default=None
+            The number of time steps to sample for the unconditional trajectories. If not provided (None),
+            the function will sample trajectories for the entire available time dimension in the posterior.
+            Otherwise, it will generate trajectories for the specified number of steps.
+
+        use_data_time_dim : bool, default=False
+            If True, the function uses the time dimension present in the provided `idata` object to sample
+            unconditional trajectories. If False, a custom time dimension is created based on the number of steps
+            specified, or if steps is None, it uses the entire available time dimension in the posterior.
+
+        Returns
+        -------
+        InferenceData
+            An Arviz InfereceData with two groups, posterior_latent and posterior_observed
+
+            - posterior_latent represents the latent state trajectories `X[t]`, which follows the dynamics:
+              `x[t+1] = T @ x[t] + R @ eta[t]`, where `eta ~ N(0, Q)`.
+
+            - posterior_observed represents the observed state trajectories `Y[t]`, which is obtained from
+              the latent state trajectories: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
+        """
+        _verify_group(group)
+        group_idata = getattr(idata, group)
+        dims = None
+        temp_coords = self._fit_coords.copy()
+
+        if not use_data_time_dim and steps is not None:
+            temp_coords.update({TIME_DIM: np.arange(1 + steps, dtype="int")})
+            steps = len(temp_coords[TIME_DIM]) - 1
+        elif steps is not None:
+            n_dimsteps = len(temp_coords[TIME_DIM])
+            if n_dimsteps != steps:
+                raise ValueError(
+                    f"Length of time dimension does not match specified number of steps, expected"
+                    f" {n_dimsteps} steps, or steps=None."
+                )
+        else:
+            steps = len(temp_coords[TIME_DIM]) - 1
+
+        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]]):
+            dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+
+        with pm.Model(coords=temp_coords if dims is not None else None):
+            matrices = self._build_dummy_graph()
+            _ = LinearGaussianStateSpace(
+                group,
+                *matrices,
+                steps=steps,
+                dims=dims,
+                mode=self._fit_mode,
+            )
+            idata_unconditional = pm.sample_posterior_predictive(
+                group_idata,
+                var_names=[f"{group}_latent", f"{group}_observed"],
+                compile_kwargs={"mode": self._fit_mode},
+            )
+
+        return idata_unconditional.posterior_predictive
+
+    def sample_conditional_prior(self, idata: InferenceData) -> InferenceData:
+        """
+        Sample from the conditional prior; that is, given parameter draws from the prior distribution,
+        compute Kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
+        covariance computed via either the Kalman filter, smoother, or predictions.
+
+        Parameters
+        ----------
+        idata : InferenceData
+            Arviz InferenceData with prior samples for state space matrices x0, P0, c, d, T, Z, R, H, Q.
+            Obtained from `pm.sample_prior_predictive` after calling PyMCStateSpace.build_statespace_graph().
+
+        Returns
+        -------
+        InferenceData
+            An Arviz InferenceData object containing sampled trajectories from the conditional prior.
+            The trajectories are stored in the posterior_predictive group with names "filtered_prior",
+             "predicted_prior", and "smoothed_prior".
+        """
+
+        return self._sample_conditional(idata, "prior")
 
     def sample_conditional_posterior(self, idata: InferenceData):
         """
@@ -630,32 +768,11 @@ class PyMCStateSpace:
              "predicted_posterior", and "smoothed_posterior".
         """
 
-        with pm.Model(coords=self._fit_coords):
-            for filter_output in ["filtered", "predicted", "smoothed"]:
-                mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
-                    idata.posterior, filter_output
-                )
-
-                mus = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
-                covs = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
-
-                SequenceMvNormal(
-                    f"{filter_output}_posterior",
-                    mus=mus,
-                    covs=covs,
-                    logp=pt.zeros(mus.shape[0]),
-                    dims=mu_dims,
-                )
-            idata_post = pm.sample_posterior_predictive(
-                idata,
-                var_names=["filtered_posterior", "predicted_posterior", "smoothed_posterior"],
-                compile_kwargs={"mode": get_mode(self._fit_mode)},
-            )
-        return idata_post
+        return self._sample_conditional(idata, "posterior")
 
     def sample_unconditional_prior(
-        self, n_steps=100, n_simulations=100, prior_samples=500
-    ) -> Tuple[ArrayLike, ArrayLike]:
+        self, idata: InferenceData, steps: Optional[int] = None, use_data_time_dim: bool = False
+    ) -> InferenceData:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the prior
         distribution over model parameters. The state space update equations are:
@@ -665,24 +782,33 @@ class PyMCStateSpace:
 
         Parameters
         ----------
-        n_steps: int, default = 100
-            Number of time steps to simulate
-        n_simulations: int, default = 100
-            Number of stochastic simulations to run for each parameter draw.
-        prior_samples: int, default = 500
-            Number of parameter draws from the prior distribution, passed to pm.sample_prior_predictive. Defaults to
-            the PyMC default of 500.
+        idata: InferenceData
+            Arviz InferenceData with prior samples for state space matrices x0, P0, c, d, T, Z, R, H, Q.
+            Obtained from `pm.sample_prior_predictive` after calling PyMCStateSpace.build_statespace_graph().
+
+        steps : Optional[int], default=None
+            The number of time steps to sample for the unconditional trajectories. If not provided (None),
+            the function will sample trajectories for the entire available time dimension in the posterior.
+            Otherwise, it will generate trajectories for the specified number of steps.
+
+        use_data_time_dim : bool, default=False
+            If True, the function uses the time dimension present in the provided `idata` object to sample
+            unconditional trajectories. If False, a custom time dimension is created based on the number of steps
+            specified, or if steps is None, it uses the entire available time dimension in the posterior.
 
         Returns
         -------
-        simulated_states: ArrayLike
-            Numpy array of shape (prior_samples * n_simulations, n_steps, n_states), corresponding to the unobserved
-            states in the state-space system, X in the equations above
-        simulated_data: ArrayLike
-            Numpy array of shape (prior_samples * n_simulations, n_steps, n_observed), corresponding to the observed
-            states in the state-space system, Y in the equations above.
+        InferenceData
+            An Arviz InfereceData with two data variables, prior_latent and prior_observed
+
+            - prior_latent represents the latent state trajectories `X[t]`, which follows the dynamics:
+              `x[t+1] = T @ x[t] + R @ eta[t]`, where `eta ~ N(0, Q)`.
+
+            - prior_observed represents the observed state trajectories `Y[t]`, which is obtained from
+              the observation equation: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
         """
-        raise NotImplementedError
+
+        return self._sample_unconditional(idata, "prior", steps, use_data_time_dim)
 
     def sample_unconditional_posterior(
         self, idata, steps=None, use_data_time_dim=False
@@ -723,39 +849,7 @@ class PyMCStateSpace:
               the latent state trajectories: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
         """
 
-        dims = None
-        temp_coords = self._fit_coords.copy()
-
-        if not use_data_time_dim:
-            temp_coords.update({TIME_DIM: np.arange(1 + steps, dtype="int")})
-            steps = len(temp_coords[TIME_DIM]) - 1
-        elif steps is not None:
-            n_dimsteps = len(temp_coords[TIME_DIM])
-            if n_dimsteps != steps:
-                raise ValueError(
-                    f"Length of time dimension does not match specified number of steps, expected"
-                    f" {n_dimsteps} steps, or steps=None."
-                )
-
-        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]]):
-            dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
-
-        with pm.Model(coords=temp_coords if dims is not None else None):
-            matrices = self._build_dummy_graph()
-            _ = LinearGaussianStateSpace(
-                "posterior",
-                *matrices,
-                steps=steps,
-                dims=dims,
-                mode=self._fit_mode,
-            )
-            idata_unconditional_post = pm.sample_posterior_predictive(
-                idata,
-                var_names=["posterior_latent", "posterior_observed"],
-                compile_kwargs={"mode": self._fit_mode},
-            )
-
-        return idata_unconditional_post
+        return self._sample_unconditional(idata, "posterior", steps, use_data_time_dim)
 
     def forecast(
         self,
@@ -898,7 +992,7 @@ class PyMCStateSpace:
                 compile_kwargs={"mode": self._fit_mode},
             )
 
-            return idata_forecast
+            return idata_forecast.posterior_predictive
 
     def impulse_response_function(
         self,

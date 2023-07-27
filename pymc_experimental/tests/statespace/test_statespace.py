@@ -69,9 +69,17 @@ def pymc_mod(ss_mod):
 
 
 @pytest.fixture
+def prior_idata(pymc_mod):
+    with pymc_mod:
+        idata = pm.sample_prior_predictive(samples=10)
+
+    return idata
+
+
+@pytest.fixture
 def idata(pymc_mod):
     with pymc_mod:
-        idata = pm.sample(draws=100, tune=0, chains=1)
+        idata = pm.sample(draws=10, tune=0, chains=1)
 
     return idata
 
@@ -144,37 +152,28 @@ def test_build_smoother_graph(ss_mod, pymc_mod):
         assert name in [x.name for x in pymc_mod.deterministics]
 
 
-# @pytest.mark.parametrize(
-#     "filter_output",
-#     ["filtered", "predicted", "smoothed", "invalid"],
-#     ids=["filtered", "predicted", "smoothed", "invalid"],
-# )
-# def test_sample_conditional_prior(ss_mod, pymc_mod, filter_output):
-#     if filter_output == "invalid":
-#         msg = "filter_output should be one of filtered, predicted, or smoothed, recieved invalid"
-#         with pytest.raises(ValueError, match=msg), pymc_mod:
-#             ss_mod.sample_conditional_prior(filter_output=filter_output)
-#     else:
-#         with pymc_mod:
-#             conditional_prior = ss_mod.sample_conditional_prior(
-#                 filter_output=filter_output, n_simulations=1, prior_samples=100
-#             )
-
-
 def test_sample_conditional_posterior(ss_mod, idata):
     conditional_post = ss_mod.sample_conditional_posterior(idata)
-    for filter_output in ["filtered", "predicted", "smoothed"]:
-        assert f"{filter_output}_posterior" in conditional_post.posterior_predictive
+    for output in ["filtered", "predicted", "smoothed"]:
+        assert f"{output}_posterior" in conditional_post
 
 
-#
-# def test_sample_unconditional_prior(ss_mod, pymc_mod):
-#     with pymc_mod:
-#         unconditional_prior = ss_mod.sample_unconditional_prior(n_simulations=1, prior_samples=100)
+def test_sample_conditional_prior(ss_mod, prior_idata):
+    conditional_prior = ss_mod.sample_conditional_prior(prior_idata)
+    for output in ["filtered", "predicted", "smoothed"]:
+        assert f"{output}_prior" in conditional_prior
+
+
+def test_sample_unconditional_prior(ss_mod, prior_idata):
+    unconditional_prior = ss_mod.sample_unconditional_prior(prior_idata)
+    for output in ["latent", "observed"]:
+        assert f"prior_{output}" in unconditional_prior
 
 
 def test_sample_unconditional_posterior(ss_mod, idata):
     unconditional_posterior = ss_mod.sample_unconditional_posterior(idata, steps=100)
+    for output in ["latent", "observed"]:
+        assert f"posterior_{output}" in unconditional_posterior
 
 
 if __name__ == "__main__":
