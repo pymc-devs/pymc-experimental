@@ -1,7 +1,6 @@
 [tool.pytest.ini_options]
 minversion = "6.0"
-xfail_strict = false
-
+xfail_strict = true
 addopts = [
   "-v",
   "--doctest-modules",
