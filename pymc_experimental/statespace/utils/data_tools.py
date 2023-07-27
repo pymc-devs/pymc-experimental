@@ -80,6 +80,8 @@ def preprocess_numpy_data(data, n_obs, obs_coords=None):
 
 def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=False):
     if isinstance(data, pd.Series):
+        if data.name is None:
+            data.name = "data"
         data = data.to_frame()
 
     col_names = data.columns

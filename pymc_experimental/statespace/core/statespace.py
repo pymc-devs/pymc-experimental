@@ -283,7 +283,7 @@ class PyMCStateSpace:
 
         return mu_shape, cov_shape, mu_dims, cov_dims
 
-    def update(self, theta: pt.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
         """
         Put parameter values from vector theta into the correct positions in their respective state space matrices.
 
@@ -299,6 +299,9 @@ class PyMCStateSpace:
         ----------
         theta: TensorVariable
             Vector of all variables in the state space model
+
+        mode: str, default None
+            Compile mode being using by pytensor
 
         Returns
         ----------
@@ -431,7 +434,7 @@ class PyMCStateSpace:
         pm_mod = modelcontext(None)
 
         theta = self._gather_required_random_variables()
-        self.update(theta)
+        self.update(theta, mode)
 
         matrices = self.unpack_statespace()
         n_obs = self.ssm.shapes["obs_intercept"][0]

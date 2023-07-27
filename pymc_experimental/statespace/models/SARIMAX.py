@@ -17,19 +17,92 @@ from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lya
 STATE_STRUCTURES = ["fast", "interpretable"]
 
 
-class BayesianARMA(PyMCStateSpace):
+class BayesianARIMA(PyMCStateSpace):
+    """
+    AutoRegressive Integrated Moving Average with eXogenous regressors
+
+    The ARIMAX model is a univariate time series model that posits the future evolution of a stationary time series will
+    be a function of its past values, together with exogenous "innovations" and their past history. The model is
+    described by its "order", a 3-tuple (p, d, q), that are:
+
+        - p: The number of past time steps that directly influence the present value of the time series, called the
+            "autoregressive", or AR, component
+        - d: The "integration" order of the time series
+        - q: The number of past exogenous innovations that directly influence the present value of the time series,
+            called the "moving average", or MA, component
+
+    Given this 3-tuple, the model can be written:
+
+    ..math::
+        (1- \\phi_1 B - \\cdots - \\phi_p B^p) & (1-B)^d y_{t} = &c + (1 + \theta_1 B + \\cdots + \theta_q B^q)\varepsilon_t
+
+    Where B is the backshift operator, :math:`By_{t} = y_{t-1}`.
+
+    The model assumes that the data are stationary; that is, that they can be described by a time-invariant Gaussian
+    distribution with fixed mean and finite variance. Non-stationary data, those that grow over time, are not suitable
+    for ARIMA modeling without preprocessing. Stationary can be induced in any time series by the sequential application
+    of differences. Given a hypothetical non-stationary process:
+
+    ..math::
+        y_{t} = c + \rho y_{t-1} + \varepsilon_{t}
+
+    The process:
+
+    ..math::
+        \\Delta y_{t} = y_{t} - y_{t-1} = \rho \\Delta y_{t-1} + \\Delta \varepsilon_t
+
+    is stationary, as the non-stationary component :math:`c` was eliminated by the operation of differencing. This
+    process is said to be "integrated of order 1", as it requires 1 difference to render stationary. This is the
+    function of the `d` parameter in the ARIMA order.
+
+    Alternatively, the non-stationary components can be directly estimated. In this case, the errors of a preliminary
+    regression are assumed to be ARIMA distributed, so that:
+
+    ..math::
+        \begin{align}
+        y_{t} &= X\beta + \\eta_t \\
+        (1- \\phi_1 B - \\cdots - \\phi_p B^p) & (1-B)^d \\eta_{t} &= (1 + \theta_1 B + \\cdots + \theta_q B^q)\varepsilon_t
+        \\end{align}
+
+    Where the design matrix `X` can include a constant, trends, or exogenous regressors.
+
+    ARIMA models can be represented in statespace form, as described in [1]. For more details, see chapters 3.4, 3.6,
+    and 8.4.
+    """
+
     def __init__(
         self,
-        order: Tuple[int, int],
+        order: Tuple[int, int, int],
+        trend: str = "n",
         stationary_initialization: bool = True,
         filter_type: str = "standard",
         state_structure: str = "fast",
         measurement_error: bool = False,
         verbose=True,
     ):
+        """
 
+        Parameters
+        ----------
+        order: tuple(int, int, int)
+            Order of the ARIMAX process. The order has the notation (p, d, q), where p is the number of autoregressive
+            lags, q is the number of moving average components, and d is order of integration -- the number of
+            differences needed to render the data stationary.
+
+            If d > 0, the differences are modeled as components of the hidden state, and all available data can be used.
+            This is only possible if state_structure = 'fast'. For interpretable states, the user must manually
+            difference the data prior to calling the `build_statespace_graph` method.
+
+        trend: str, default 'n'
+            A string representing the
+        stationary_initialization
+        filter_type
+        state_structure
+        measurement_error
+        verbose
+        """
         # Model order
-        self.p, self.q = order
+        self.p, self.d, self.q = order
         self.stationary_initialization = stationary_initialization
         self.measurement_error = measurement_error
 
@@ -44,10 +117,12 @@ class BayesianARMA(PyMCStateSpace):
         q_max = max(1, self.q)
 
         k_states = None
+        k_diffs = self._k_diffs = self.d
+
         if self.state_structure == "fast":
-            k_states = max(self.p, self.q + 1)
+            k_states = max(self.p, self.q + 1) + self.d
         elif self.state_structure == "interpretable":
-            k_states = p_max + q_max
+            k_states = p_max + q_max + self.d
 
         k_posdef = 1
         k_endog = 1
@@ -55,51 +130,44 @@ class BayesianARMA(PyMCStateSpace):
         super().__init__(k_endog, k_states, k_posdef, filter_type, verbose=verbose)
 
         # Initialize the matrices
-        self.ssm["design"] = np.r_[[1.0], np.zeros(k_states - 1)][None]
+        self.ssm["design"] = np.r_[[1.0] * (k_diffs + 1), np.zeros(k_states - k_diffs - 1)][None]
 
         transition = None
         selection = None
 
         if self.state_structure == "fast":
+            idx = np.triu_indices(self.d)
             transition = np.eye(k_states, k=1)
-            selection = np.r_[[[1.0]], np.zeros(k_states - 1)[:, None]]
+            transition[idx] = 1
+            transition[: self.d, k_diffs] = 1
+
+            selection = np.r_[[0] * k_diffs, [1.0], np.zeros(k_states - k_diffs - 1)][:, None]
 
         elif self.state_structure == "interpretable":
             transition = np.eye(k_states, k=-1)
             transition[-q_max, p_max - 1] = 0
 
-            selection = np.r_[[[1.0]], np.zeros(k_states - 1)[:, None]]
+            selection = np.r_[[0] * k_diffs, [1.0], np.zeros(k_states - k_diffs - 1)][:, None]
             selection[-q_max, 0] = 1
 
         self.ssm["selection"] = selection
         self.ssm["transition"] = transition
 
         self.ssm["initial_state"] = np.zeros((k_states,))
-
         self.ssm["initial_state_cov"] = np.eye(k_states)
 
         # Cache some indices
         self._state_cov_idx = ("state_cov",) + np.diag_indices(k_posdef)
 
         if self.state_structure == "fast":
-            self._ar_param_idx = ("transition",) + (
-                np.arange(self.p, dtype=int),
-                np.zeros(self.p, dtype=int),
-            )
-            self._ma_param_idx = ("selection",) + (
-                np.arange(1, self.q + 1, dtype=int),
-                np.zeros(self.q, dtype=int),
-            )
+            self._ar_param_idx = np.s_["transition", k_diffs : k_diffs + self.p, k_diffs]
+            self._ma_param_idx = np.s_["selection", 1 + k_diffs : 1 + k_diffs + self.q, 0]
 
         elif self.state_structure == "interpretable":
-            self._ar_param_idx = ("transition",) + (
-                np.zeros(self.p, dtype=int),
-                np.arange(self.p, dtype=int),
-            )
-            self._ma_param_idx = ("transition",) + (
-                np.zeros(self.q, dtype=int),
-                np.arange(p_max, p_max + self.q, dtype=int),
-            )
+            self._ar_param_idx = np.s_["transition", k_diffs, k_diffs : k_diffs + p_max]
+            self._ma_param_idx = np.s_[
+                "transition", k_diffs, k_diffs + p_max : k_diffs + p_max + self.q
+            ]
 
         if self.measurement_error:
             self._obs_cov_idx = ("obs_cov",) + np.diag_indices(k_endog)
@@ -109,6 +177,7 @@ class BayesianARMA(PyMCStateSpace):
         names = ["x0", "P0", "ar_params", "ma_params", "sigma_state", "sigma_obs"]
         if self.stationary_initialization:
             names.remove("P0")
+            names.remove("x0")
         if self.p == 0:
             names.remove("ar_params")
         if self.q == 0:
@@ -155,7 +224,10 @@ class BayesianARMA(PyMCStateSpace):
     @property
     def state_names(self):
         if self.state_structure == "fast":
-            states = ["data"] + [f"state_{i + 1}" for i in range(self.k_states - 1)]
+            states = ["data"]
+            states += [f"D{i}.data" for i in range(self._k_diffs)]
+            states += [f"state_{i + 1}" for i in range(self.k_states - self._k_diffs - 1)]
+
         else:
             states = ["data"]
             if self.p > 0:
@@ -171,13 +243,7 @@ class BayesianARMA(PyMCStateSpace):
 
     @property
     def shock_names(self):
-        if self.state_structure == "fast":
-            shocks = ["innovations"]
-            shocks += [f"L{i + 1}.innovations" for i in range(self.q - 1)]
-            return shocks
-
-        elif self.state_structure == "interpretable":
-            return ["innovations"]
+        return ["innovation"]
 
     @property
     def param_dims(self):
@@ -198,6 +264,7 @@ class BayesianARMA(PyMCStateSpace):
             del coord_map["ma_params"]
         if self.stationary_initialization:
             del coord_map["P0"]
+            del coord_map["x0"]
 
         return coord_map
 
@@ -211,7 +278,7 @@ class BayesianARMA(PyMCStateSpace):
 
         return coords
 
-    def update(self, theta: pt.TensorVariable) -> None:
+    def update(self, theta: pt.TensorVariable, mode: str = None) -> None:
         """
         Put parameter values from vector theta into the correct positions in the state space matrices.
 
@@ -219,15 +286,18 @@ class BayesianARMA(PyMCStateSpace):
         ----------
         theta: TensorVariable
             Vector of all variables in the state space model
+
+        mode: str, default None
+            Compile mode being used by pytensor.
         """
         cursor = 0
 
-        # initial states
-        param_slice = slice(cursor, cursor + self.k_states)
-        cursor += self.k_states
-        self.ssm["initial_state", :] = theta[param_slice]
-
         if not self.stationary_initialization:
+            # initial states
+            param_slice = slice(cursor, cursor + self.k_states)
+            cursor += self.k_states
+            self.ssm["initial_state", :] = theta[param_slice]
+
             # initial covariance
             param_slice = slice(cursor, cursor + self.k_states**2)
             cursor += self.k_states**2
@@ -263,11 +333,15 @@ class BayesianARMA(PyMCStateSpace):
             T = self.ssm["transition"]
             R = self.ssm["selection"]
             Q = self.ssm["state_cov"]
+            c = self.ssm["state_intercept"]
+
+            x0 = pt.linalg.solve(pt.eye(T.shape[0]) - T, c, assume_a="gen", check_finite=False)
 
             P0 = solve_discrete_lyapunov(
                 T,
                 pt.linalg.matrix_dot(R, Q, R.T),
-                method="direct" if self.k_states < 5 else "bilinear",
+                method="direct" if (self.k_states < 5) or (mode == "JAX") else "bilinear",
             )
 
+            self.ssm["initial_state", :] = x0
             self.ssm["initial_state_cov", :, :] = P0
