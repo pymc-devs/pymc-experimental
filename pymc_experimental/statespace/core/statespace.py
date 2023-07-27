@@ -67,6 +67,28 @@ def _verify_group(group):
 
 
 class PyMCStateSpace:
+    r"""
+    Base class for Linear Gaussian Statespace models in PyMC.
+
+    Parameters
+    ----------
+    k_endog : int
+        The number of endogenous variables (observed time series).
+
+    k_states : int
+        The number of state variables.
+
+    k_posdef : int
+        The number of shocks in the model
+
+    filter_type : str, optional
+        The type of Kalman filter to use. Valid options are "standard", "univariate", "single", "cholesky", and
+        "steady_state". For more information, see the docs for each filter. Default is "standard".
+
+    verbose : bool, optional
+        If True, displays information about the initialized model. Defaults to True.
+    """
+
     def __init__(
         self,
         k_endog: int,
@@ -75,29 +97,6 @@ class PyMCStateSpace:
         filter_type: str = "standard",
         verbose: bool = True,
     ):
-
-        """
-        Base class for Linear Gaussian Statespace models in PyMC.
-
-        Parameters
-        ----------
-        k_endog : int
-            The number of endogenous variables (observed time series).
-
-        k_states : int
-            The number of state variables.
-
-        k_posdef : int
-            The number of shocks in the model
-
-        filter_type : str, optional
-            The type of Kalman filter to use. Valid options are "standard", "univariate", "single", "cholesky", and
-            "steady_state". For more information, see the docs for each filter. Default is "standard".
-
-        verbose : bool, optional
-            If True, displays information about the initialized model. Defaults to True.
-        """
-
         self._fit_mode = None
         self._fit_coords = None
         self._prior_mod = pm.Model()

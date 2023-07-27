@@ -22,6 +22,10 @@ from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lya
 
 
 class BayesianVARMAX(PyMCStateSpace):
+    r"""
+    Vector AutoRegressive Moving Average with eXogenous Regressors
+    """
+
     def __init__(
         self,
         order: Tuple[int, int],

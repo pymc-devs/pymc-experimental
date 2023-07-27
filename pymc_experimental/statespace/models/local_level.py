@@ -20,6 +20,11 @@ _log = logging.getLogger("pymc.experimental.statespace")
 
 
 class BayesianLocalLevel(PyMCStateSpace):
+    r"""
+    Local Level Model
+
+    """
+
     def __init__(self, verbose=False, filter_type: str = "standard"):
         k_states = 2
         k_posdef = 2

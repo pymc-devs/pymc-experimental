@@ -11,6 +11,11 @@ from pymc_experimental.statespace.filters.utilities import (
 
 
 class KalmanSmoother:
+    """
+    Kalman Smoother
+
+    """
+
     def __init__(self, mode: Optional[str] = None):
         self.mode = mode
         self.seq_names = []

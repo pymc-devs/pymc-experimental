@@ -41,6 +41,53 @@ def _preprocess_data(data: Union[DataFrame, np.ndarray], expected_dims=3):
 
 
 class PytensorRepresentation:
+    r"""
+    Core class to hold all objects required by linear gaussian statespace models
+
+    Shamelessly copied from the Statsmodels.api implementationfound here:
+
+    https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py
+
+    Parameters
+    ----------
+    k_endog: int
+        Number of observed states (called "endogeous states" in statsmodels)
+    k_states: int
+        Number of hidden states
+    k_posdef: int
+        Number of states that have exogenous shocks; also the rank of the selection matrix R.
+    design: ArrayLike, optional
+        Design matrix, denoted 'Z' in [1].
+    obs_intercept: ArrayLike, optional
+        Constant vector in the observation equation, denoted 'd' in [1]. Currently
+        not used.
+    obs_cov: ArrayLike, optional
+        Covariance matrix for multivariate-normal errors in the observation equation. Denoted 'H' in
+        [1].
+    transition: ArrayLike, optional
+        Transition equation that updates the hidden state between time-steps. Denoted 'T' in [1].
+    state_intercept: ArrayLike, optional
+        Constant vector for the observation equation, denoted 'c' in [1]. Currently not used.
+    selection: ArrayLike, optional
+        Selection matrix that matches shocks to hidden states, denoted 'R' in [1]. This is the identity
+        matrix when k_posdef = k_states.
+    state_cov: ArrayLike, optional
+        Covariance matrix for state equations, denoted 'Q' in [1]. Null matrix when there is no observation
+        noise.
+    initial_state: ArrayLike, optional
+        Experimental setting to allow for Bayesian estimation of the initial state, denoted `alpha_0` in [1]. Default
+        It should potentially be removed in favor of the closed-form diffuse initialization.
+    initial_state_cov: ArrayLike, optional
+        Experimental setting to allow for Bayesian estimation of the initial state, denoted `P_0` in [1]. Default
+        It should potentially be removed in favor of the closed-form diffuse initialization.
+
+    References
+    ----------
+    .. [1] Durbin, James, and Siem Jan Koopman. 2012.
+        Time Series Analysis by State Space Methods: Second Edition.
+        Oxford University Press.
+    """
+
     def __init__(
         self,
         k_endog: int,
@@ -56,51 +103,6 @@ class PytensorRepresentation:
         initial_state=None,
         initial_state_cov=None,
     ) -> None:
-        """
-        A representation of a State Space model, in Pytensor. Shamelessly copied from the Statsmodels.api implementation
-        found here:
-
-        https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py
-
-        Parameters
-        ----------
-        k_endog: int
-            Number of observed states (called "endogeous states" in statsmodels)
-        k_states: int
-            Number of hidden states
-        k_posdef: int
-            Number of states that have exogenous shocks; also the rank of the selection matrix R.
-        design: ArrayLike, optional
-            Design matrix, denoted 'Z' in [1].
-        obs_intercept: ArrayLike, optional
-            Constant vector in the observation equation, denoted 'd' in [1]. Currently
-            not used.
-        obs_cov: ArrayLike, optional
-            Covariance matrix for multivariate-normal errors in the observation equation. Denoted 'H' in
-            [1].
-        transition: ArrayLike, optional
-            Transition equation that updates the hidden state between time-steps. Denoted 'T' in [1].
-        state_intercept: ArrayLike, optional
-            Constant vector for the observation equation, denoted 'c' in [1]. Currently not used.
-        selection: ArrayLike, optional
-            Selection matrix that matches shocks to hidden states, denoted 'R' in [1]. This is the identity
-            matrix when k_posdef = k_states.
-        state_cov: ArrayLike, optional
-            Covariance matrix for state equations, denoted 'Q' in [1]. Null matrix when there is no observation
-            noise.
-        initial_state: ArrayLike, optional
-            Experimental setting to allow for Bayesian estimation of the initial state, denoted `alpha_0` in [1]. Default
-            It should potentially be removed in favor of the closed-form diffuse initialization.
-        initial_state_cov: ArrayLike, optional
-            Experimental setting to allow for Bayesian estimation of the initial state, denoted `P_0` in [1]. Default
-            It should potentially be removed in favor of the closed-form diffuse initialization.
-
-        References
-        ----------
-        .. [1] Durbin, James, and Siem Jan Koopman. 2012.
-            Time Series Analysis by State Space Methods: Second Edition.
-            Oxford University Press.
-        """
         self.k_states = k_states
         self.k_endog = k_endog
         self.k_posdef = k_posdef if k_posdef is not None else k_states

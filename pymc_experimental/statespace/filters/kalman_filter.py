@@ -31,7 +31,7 @@ assert_time_varying_dim_correct = Assert(
 class BaseFilter(ABC):
     def __init__(self, mode=None):
         """
-        Kalman Filter Abstract Class.
+        Kalman Filter.
 
         Parameters
         ----------

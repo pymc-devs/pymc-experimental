@@ -135,6 +135,11 @@ class _LinearGaussianStateSpace(Distribution):
 
 
 class LinearGaussianStateSpace:
+    """
+    Linear Gaussian Statespace distribution
+
+    """
+
     def __new__(cls, name, a0, P0, c, d, T, Z, R, H, Q, *, steps=None, mode=None, **kwargs):
         dims = kwargs.pop("dims", None)
         latent_dims = None
