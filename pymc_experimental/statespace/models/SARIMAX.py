@@ -34,7 +34,7 @@ class BayesianARIMA(PyMCStateSpace):
     Given this 3-tuple, the model can be written:
 
     .. math::
-        (1- \\phi_1 B - \\cdots - \\phi_p B^p) & (1-B)^d y_{t} = &c + (1 + \theta_1 B + \\cdots + \theta_q B^q)\varepsilon_t
+        (1- \phi_1 B - \cdots - \phi_p B^p) & (1-B)^d y_{t} = c + (1 + \theta_1 B + \cdots + \theta_q B^q) \varepsilon_t
 
     Where B is the backshift operator, :math:`By_{t} = y_{t-1}`.
 
@@ -68,6 +68,32 @@ class BayesianARIMA(PyMCStateSpace):
 
     ARIMA models can be represented in statespace form, as described in [1]. For more details, see chapters 3.4, 3.6,
     and 8.4.
+
+    Parameters
+    ----------
+    order: tuple(int, int, int)
+        Order of the ARIMAX process. The order has the notation (p, d, q), where p is the number of autoregressive
+        lags, q is the number of moving average components, and d is order of integration -- the number of
+        differences needed to render the data stationary.
+
+        If d > 0, the differences are modeled as components of the hidden state, and all available data can be used.
+        This is only possible if state_structure = 'fast'. For interpretable states, the user must manually
+        difference the data prior to calling the `build_statespace_graph` method.
+
+    trend: str, default 'n'
+        A string representing the
+
+    stationary_initialization: bool, default False
+
+    filter_type: str, default "standard"
+
+    state_structure: str, default "fast"
+
+    measurement_error: bool, default True
+
+    verbose: bool, default True
+
+
     """
 
     def __init__(
@@ -80,27 +106,6 @@ class BayesianARIMA(PyMCStateSpace):
         measurement_error: bool = False,
         verbose=True,
     ):
-        """
-
-        Parameters
-        ----------
-        order: tuple(int, int, int)
-            Order of the ARIMAX process. The order has the notation (p, d, q), where p is the number of autoregressive
-            lags, q is the number of moving average components, and d is order of integration -- the number of
-            differences needed to render the data stationary.
-
-            If d > 0, the differences are modeled as components of the hidden state, and all available data can be used.
-            This is only possible if state_structure = 'fast'. For interpretable states, the user must manually
-            difference the data prior to calling the `build_statespace_graph` method.
-
-        trend: str, default 'n'
-            A string representing the
-        stationary_initialization
-        filter_type
-        state_structure
-        measurement_error
-        verbose
-        """
         # Model order
         self.p, self.d, self.q = order
         self.stationary_initialization = stationary_initialization
