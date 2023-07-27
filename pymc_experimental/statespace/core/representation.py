@@ -50,15 +50,14 @@ class PytensorRepresentation:
     Notation for the linear statespace model is taken from [1]. A linear statespace system is formed by a collection
     of nine matrices, as shown in the following table.
 
-    .. table:: Matrices in a Linear Statespace System
-       :widths: auto
+    +-----------------------------------+-------------------+
+    | Name                              | Symbol            |
+    +===================================+===================+
+    | Initial hidden state mean         |  :math:`x_0`      |
+    +-----------------------------------+-------------------+
+    | Initial hidden state covariance   | :math:`P_0`       |
+    +-----------------------------------+-------------------+
 
-    =====                               =====
-    Name                                Symbol
-    =====                               =====
-    Initial hidden state mean           :math:`x_0`
-    Initial hidden state covariance     :math:`P_0`
-    =====                               =====
 
     Parameters
     ----------
