@@ -65,15 +65,15 @@ Statespace Models
 .. autosumary::
     :toctree: generated/
 
-    core.representation.PytensorRepresentation
-    core.statespace.PyMCStatespace
-    models.local_level.BayesianLocalLevel
-    models.SARIMAX.BayesianARIMA
-    models.VARMAX.BayesianVARMAX
-    filters.kalman_filter.StandardFilter
-    filters.kalman_filter.CholeskyFilter
-    filters.kalman_filter.SingleTimeSeriesFilter
-    filters.kalman_filter.UnivariateFilter
-    filters.kalman_filter.SteadyStateFilter
-    filters.kalman_smoother.KalmanSmoother
-    filters.distributions.LinearGaussianStateSpace
+   core.representation.PytensorRepresentation
+   core.statespace.PyMCStatespace
+   models.local_level.BayesianLocalLevel
+   models.SARIMAX.BayesianARIMA
+   models.VARMAX.BayesianVARMAX
+   filters.kalman_filter.StandardFilter
+   filters.kalman_filter.CholeskyFilter
+   filters.kalman_filter.SingleTimeSeriesFilter
+   filters.kalman_filter.UnivariateFilter
+   filters.kalman_filter.SteadyStateFilter
+   filters.kalman_smoother.KalmanSmoother
+   filters.distributions.LinearGaussianStateSpace
