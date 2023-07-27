@@ -54,7 +54,7 @@ FILTER_FACTORY = {
 }
 
 
-def validate_filter_arg(filter_arg):
+def _validate_filter_arg(filter_arg):
     if filter_arg.lower() not in ["filtered", "predicted", "smoothed"]:
         raise ValueError(
             f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_arg}"
@@ -64,15 +64,6 @@ def validate_filter_arg(filter_arg):
 def _verify_group(group):
     if group not in ["prior", "posterior"]:
         raise ValueError(f'Argument "group" must be one of "prior" or "posterior", found {group}')
-
-
-def _spoof_posterior_from_prior(idata, group):
-    if group == "posterior":
-        return idata
-
-    new_idata = idata.copy()
-    new_idata.add_groups({"posterior": idata.prior})
-    return new_idata
 
 
 class PyMCStateSpace:
@@ -905,7 +896,7 @@ class PyMCStateSpace:
                   the latent state trajectories: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
 
         """
-        validate_filter_arg(filter_output)
+        _validate_filter_arg(filter_output)
         if periods is None and end is None:
             raise ValueError("Must specify one of either periods or end")
         if periods is not None and end is not None:
