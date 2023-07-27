@@ -55,6 +55,7 @@ class PytensorRepresentation:
     =====                               ======
     Initial hidden state mean           :math:`x_0`
     Initial hidden state covariance     :math:`P_0`
+    =====                               =====
 
     Parameters
     ----------
