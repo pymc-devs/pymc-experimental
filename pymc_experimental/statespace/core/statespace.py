@@ -116,6 +116,7 @@ class PyMCStateSpace:
     Examples
     --------
     Perhaps the most simple possible statespace model is a local level model, described by two equations:
+
     .. math::
         \begin{align}
             y_{t} &= y_{t-1} + x_t + \nu_t \tag{1} \\
@@ -125,14 +126,14 @@ class PyMCStateSpace:
     Where :math:`y_t` is the observed data, and :math:`x_t` is an unobserved trend term. The model has two unknown
     parameters, the variances on the two innovations, :math:`sigma_\nu` and :math:`sigma_\eta`. Take the hidden state
     vector to be :math:`\begin{bmatrix} y_t & x_t \end{bmatrix}^T` and the shock vector
-    :math:`\varepsilon_t = \begin{bmatrix} \nu_t & \eta_t \end{bmatrix}`. Then this model can be cast into state-space
+    :math:`\varepsilon_t = \begin{bmatrix} \nu_t & \eta_t \end{bmatrix}^T`. Then this model can be cast into state-space
     form with the following matrices:
 
     .. math::
         \begin{align}
             T &= \begin{bmatrix}1 & 1 \\ 0 & 1 \end{bmatrix} \\
             R &= \begin{bmatrix}1 & 0 \\ 0 & 1 \end{bmatrix} \\
-            Q &= \begin{bmatrix} \sigma_\nu & 0 \\ 0 & \sigma_\eta \end{bmatrix}
+            Q &= \begin{bmatrix} \sigma_\nu & 0 \\ 0 & \sigma_\eta \end{bmatrix} \\
             Z &= \begin{bmatrix} 1 & 0 \end{bmatrix}
         \end{align}
 
@@ -141,6 +142,7 @@ class PyMCStateSpace:
     follows:
 
     .. code:: python
+
         class LocalLevel(PyMCStateSpace):
             def __init__():
                 # Initialize the superclass. This creates the PytensorRepresentation and the Kalman Filter
