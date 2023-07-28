@@ -60,7 +60,7 @@ Utils
    model_fgraph.model_from_fgraph
 
 Statespace Models
-=====
+=================
 .. automodule:: pymc_experimental.statespace
 .. toctree::
    :maxdepth: 1

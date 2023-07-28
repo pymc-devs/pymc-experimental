@@ -1,11 +1,11 @@
-********************
-Statespace Time Series Models
-********************
+*****************
+Statespace Models
+*****************
 
 .. automodule:: pymc_experimental.statespace.models
 .. autosummary::
    :toctree: generated
 
-    BayesianLocalLinear
+    BayesianLocalLevel
     BayesianARIMA
     BayesianVARMAX

@@ -44,20 +44,9 @@ class PytensorRepresentation:
     r"""
     Core class to hold all objects required by linear gaussian statespace models
 
-    Shamelessly copied from the Statsmodels.api implementationfound here:
-    https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py
-
-    Notation for the linear statespace model is taken from [1]. A linear statespace system is formed by a collection
-    of nine matrices, as shown in the following table.
-
-    +-----------------------------------+-------------------+
-    | Name                              | Symbol            |
-    +===================================+===================+
-    | Initial hidden state mean         |  :math:`x_0`      |
-    +-----------------------------------+-------------------+
-    | Initial hidden state covariance   | :math:`P_0`       |
-    +-----------------------------------+-------------------+
-
+    Notation for the linear statespace model is taken from [1], while the specific implementation is adapted from
+    the statsmodels implementation: https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py
+    described in [2].
 
     Parameters
     ----------
@@ -92,11 +81,99 @@ class PytensorRepresentation:
         Experimental setting to allow for Bayesian estimation of the initial state, denoted `P_0` in [1]. Default
         It should potentially be removed in favor of the closed-form diffuse initialization.
 
+    Notes
+    ----------
+    A linear statespace system is defined by two equations:
+
+    .. math::
+        \begin{align}
+            x_t &= A_t x_{t-1} + c_t + R_t \varepsilon_t \tag{1} \\
+            y_t &= Z_t x_t + d_t + \eta_t \tag{2} \\
+        \end{align}
+
+    Where :math:`\{x_t\}_{t=0}^T` is a trajectory of hidden states, and :math:`\{y_t\}_{t=0}^T` is a trajectory of
+    observable states. Equation 1 is known as the "state transition equation", while describes how the system evolves
+    over time. Equation 2 is the "observation equation", and maps the latent state processes to observed data.
+    The system is Gaussian when the innovations, :math:`\varepsilon_t`, and the measurement errors, :math:`\eta_t`,
+    are normally distributed. The definition is completed by specification of these distributions, as
+    well as an initial state distribution:
+
+    .. math::
+        \begin{align}
+            \varepsilon_t &\sim N(0, Q_t) \tag{3} \\
+            \eta_t &\sim N(0, H_t) \tag{4} \\
+            x_0 &\sim N(\bar{x}_0, P_0) \tag{5}
+        \end{align}
+
+    The 9 matrices that form equations 1 to 5 are summarized in the table below. We call :math:`N` the number of
+    observations, :math:`m` the number of hidden states, :math:`p` the number of observed states, and :math:`r` the
+    number of innovations.
+
+    +-----------------------------------+-------------------+-----------------------+
+    | Name                              | Symbol            | Shape                 |
+    +===================================+===================+=======================+
+    | Initial hidden state mean         | :math:`x_0`       | :math:`m \times 1`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Initial hidden state covariance   | :math:`P_0`       | :math:`m \times m`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Hidden state vector intercept     | :math:`c_t`       | :math:`m \times 1`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Observed state vector intercept   | :math:`d_t`       | :math:`p \times 1`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Transition matrix                 | :math:`T_t`       | :math:`m \times m`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Design matrix                     | :math:`Z_t`       | :math:`p \times m`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Selection matrix                  | :math:`R_t`       | :math:`m \times r`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Observation noise covariance      | :math:`H_t`       | :math:`p \times p`    |
+    +-----------------------------------+-------------------+-----------------------+
+    | Hidden state innovation covariance| :math:`Q_t`       | :math:`r \times r`    |
+    +-----------------------------------+-------------------+-----------------------+
+
+    The shapes listed above are the core shapes, but in the general case all of these matrices (except for :math:`x_0`
+    and :math:`P_0`) can be time varying. In this case, a time dimension of shape :math:`n`, equal to the number of
+    observations, can be added.
+
+    The purpose of this class is to store these matrices, as well as to allow users to easily index into them. Matrices
+    are stored as pytensor ``TensorVariables`` of known shape. Shapes are always accessible via the ``.type.shape``
+    method, which should never return ``None``. Matrices can be accessed via normal numpy array slicing after first
+    indexing by the name of the desired array. The time dimension is stored on the far right, and is automatically
+    sliced away unless specifically requested by the user. See the examples for details.
+
+    Examples
+    ----------
+    .. code:: python
+
+        from pymc_experimental.statespace.core.representation import PytensorRepresentation
+        ssm = PytensorRepresentation(k_endog=1, k_states=3, k_posdef=1)
+
+        # Access matrices by their names
+        print(ssm['transition'].type.shape)
+        >>> (3, 3)
+
+        # Slice a matrices
+        print(ssm['observation_cov', 0, 0].eval())
+        >>> 0.0
+
+        # Set elements in a slice of a matrix
+        ssm['design', 0, 0] = 1
+        print(ssm['design'].eval())
+        >>> np.array([[1, 0, 0]])
+
+        # Setting an entire matrix is also permitted. If you set a time dimension, it must be the last dimension, and the
+        # core dimensions must agree with those set when the ssm object was instantiated.
+        ssm['obs_intercept'] = np.arange(10).reshape(1, 10) # 10 timesteps
+        print(ssm['obs_intercept'].eval())
+        >>> np.array([[1., 2., 3., 4., 5., 6., 7., 8., 9.]])
+
     References
     ----------
     .. [1] Durbin, James, and Siem Jan Koopman. 2012.
         Time Series Analysis by State Space Methods: Second Edition.
         Oxford University Press.
+    .. [2] Fulton, Chad. "Estimating time series models by state space methods in Python: Statsmodels." (2015).
+           http://www.chadfulton.com/files/fulton_statsmodels_2017_v1.pdf
     """
 
     def __init__(
@@ -148,8 +225,7 @@ class PytensorRepresentation:
         if key not in self.shapes:
             raise IndexError(f"{key} is an invalid state space matrix name")
 
-    def update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.TensorType]) -> None:
-        # TODO: Get rid of these evals
+    def _update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.TensorType]) -> None:
         if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
             shape = value.type.shape
         else:
@@ -307,7 +383,7 @@ class PytensorRepresentation:
                 value.name = key
 
             setattr(self, key, value)
-            self.update_shape(key, value)
+            self._update_shape(key, value)
 
         # Case 2: key is a string plus a slice: we are setting a subset of a matrix
         elif _type is tuple:
