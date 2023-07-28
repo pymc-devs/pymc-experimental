@@ -113,6 +113,59 @@ class PyMCStateSpace:
     Finally, this class holds post-estimation methods common to all statespace models, which do not need to be
     overloaded when writing a custom statespace model.
 
+    Examples
+    --------
+    Perhaps the most simple possible statespace model is a local level model, described by two equations:
+    .. math::
+        \begin{align}
+            y_{t} &= y_{t-1} + x_t + \nu_t \tag{1} \\
+            x_{t} &= x_{t-1} + \eta_t \tag{2}
+        \end{align}
+
+    Where :math:`y_t` is the observed data, and :math:`x_t` is an unobserved trend term. The model has two unknown
+    parameters, the variances on the two innovations, :math:`sigma_\nu` and :math:`sigma_\eta`. Take the hidden state
+    vector to be :math:`\begin{bmatrix} y_t & x_t \end{bmatrix}^T` and the shock vector
+    :math:`\varepsilon_t = \begin{bmatrix} \nu_t & \eta_t \end{bmatrix}`. Then this model can be cast into state-space
+    form with the following matrices:
+
+    .. math::
+        \begin{align}
+            T &= \begin{bmatrix}1 & 1 \\ 0 & 1 \end{bmatrix} \\
+            R &= \begin{bmatrix}1 & 0 \\ 0 & 1 \end{bmatrix} \\
+            Q &= \begin{bmatrix} \sigma_\nu & 0 \\ 0 & \sigma_\eta \end{bmatrix}
+            Z &= \begin{bmatrix} 1 & 0 \end{bmatrix}
+        \end{align}
+
+    With the remaining statespace matrices as zero matrices of the appropriate sizes. The model has two states,
+    two shocks, and one observed state. Knowing all this, a very simple  local level model can be implemented as
+    follows:
+
+    .. code:: python
+        class LocalLevel(PyMCStateSpace):
+            def __init__():
+                # Initialize the superclass. This creates the PytensorRepresentation and the Kalman Filter
+                super().__init__(k_endog=1, k_states=2, k_posdef=2)
+
+            @property
+            def param_names(self):
+                return ['x0', 'P0', 'sigma_nu', 'sigma_eta']
+
+            def update(self, theta, mode=None):
+                # Since the param_names are ['x0', 'P0', 'sigma_nu', 'sigma_eta'], theta will come in as
+                # [x0.ravel(), P0.ravel(), sigma_nu, sigma_eta]
+                # It will have length 2 + 4 + 1 + 1 = 8
+
+                x0 = theta[:2]
+                P0 = theta[2:6].reshape(2,2)
+                sigma_nu = theta[6]
+                sigma_eta = theta[7]
+
+                # Assign parameters to their correct locations
+                self.ssm['initial_state', :] = x0
+                self.ssm['initial_state_cov', :, :] = P0
+                self.ssm['state_cov', 0, 0] = sigma_nu
+                self.ssm['state_cov', 1, 1] = sigma_eta
+
     References
     ----------
     .. [1] Fulton, Chad. "Estimating time series models by state space methods in Python: Statsmodels." (2015).
