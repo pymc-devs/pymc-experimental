@@ -150,20 +150,6 @@ def test_save_load(fitted_model_instance):
     temp.close()
 
 
-def test_convert_dims_to_tuple(fitted_model_instance):
-    model_config = {
-        "a": {
-            "loc": 0,
-            "scale": 10,
-            "dims": [
-                "x",
-            ],
-        },
-    }
-    converted_model_config = fitted_model_instance._model_config_formatting(model_config)
-    assert converted_model_config["a"]["dims"] == ("x",)
-
-
 def test_initial_build_and_fit(fitted_model_instance, check_idata=True) -> ModelBuilder:
     if check_idata:
         assert fitted_model_instance.idata is not None
@@ -226,6 +212,22 @@ def test_sample_posterior_predictive(fitted_model_instance, combined):
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
     assert pred[fitted_model_instance.output_var].shape == expected_shape
     assert np.issubdtype(pred[fitted_model_instance.output_var].dtype, np.floating)
+
+
+def test_model_config_formatting():
+    model_config = {
+        "a": {
+            "loc": [0, 0],
+            "scale": 10,
+            "dims": [
+                "x",
+            ],
+        },
+    }
+    model_builder = test_ModelBuilder()
+    converted_model_config = model_builder._model_config_formatting(model_config)
+    np.testing.assert_equal(converted_model_config["a"]["dims"], ("x",))
+    np.testing.assert_equal(converted_model_config["a"]["loc"], np.array([0, 0]))
 
 
 def test_id():
