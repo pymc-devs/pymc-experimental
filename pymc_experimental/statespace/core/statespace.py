@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -70,6 +70,9 @@ class PyMCStateSpace:
     r"""
     Base class for Linear Gaussian Statespace models in PyMC.
 
+    Holds a ``PytensorRepresentation`` and ``KalmanFilter``, and provides a mapping between a PyMC model and the
+    statespace model.
+
     Parameters
     ----------
     k_endog : int
@@ -87,6 +90,34 @@ class PyMCStateSpace:
 
     verbose : bool, optional
         If True, displays information about the initialized model. Defaults to True.
+
+    Notes
+    -----
+    Based on the statsmodels statespace implementation https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py,
+    described in [1].
+
+    All statespace models inherit from this base class, which is responsible for providing an interface between a
+    PyMC model and a PytensorRepresentation of a linear statespace model. This is done via the ``update`` method,
+    which takes as input a vector of PyMC random variables and assigns them to their correct positions inside the
+    underlying ``PytensorRepresentation``. Construction of the parameter vector, called ``theta``, is done
+    automatically, but depend on the names provided in the ``param_names`` property.
+
+    Thus, to implement a new statespace model, one needs to:
+
+    1. Overload the ``param_names`` property to return a list of parameter names.
+    2. Overload the ``update`` method to put these parameters into their respective statespace matrices
+
+    In addition, a number of additional properties can be overloaded to provide users with additional resources
+    when writing their PyMC models. For details, see the properties section.
+
+    Finally, this class holds post-estimation methods common to all statespace models, which do not need to be
+    overloaded when writing a custom statespace model.
+
+    References
+    ----------
+    .. [1] Fulton, Chad. "Estimating time series models by state space methods in Python: Statsmodels." (2015).
+       http://www.chadfulton.com/files/fulton_statsmodels_2017_v1.pdf
+
     """
 
     def __init__(
@@ -120,16 +151,15 @@ class PyMCStateSpace:
         self.kalman_smoother = KalmanSmoother()
 
         if verbose:
-            self._print_prior_requirements()
+            try:
+                self._print_prior_requirements()
+            except NotImplementedError:
+                pass
 
     def _print_prior_requirements(self) -> None:
         """
         Prints a short report to the terminal about the priors needed for the model, including their names,
         shapes, named dimensions, and any parameter constraints.
-
-        Returns
-        -------
-        None
         """
         out = ""
         for param, info in self.param_info.items():
@@ -145,10 +175,6 @@ class PyMCStateSpace:
     def unpack_statespace(self) -> Tuple:
         """
         Helper function to quickly obtain all statespace matrices in the standard order.
-
-        Returns
-        -------
-        tuple of 9 TensorVariable
         """
 
         a0 = self.ssm["initial_state"]
@@ -165,37 +191,90 @@ class PyMCStateSpace:
 
     @property
     def param_names(self) -> List[str]:
+        """
+        Names of model parameters
+
+        A list of all parameters expected by the model. Each parameter will be sought inside the active PyMC model
+        context when ``build_statespace_graph`` is invoked.
+        """
         raise NotImplementedError
 
     @property
     def param_info(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Information about parameters needed to declare priors
+
+        A dictionary of param_name: dictionary key-value pairs. The return value is used by the
+        ``_print_prior_requirements`` method, to print a message telling users how to define the necessary priors for
+        the model. Each dictionary should have the following key-value pairs:
+            * key: "shape", value: a tuple of integers
+            * key: "constraints", value: a string describing the support of the prior (positive,
+              positive semi-definite, etc)
+            * key: "dims", value: tuple of strings
+        """
         raise NotImplementedError
 
     @property
-    def state_names(self):
+    def state_names(self) -> List[str]:
+        """
+        A k_states length list of strings, associated with the model's hidden states
+
+        """
+
         raise NotImplementedError
 
     @property
-    def observed_states(self):
+    def observed_states(self) -> List[str]:
+        """
+        A k_endog length list of strings, associated with the model's observed states
+        """
         raise NotImplementedError
 
     @property
-    def shock_names(self):
+    def shock_names(self) -> List[str]:
+        """
+        A k_posdef length list of strings, associated with the model's shock processes
+
+        """
         raise NotImplementedError
 
     @property
-    def default_priors(self):
+    def default_priors(self) -> Dict[str, Callable]:
+        """
+        Dictionary of parameter names and callable functions to construct default priors for the model
+
+        Returns a dictionary with param_name: Callable key-value pairs. Used by the ``add_default_priors()`` method
+        to automatically add priors to the PyMC model.
+        """
         raise NotImplementedError
 
     @property
-    def coords(self) -> Dict[str, Sequence]:
+    def coords(self) -> Dict[str, Sequence[str]]:
+        """
+        PyMC model coordinates
+
+        Returns a dictionary of dimension: coordinate key-value pairs, to be provided to ``pm.Model``. Dimensions
+        should come from the default names defined in ``statespace.utils.constants`` for them to be detected by
+        sampling methods.
+        """
         raise NotImplementedError
 
     @property
-    def param_dims(self):
+    def param_dims(self) -> Dict[str, Sequence[str]]:
+        """
+        Dictionary of named dimensions for each model parameter
+
+        Returns a dictionary of param_name: dimension key-value pairs, to be provided to the ``dims`` argument of a
+        PyMC random variable. Dimensions should come from the default names defined in ``statespace.utils.constants``
+        for them to be detected by sampling methods.
+
+        """
         raise NotImplementedError
 
-    def add_default_priors(self):
+    def add_default_priors(self) -> None:
+        """
+        Add default priors to the active PyMC model context
+        """
         raise NotImplementedError
 
     def _get_matrix_shape_and_dims(self, name: str) -> Tuple[Tuple, Tuple]:
@@ -288,15 +367,7 @@ class PyMCStateSpace:
 
     def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
         """
-        Put parameter values from vector theta into the correct positions in their respective state space matrices.
-
-        The purpose of the update function is to hide tedious parameter allocations from the user. In statespace models,
-        it is extremely rare for an entire matrix to be defined by a single prior distribution. Instead, users expect
-        to place priors over single entries of the matrix. The purpose of this function is to meet that expectation.
-
-        The tensor `theta` should **only** be that returned by `PyMCStateSpace._gather_required_random_variables`.
-        This ensures the parameters are provided in the expected order. Passing parameters in an arbitrary order will
-        result in incorrect results.
+        Map PyMC random variables to statespace matrices in a PytensorRepresentation
 
         Parameters
         ----------
@@ -309,6 +380,16 @@ class PyMCStateSpace:
         Returns
         ----------
         None
+
+        Notes
+        ----------
+        The purpose of the update function is to hide tedious parameter allocations from the user. In statespace models,
+        it is extremely rare for an entire matrix to be defined by a single prior distribution. Instead, users expect
+        to place priors over single entries of the matrix. The purpose of this function is to meet that expectation.
+
+        The tensor `theta` should **only** be that returned by `PyMCStateSpace._gather_required_random_variables`.
+        This ensures the parameters are provided in the expected order. Passing parameters in an arbitrary order will
+        result in incorrect results.
 
         Examples
         ----------
@@ -329,31 +410,49 @@ class PyMCStateSpace:
 
         Define `theta` as a flat array of these five parameters, arranged in an arbitrarily fixed order
         :math:`\\left [\rho_1 \rho_2 \theta_1 \theta_2 \\sigma \right ]. `update(theta)` is equivalent to:
+        .. code:: python
 
-        >>> import pytensor.tensor as pt
-        >>> T = pt.eye(2, k=1)
-        >>> R = pt.concatenate([pt.ones(1,1), pt.zeros((2, 1))], axis=0)
-        >>> Q = pt.zeros((1, 1))
-        >>> T = pt.set_subtensor(T[:2, 0], theta[:2])
-        >>> R = pt.set_subtensor(R[1:, 0], theta[2:4])
-        >>> Q = pt.set_subtensor(Q[0, 0], theta[4])
+            import pytensor.tensor as pt
+            T = pt.eye(2, k=1)
+            R = pt.concatenate([pt.ones(1,1), pt.zeros((2, 1))], axis=0)
+            Q = pt.zeros((1, 1))
+            T = pt.set_subtensor(T[:2, 0], theta[:2])
+            R = pt.set_subtensor(R[1:, 0], theta[2:4])
+            Q = pt.set_subtensor(Q[0, 0], theta[4])
 
-        In real usage, `theta` will be automatically constructed by `PyMCStateSpace._gather_required_random_variables`
-        inside a PyMC model context:
+        In general,``theta`` should never be manually constructed by a user. It is be automatically constructed by
+        ``PyMCStateSpace._gather_required_random_variables`` inside a PyMC model context, which is in turn perfomed
+        when the ``PyMCStateSpace.build_statespace_graph`` method is invoked. If one were to manually call ``update``,
+        it would look like this:
 
-        >>> import pymc as pm
-        >>> import pymc_experimental.statespace as pmss
-        >>> ss_mod = pmss.BayesianARMA(order=(2, 2), verbose=False, stationary_initialization=True)
-        >>> with pm.Model():
-        >>>      x0 = pm.Normal('x0', size=ss_mod.k_states)
-        >>>      ar_params = pm.Normal('ar_params', size=ss_mod.p)
-        >>>      ma_parama = pm.Normal('ma_params', size=ss_mod.q)
-        >>>      sigma_state = pm.Normal('sigma_state')
-        >>>      theta = ss_mod._gather_required_random_variables()
-        >>>      ss_mod.update(theta)
-        >>> ss_mod.ssm['transition'].eval()
-        >>> ss_mod.ssm['selection'].eval()
-        >>> ss_mod.ssm['state_cov'].eval()
+        .. code:: python
+            import pymc as pm
+            import pymc_experimental.statespace as pmss
+
+            RANDOM_SEED = 1337
+
+            ss_mod = pmss.BayesianARIMA(order=(2, 0, 2), verbose=False, stationary_initialization=True)
+            with pm.Model():
+                 x0 = pm.Normal('x0', size=ss_mod.k_states)
+                 ar_params = pm.Normal('ar_params', size=ss_mod.p)
+                 ma_parama = pm.Normal('ma_params', size=ss_mod.q)
+                 sigma_state = pm.Normal('sigma_state')
+                 theta = ss_mod._gather_required_random_variables()
+                 ss_mod.update(theta)
+
+            pm.draw(ss_mod.ssm['transition'], random_seed=RANDOM_SEED)
+            >>> array([[-0.90590386,  1.        ,  0.        ],
+            >>>        [ 1.25190143,  0.        ,  1.        ],
+            >>>        [ 0.        ,  0.        ,  0.        ]])
+
+            pm.draw(ss_mod.ssm['selection'], random_seed=RANDOM_SEED)
+            >>> array([[ 1.        ],
+            >>>        [-2.46741039],
+            >>>        [-0.28947689]])
+
+            pm.draw(ss_mod.ssm['state_cov'], random_seed=RANDOM_SEED)
+            >>> array([[-1.69353533]])
+
         """
 
         raise NotImplementedError
