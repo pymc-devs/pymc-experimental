@@ -7,7 +7,7 @@ import pytensor
 import pytensor.tensor as pt
 import pytest
 
-from pymc_experimental.statespace.models.local_level import BayesianLocalLevel
+from pymc_experimental.statespace.models import structural
 from pymc_experimental.statespace.utils.constants import (
     EXTENDED_TIME_DIM,
     FILTER_OUTPUT_DIMS,
@@ -73,12 +73,19 @@ def generate_timeseries():
 
 @pytest.fixture()
 def create_model(load_dataset):
-    ss_mod = BayesianLocalLevel(verbose=False)
+    ss_mod = structural.LevelTrendComponent(order=2).build("data", verbose=False)
 
     def _create_model(f):
         data = load_dataset(f)
         with pm.Model(coords=ss_mod.coords) as mod:
-            ss_mod.add_default_priors()
+            P0_diag = pm.Exponential(
+                "P0_diag",
+                1,
+                dims="state",
+            )
+            P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=("state", "state_aux"))
+            initial_trend = pm.Normal("initial_trend", dims="trend_states")
+            trend_sigmas = pm.Exponential("trend_sigmas", 1, dims="trend_shocks")
             ss_mod.build_statespace_graph(data)
         return mod
 
@@ -104,10 +111,13 @@ def test_filter_output_coord_assignment(f, warning, create_model):
 
 
 def test_model_build_without_coords(load_dataset):
-    ss_mod = BayesianLocalLevel(verbose=False)
+    ss_mod = structural.LevelTrendComponent().build(verbose=False)
     data = load_dataset("numpy")
     with pm.Model() as mod:
-        ss_mod.add_default_priors()
+        P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
+        P0 = pm.Deterministic("P0", pt.diag(P0_diag))
+        initial_trend = pm.Normal("initial_trend", shape=(2,))
+        trend_sigmas = pm.Exponential("trend_sigmas", 1, shape=(2,))
         ss_mod.build_statespace_graph(data, register_data=False)
 
     assert mod.coords == {}
@@ -123,9 +133,12 @@ def test_data_index_is_coord(f, warning, create_model):
 @pytest.mark.parametrize("freq", ["Y", "YS", "Q", "QS", "M", "MS", "D", "B"])
 def test_extended_date_index(freq, generate_timeseries):
     df = generate_timeseries(freq)
-    ss_mod = BayesianLocalLevel(verbose=False)
-    with pm.Model() as mod:
-        ss_mod.add_default_priors()
+    ss_mod = structural.LevelTrendComponent().build(verbose=False)
+    with pm.Model(coords=ss_mod.coords) as mod:
+        P0_diag = pm.Exponential("P0_diag", 1, dims=["state"])
+        P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=["state", "state_aux"])
+        initial_trend = pm.Normal("initial_trend", dims=["trend_states"])
+        trend_sigmas = pm.Exponential("trend_sigmas", 1, dims=["trend_shocks"])
         ss_mod.build_statespace_graph(df)
 
     assert len(mod.coords[TIME_DIM]) == 100

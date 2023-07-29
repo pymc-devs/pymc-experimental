@@ -26,7 +26,7 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 floatX = pytensor.config.floatX
 
 ATOL = 1e-7 if floatX.endswith("64") else 1e-4
-RTOL = 0 if floatX.endswith("64") else 1e-4
+RTOL = 1e-7 if floatX.endswith("64") else 1e-4
 
 standard_inout = initialize_filter(StandardFilter())
 cholesky_inout = initialize_filter(CholeskyFilter())

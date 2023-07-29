@@ -7,7 +7,7 @@ from numpy.testing import assert_allclose
 from pymc.model_graph import fast_eval
 from scipy.stats import multivariate_normal
 
-from pymc_experimental.statespace import BayesianLocalLevel
+from pymc_experimental.statespace import structural
 from pymc_experimental.statespace.filters.distributions import LinearGaussianStateSpace
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_DIM,
@@ -21,7 +21,7 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 floatX = pytensor.config.floatX
 
 # TODO: This needs to be VERY large for float32 to pass, is there a way to put scipy into float32 computation
-# to get an apples-to-apples comparison?
+#  to get an apples-to-apples comparison?
 ATOL = 1e-8 if floatX.endswith("64") else 0.1
 
 filter_names = [
@@ -42,18 +42,19 @@ def data():
 def pymc_model(data):
     with pm.Model() as mod:
         data = pm.ConstantData("data", data.values)
-        x0 = pm.Normal("x0", mu=[900, 0], sigma=[100, 1])
-        P0_diag = pm.Exponential("P0_diag", 0.01, shape=2)
+        P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
         P0 = pm.Deterministic("P0", pt.diag(P0_diag))
-        sigma_state = pm.Exponential("sigma_state", 2)
-        sigma_obs = pm.Exponential("sigma_obs", 1)
+        initial_trend = pm.Normal("initial_trend", shape=(2,))
+        trend_sigmas = pm.Exponential("trend_sigmas", 1, shape=(2,))
 
     return mod
 
 
 @pytest.mark.parametrize("kfilter", filter_names, ids=filter_names)
 def test_loglike_vectors_agree(kfilter, pymc_model):
-    ss_mod = BayesianLocalLevel(verbose=False, filter_type=kfilter)
+    ss_mod = structural.LevelTrendComponent(order=2).build(
+        "data", verbose=False, filter_type=kfilter
+    )
     with pymc_model:
         theta = ss_mod._gather_required_random_variables()
         ss_mod.update(theta)
@@ -76,11 +77,15 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
 
 
 def test_lgss_distribution_from_steps():
-    ss_mod = BayesianLocalLevel(verbose=False)
+    ss_mod = structural.LevelTrendComponent(order=2).build("data", verbose=False)
     coords = ss_mod.coords
     coords.update({"time": np.arange(100, dtype="int")})
     with pm.Model(coords=coords):
-        ss_mod.add_default_priors()
+        P0_diag = pm.Exponential("P0_diag", 1, dims=["state"])
+        P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=["state", "state_aux"])
+        initial_trend = pm.Normal("initial_trend", dims=["trend_states"])
+        trend_sigmas = pm.Exponential("trend_sigmas", 1, dims=["trend_shocks"])
+
         theta = ss_mod._gather_required_random_variables()
         ss_mod.update(theta)
         matrices = ss_mod.unpack_statespace()
@@ -94,12 +99,16 @@ def test_lgss_distribution_from_steps():
 
 
 def test_lgss_distribution_with_dims():
-    ss_mod = BayesianLocalLevel(verbose=False)
+    ss_mod = structural.LevelTrendComponent(order=2).build("data", verbose=False)
     coords = ss_mod.coords
     coords.update({"time": np.arange(101, dtype="int")})
 
     with pm.Model(coords=coords):
-        ss_mod.add_default_priors()
+        P0_diag = pm.Exponential("P0_diag", 1, dims=["state"])
+        P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=["state", "state_aux"])
+        initial_trend = pm.Normal("initial_trend", dims=["trend_states"])
+        trend_sigmas = pm.Exponential("trend_sigmas", 1, dims=["trend_shocks"])
+
         theta = ss_mod._gather_required_random_variables()
         ss_mod.update(theta)
         matrices = ss_mod.unpack_statespace()

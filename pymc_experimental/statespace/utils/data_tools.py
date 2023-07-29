@@ -3,12 +3,14 @@ import warnings
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytensor
 import pytensor.tensor as pt
 from pymc import modelcontext
 from pytensor.tensor.sharedvar import TensorSharedVariable
 
 from pymc_experimental.statespace.utils.constants import (
     EXTENDED_TIME_DIM,
+    MISSING_FILL,
     OBS_STATE_DIM,
     TIME_DIM,
 )
@@ -108,7 +110,30 @@ def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=Fals
         )
 
 
-def register_data_with_pymc(data, n_obs, obs_coords):
+def add_data_to_active_model(values, index, extended_index):
+    pymc_mod = modelcontext(None)
+    data_dims = None
+
+    if OBS_STATE_DIM in pymc_mod.coords:
+        data_dims = [TIME_DIM, OBS_STATE_DIM]
+
+    pymc_mod.add_coord(TIME_DIM, index, mutable=True)
+    pymc_mod.add_coord(EXTENDED_TIME_DIM, extended_index, mutable=True)
+
+    data = pm.ConstantData("data", values, dims=data_dims)
+
+    return data
+
+
+def mask_missing_values_in_data(values):
+    masked_values = np.ma.masked_invalid(values)
+    filled_values = masked_values.filled(MISSING_FILL)
+    nan_mask = masked_values.mask
+
+    return filled_values, nan_mask
+
+
+def register_data_with_pymc(data, n_obs, obs_coords, register_data=True):
     if isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
         values, index, extended_index = preprocess_tensor_data(data, n_obs, obs_coords)
     elif isinstance(data, np.ndarray):
@@ -118,14 +143,10 @@ def register_data_with_pymc(data, n_obs, obs_coords):
     else:
         raise ValueError("Data should be one of pytensor tensor, numpy array, or pandas dataframe")
 
-    pymc_mod = modelcontext(None)
-    data_dims = None
+    data, nan_mask = mask_missing_values_in_data(values)
 
-    if OBS_STATE_DIM in pymc_mod.coords:
-        data_dims = [TIME_DIM, OBS_STATE_DIM]
-
-    pymc_mod.add_coord(TIME_DIM, index, mutable=True)
-    pymc_mod.add_coord(EXTENDED_TIME_DIM, extended_index, mutable=True)
-    data = pm.MutableData("data", values, dims=data_dims)
-
-    return data
+    if register_data:
+        data = add_data_to_active_model(data, index, extended_index)
+    else:
+        data = pytensor.shared(data, name="data")
+    return data, nan_mask

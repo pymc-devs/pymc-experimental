@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
+from pymc.gp.util import stabilize
 from pytensor.compile.mode import get_mode
 from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
@@ -14,6 +15,7 @@ from pytensor.tensor.slinalg import SolveTriangular
 from pymc_experimental.statespace.filters.utilities import (
     split_vars_into_seq_and_nonseq,
 )
+from pymc_experimental.statespace.utils.constants import MISSING_FILL
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
@@ -297,7 +299,7 @@ class BaseFilter(ABC):
         .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
                2nd ed, Oxford University Press, 2012.
         """
-        nan_mask = pt.isnan(y)
+        nan_mask = pt.or_(pt.isnan(y), pt.eq(y, MISSING_FILL))
         all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
         W = pt.diag(pt.bitwise_not(nan_mask).astype(pytensor.config.floatX))
 
@@ -549,12 +551,9 @@ class StandardFilter(BaseFilter):
         v = y - y_hat
 
         PZT = P.dot(Z.T)
-        # F = stabilize(Z.dot(PZT) + H, jitter=JITTER_DEFAULT)
 
-        F = Z.dot(PZT) + H
-        F_inv = pt.linalg.solve(
-            F + self.eye_endog * all_nan_flag, self.eye_endog, assume_a="pos", check_finite=False
-        )
+        F = stabilize(Z.dot(PZT) + H, jitter=JITTER_DEFAULT)
+        F_inv = pt.linalg.solve(F, self.eye_endog, assume_a="pos", check_finite=False)
 
         K = PZT.dot(F_inv)
         I_KZ = self.eye_states - K.dot(Z)

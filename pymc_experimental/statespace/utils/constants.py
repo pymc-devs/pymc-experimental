@@ -9,8 +9,22 @@ EXTENDED_TIME_DIM = "extended_time"
 AR_PARAM_DIM = "ar_lag"
 MA_PARAM_DIM = "ma_lag"
 
+MISSING_FILL = -9999.0
 
 MATRIX_NAMES = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
+
+SHORT_NAME_TO_LONG = {
+    "x0": "initial_state",
+    "P0": "initial_state_cov",
+    "c": "state_intercept",
+    "d": "obs_intercept",
+    "T": "transition",
+    "Z": "design",
+    "R": "selection",
+    "H": "obs_cov",
+    "Q": "state_cov",
+}
+
 FILTER_OUTPUT_NAMES = [
     "filtered_state",
     "predicted_state",

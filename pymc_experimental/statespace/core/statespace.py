@@ -10,10 +10,7 @@ from arviz import InferenceData
 from pymc.model import modelcontext
 from pytensor.compile import get_mode
 
-from pymc_experimental.statespace.core.representation import (
-    SHORT_NAME_TO_LONG,
-    PytensorRepresentation,
-)
+from pymc_experimental.statespace.core.representation import PytensorRepresentation
 from pymc_experimental.statespace.filters import (
     CholeskyFilter,
     KalmanSmoother,
@@ -37,6 +34,7 @@ from pymc_experimental.statespace.utils.constants import (
     OBS_STATE_DIM,
     SHOCK_AUX_DIM,
     SHOCK_DIM,
+    SHORT_NAME_TO_LONG,
     SMOOTHER_OUTPUT_NAMES,
     TIME_DIM,
 )
@@ -102,20 +100,21 @@ class PyMCStateSpace:
     underlying ``PytensorRepresentation``. Construction of the parameter vector, called ``theta``, is done
     automatically, but depend on the names provided in the ``param_names`` property.
 
-    Thus, to implement a new statespace model, one needs to:
+    To implement a new statespace model, one needs to:
 
     1. Overload the ``param_names`` property to return a list of parameter names.
     2. Overload the ``update`` method to put these parameters into their respective statespace matrices
 
     In addition, a number of additional properties can be overloaded to provide users with additional resources
-    when writing their PyMC models. For details, see the properties section.
+    when writing their PyMC models. For details, see the attributes section of the docs for this class.
 
     Finally, this class holds post-estimation methods common to all statespace models, which do not need to be
     overloaded when writing a custom statespace model.
 
     Examples
     --------
-    Perhaps the most simple possible statespace model is a local level model, described by two equations:
+    The local level model is a simple statespace model. It is a Gaussian random walk with a drift term that itself also
+    follows a Gaussian random walk, as described by the following two equations:
 
     .. math::
         \begin{align}
@@ -131,9 +130,9 @@ class PyMCStateSpace:
 
     .. math::
         \begin{align}
-            T &= \begin{bmatrix}1 & 1 \\ 0 & 1 \end{bmatrix} \\
-            R &= \begin{bmatrix}1 & 0 \\ 0 & 1 \end{bmatrix} \\
-            Q &= \begin{bmatrix} \sigma_\nu & 0 \\ 0 & \sigma_\eta \end{bmatrix} \\
+            T &= \begin{bmatrix}1 & 1 \\ 0 & 1 \end{bmatrix} &
+            R &= \begin{bmatrix}1 & 0 \\ 0 & 1 \end{bmatrix} &
+            Q &= \begin{bmatrix} \sigma_\nu & 0 \\ 0 & \sigma_\eta \end{bmatrix} &
             Z &= \begin{bmatrix} 1 & 0 \end{bmatrix}
         \end{align}
 
@@ -143,10 +142,18 @@ class PyMCStateSpace:
 
     .. code:: python
 
+        from pymc_experimental.statespace.core import PyMCStateSpace
+        import numpy as np
+
         class LocalLevel(PyMCStateSpace):
             def __init__():
                 # Initialize the superclass. This creates the PytensorRepresentation and the Kalman Filter
                 super().__init__(k_endog=1, k_states=2, k_posdef=2)
+
+                # Declare the non-zero, non-parameterized matrices
+                self.ssm['transition', :, :] = np.array([[1.0, 1.0], [0.0, 1.0]])
+                self.ssm['selection', :, :] = np.eye(2)
+                self.ssm['design', :, :] = np.array([[1.0, 0.0]])
 
             @property
             def param_names(self):
@@ -167,6 +174,26 @@ class PyMCStateSpace:
                 self.ssm['initial_state_cov', :, :] = P0
                 self.ssm['state_cov', 0, 0] = sigma_nu
                 self.ssm['state_cov', 1, 1] = sigma_eta
+
+    After defining priors over the named parameters ``P0``, ``x0``, ``sigma_eta``, and ``sigma_nu``, we can sample
+    from this model:
+
+    .. code:: python
+
+        import pymc as pm
+
+        ll = LocalLevel()
+
+        with pm.Model() as mod:
+            x0 = pm.Normal('x0', shape=(2,))
+            P0_diag = pm.Exponential('P0_diag', 1, shape=(2,))
+            P0 = pm.Deterministic('P0', pt.diag(P0_diag))
+            sigma_nu = pm.Exponential('sigma_nu', 1)
+            sigma_eta = pm.Exponential('sigma_eta', 1)
+
+            ll.build_statespace_graph(data = data)
+            idata = pm.sample()
+
 
     References
     ----------
@@ -597,8 +624,9 @@ class PyMCStateSpace:
         n_obs = self.ssm.shapes["obs_intercept"][0]
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
 
-        if register_data:
-            register_data_with_pymc(data, n_obs=n_obs, obs_coords=obs_coords)
+        data, nan_mask = register_data_with_pymc(
+            data, n_obs=n_obs, obs_coords=obs_coords, register_data=register_data
+        )
 
         registered_matrices = []
         for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
