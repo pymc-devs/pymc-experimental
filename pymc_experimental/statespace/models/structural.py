@@ -244,18 +244,17 @@ class Component:
         self.param_info = {}
         self.param_counts = {}
 
-        ij_pairs = [
-            (self.k_states, None),
-            (self.k_states, None),
-            (self.k_endog, None),
-            (self.k_states, self.k_states),
-            (self.k_states, None),
-            (self.k_states, self.k_posdef),
-            (self.k_posdef, self.k_posdef),
-            (0, None),
-        ]
-
-        self._matrix_shift_factors = dict(zip(MATRIX_NAMES_LONG, ij_pairs))
+        self._matrix_shift_factors = {
+            "initial_state": (self.k_states, None),
+            "initial_state_cov": (self.k_states, self.k_states),
+            "state_intercept": (self.k_states, None),
+            "obs_intercept": (self.k_endog, None),
+            "transition": (self.k_states, self.k_states),
+            "design": (self.k_states, None),
+            "selection": (self.k_states, self.k_posdef),
+            "obs_cov": (0, None),
+            "state_cov": (self.k_posdef, self.k_posdef),
+        }
 
     def _combine_matrices(self, other):
         x0 = np.concatenate([self.x0, other.x0])
@@ -499,11 +498,11 @@ class MeasurementError(Component):
 
 
 class AutoregressiveComponent(Component):
-    def __init__(self, order=1, ar_innovations=True):
+    def __init__(self, order=1, innovations=True):
         order = order_to_mask(order)
         ar_lags = np.flatnonzero(order).ravel().astype(int) + 1
         k_states = int(sum(order))
-        super().__init__(k_endog=1, k_states=k_states, k_posdef=1)
+        super().__init__(k_endog=1, k_states=k_states, k_posdef=int(innovations))
 
         self.T = np.eye(k_states, k=-1)
         self.R[0] = 1
@@ -515,11 +514,11 @@ class AutoregressiveComponent(Component):
         self.param_dims = {"ar_params": ("ar_lags",)}
         self.coords = {"ar_lags": ar_lags}
         self.param_info = {
-            "ar_params": {"shape": (order,), "constraints": "None", "dims": "(ar_lags, )"}
+            "ar_params": {"shape": (k_states,), "constraints": "None", "dims": "(ar_lags, )"}
         }
         self.param_counts["ar_params"] = k_states
 
-        if ar_innovations:
+        if innovations:
             self.shock_names = ["L1.data"]
             self.param_names += ["sigma_ar"]
             self.param_indices["sigma_ar"] = ("state_cov", 0, 0)
@@ -540,22 +539,21 @@ class TimeSeasonality(Component):
         self.R[0] = 1
 
         self.state_names = [f"S{i + 1}.data" for i in range(k_states)]
-        self.param_names = [f"{name}_seasonal"]
-        self.param_indices = {f"{name}_seasonal": ("initial_state", 0)}
-        self.param_info = {
-            f"{name}_seasonal": {"shape": (1,), "constraints": "None", "dims": "None"}
-        }
-        self.param_counts[f"{name}_seasonal"] = 1
+        self.param_names = [f"{name}"]
+        self.param_indices = {f"{name}": ("initial_state", 0)}
+        self.param_info = {f"{name}": {"shape": (1,), "constraints": "None", "dims": "None"}}
+        self.param_counts[f"{name}"] = 1
 
         if seasonal_innovations:
-            self.param_names += [f"sigma.{name}_seasonal"]
-            self.param_indices[f"sigma.{name}_seasonal"] = ("state_cov", 0, 0)
-            self.param_info[f"sigma.{name}_seasonal"] = {
+            self.param_names += [f"sigma_{name}"]
+            self.param_indices[f"sigma_{name}"] = ("state_cov", 0, 0)
+            self.param_info[f"sigma_{name}"] = {
                 "shape": (1,),
-                "constraint": "Positive",
+                "constraints": "Positive",
                 "dims": "None",
             }
-            self.param_counts[f"sigma.{name}_seasonal"] = 1
+            self.param_counts[f"sigma_{name}"] = 1
+            self.shock_names = [f"{name}"]
 
 
 class FrequencySeasonality(Component):
@@ -581,12 +579,10 @@ class FrequencySeasonality(Component):
         self.R = np.eye(self.k_states)
 
         self.state_names = [f"{name}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
-        self.param_names = [f"{name}_freq_seasonal"]
-        self.param_indices = {f"{name}_freq_seasonal": ("initial_state", 0, 0)}
-        self.param_info = {
-            f"{name}_freq_seasonal": {"shape": (1,), "constraints": "None", "dims": "None"}
-        }
-        self.param_counts[f"{name}_freq_seasonal"] = 1
+        self.param_names = [f"{name}"]
+        self.param_indices = {f"{name}": ("initial_state", 0, 0)}
+        self.param_info = {f"{name}": {"shape": (1,), "constraints": "None", "dims": "None"}}
+        self.param_counts[f"{name}"] = 1
 
         if innovations:
             self.param_names += [f"sigma_{name}"]
@@ -595,3 +591,4 @@ class FrequencySeasonality(Component):
                 f"sigma_{name}": {"shape": (1,), "constraints": "Positive", "dims": "None"}
             }
             self.param_counts[f"sigma_{name}"] = 1
+            self.shock_names = [f"{name}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
