@@ -17,4 +17,4 @@ Structural Components
 .. toctree::
    :maxdepth: 1
 
-    models/structural
+    structural
