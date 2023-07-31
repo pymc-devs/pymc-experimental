@@ -24,6 +24,79 @@ from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lya
 class BayesianVARMAX(PyMCStateSpace):
     r"""
     Vector AutoRegressive Moving Average with eXogenous Regressors
+
+    Parameters
+    ----------
+    order: tuple of (int, int)
+        Number of autoregressive (AR) and moving average (MA) terms to include in the model. All terms up to the
+        specified order are included. For restricted models, set zeros directly on the priors.
+
+    endog_names: List of str, optional
+        Names of the endogenous variables being modeled. Used to generate names for the state and shock coords. If
+        None, the state names will simply be numbered.
+
+        Exactly one of either ``endog_names`` or ``k_endog`` must be specified.
+
+    k_endog: int, optional
+        Number of endogenous states to be modeled.
+
+        Exactly one of either ``endog_names`` or ``k_endog`` must be specified.
+
+    stationary_initialization: bool, default False
+        If true, the initial state and initial state covariance will not be assigned priors. Instead, their steady
+        state values will be used. If False, the user is responsible for setting priors on the initial state and
+        initial covariance.
+
+        **Note**: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
+        for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
+        error.
+
+    filter_type: str, default "standard"
+        The type of Kalman Filter to use. Options are "standard", "single", "univariate", "steady_state",
+        and "cholesky". See the docs for kalman filters for more details.
+
+    state_structure: str, default "fast"
+        How to represent the state-space system. When "interpretable", each element of the state vector will have a
+        precise meaning as either lagged data, innovations, or lagged innovations. This comes at the cost of a larger
+        state vector, which may hurt performance.
+
+        When "fast", states are combined to minimize the dimension of the state vector, but lags and innovations are
+        mixed together as a result. Only the first state (the modeled timeseries) will have an obvious interpretation
+        in this case.
+
+    measurement_error: bool, default True
+        If true, a measurement error term is added to the model.
+
+    verbose: bool, default True
+        If true, a message will be logged to the terminal explaining the variable names, dimensions, and supports.
+
+    Notes
+    -----
+
+    The VARMA model is a multivariate extension of the SARIMAX model. Given a set of timeseries :math:`\{x_t}_{t=0}^T\}`,
+    with :math:`x_t = \begin{bmatrix} x_{1,t} & x_{2, t} & \cdots & x_{k,t}\end{bmatrix}^T`, a VARMA models each series
+    as a function of the histories of all series. Specifically, denoting the AR-MA order as (p, q),  a VARMA can be
+    written:
+
+    ..math::
+        x_t = A_1 x_{t-1} + A_2 x_{t-2} + \cdots + A_p x_{t-p} + B_1 \varepsilon_{t-1} + \cdots
+            + B_q \varepsilon_{t-q} + \varepsilon_t
+
+    Where :math:`\varepsilon_t = \begin{bvector} \varepsilon_{1,t} & \varepsilon_{2,t} & \cdots &
+    \varepsilon_{k,t}\end{bmatrix}^T \sim N(0, \Sigma)` is a vector of i.i.d stochastic innovations or shocks that drive
+    intertemporal variation in the data. Matrices :math:`A_i, B_i` are :math:`k \times k` coefficient matrices:
+
+    ..math::
+        A_i = \begin{bmatrix} \rho_{1,i,1} & \rho_{1,i,2} & \cdots & \rho_{1,i,k} \\
+                              \rho_{2,i,1} & \rho_{2,i,2} & \cdots & \rho_{2,i,k} \\
+                              \vdots     &  \vdots    & \cdots & \vdoes     \\
+                              \rho{k,i,1}  & \rho_{k,i,2} & \cdots & rho_{k,i,k}  \end{bmatrix}
+
+    Internally, this representation is not used. Instead, the vectors :math:`x_t, x_{t-1}, \cdots, x_{t-p},
+    \varepsilon_{t-1}, \cdots, \varepsilon_{t-q}` are concatenated into a single column vector of length ``k * (p+q)``,
+    while the coefficients matrices are likewise concatenated into a single coefficient matrix, :math:`T`.
+
+
     """
 
     def __init__(
@@ -31,7 +104,7 @@ class BayesianVARMAX(PyMCStateSpace):
         order: Tuple[int, int],
         endog_names: List[str] = None,
         k_endog: int = None,
-        stationary_initialization: bool = True,
+        stationary_initialization: bool = False,
         filter_type: str = "standard",
         measurement_error: bool = True,
         verbose=True,

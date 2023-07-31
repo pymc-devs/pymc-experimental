@@ -21,7 +21,48 @@ class BayesianARIMA(PyMCStateSpace):
     r"""
     AutoRegressive Integrated Moving Average with eXogenous regressors
 
-    The ARIMAX model is a univariate time series model that posits the future evolution of a stationary time series will
+    Parameters
+    ----------
+    order: tuple(int, int, int)
+        Order of the ARIMAX process. The order has the notation (p, d, q), where p is the number of autoregressive
+        lags, q is the number of moving average components, and d is order of integration -- the number of
+        differences needed to render the data stationary.
+
+        If d > 0, the differences are modeled as components of the hidden state, and all available data can be used.
+        This is only possible if state_structure = 'fast'. For interpretable states, the user must manually
+        difference the data prior to calling the `build_statespace_graph` method.
+
+    stationary_initialization: bool, default False
+        If true, the initial state and initial state covariance will not be assigned priors. Instead, their steady
+        state values will be used.
+
+        **Note**: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
+        for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
+        error.
+
+    filter_type: str, default "standard"
+        The type of Kalman Filter to use. Options are "standard", "single", "univariate", "steady_state",
+        and "cholesky". See the docs for kalman filters for more details.
+
+    state_structure: str, default "fast"
+        How to represent the state-space system. When "interpretable", each element of the state vector will have a
+        precise meaning as either lagged data, innovations, or lagged innovations. This comes at the cost of a larger
+        state vector, which may hurt performance.
+
+        When "fast", states are combined to minimize the dimension of the state vector, but lags and innovations are
+        mixed together as a result. Only the first state (the modeled timeseries) will have an obvious interpretation
+        in this case.
+
+    measurement_error: bool, default True
+        If true, a measurement error term is added to the model.
+
+    verbose: bool, default True
+        If true, a message will be logged to the terminal explaining the variable names, dimensions, and supports.
+
+    Notes
+    -----
+
+        The ARIMAX model is a univariate time series model that posits the future evolution of a stationary time series will
     be a function of its past values, together with exogenous "innovations" and their past history. The model is
     described by its "order", a 3-tuple (p, d, q), that are:
 
@@ -69,37 +110,37 @@ class BayesianARIMA(PyMCStateSpace):
     ARIMA models can be represented in statespace form, as described in [1]. For more details, see chapters 3.4, 3.6,
     and 8.4.
 
-    Parameters
+    Examples
+    --------
+    The following example shows how to build an ARMA(1, 1) model -- ARIMA(1, 0, 1) -- using the BayesianARIMA class:
+
+    .. code:: python
+
+        import pymc_experimental.statespace as pmss
+        import pymc as pm
+
+        ss_mod = pmss.BayesianARIMA(order=(1, 0, 1), verbose=True)
+
+        with pm.Model(coords=ss_mod.coords) as arma_model:
+            state_sigmas = pm.HalfNormal("sigma_state", sigma=1.0, dims=ss_mod.param_dims["sigma_state"])
+
+            rho = pm.Beta("ar_params", alpha=5, beta=1, dims=ss_mod.param_dims["ar_params"])
+            theta = pm.Normal("ma_params", mu=0.0, sigma=0.5, dims=ss_mod.param_dims["ma_params"])
+
+            ss_mod.build_statespace_graph(df, mode="JAX")
+            idata = pm.sample(nuts_sampler='numpyro')
+
+    References
     ----------
-    order: tuple(int, int, int)
-        Order of the ARIMAX process. The order has the notation (p, d, q), where p is the number of autoregressive
-        lags, q is the number of moving average components, and d is order of integration -- the number of
-        differences needed to render the data stationary.
-
-        If d > 0, the differences are modeled as components of the hidden state, and all available data can be used.
-        This is only possible if state_structure = 'fast'. For interpretable states, the user must manually
-        difference the data prior to calling the `build_statespace_graph` method.
-
-    trend: str, default 'n'
-        A string representing the
-
-    stationary_initialization: bool, default False
-
-    filter_type: str, default "standard"
-
-    state_structure: str, default "fast"
-
-    measurement_error: bool, default True
-
-    verbose: bool, default True
-
+    .. [1] Durbin, James, and Siem Jan Koopman. 2012.
+        Time Series Analysis by State Space Methods: Second Edition.
+        Oxford University Press.
 
     """
 
     def __init__(
         self,
         order: Tuple[int, int, int],
-        trend: str = "n",
         stationary_initialization: bool = True,
         filter_type: str = "standard",
         state_structure: str = "fast",

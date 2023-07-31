@@ -1,5 +1,3 @@
-import unittest
-
 import numpy as np
 import pymc as pm
 import pytensor
@@ -179,7 +177,3 @@ def test_sample_unconditional_posterior(ss_mod, idata):
     unconditional_posterior = ss_mod.sample_unconditional_posterior(idata, steps=100)
     for output in ["latent", "observed"]:
         assert f"posterior_{output}" in unconditional_posterior
-
-
-if __name__ == "__main__":
-    unittest.main()
