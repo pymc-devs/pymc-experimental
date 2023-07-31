@@ -1,4 +1,5 @@
 import logging
+from abc import ABC
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
@@ -181,7 +182,7 @@ class StructuralTimeSeries(PyMCStateSpace):
 
     def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
         """
-        Put parameter values from vector theta into the correct positions in the state space matrices.
+        Assign parameter values from vector theta into the correct positions in the state space matrices.
 
         Parameters
         ----------
@@ -207,14 +208,13 @@ class StructuralTimeSeries(PyMCStateSpace):
                 self.ssm[ssm_index] = theta[param_slice]
 
 
-class Component:
+class Component(ABC):
     r"""
-    A base class for a component of a structural timeseries model.
+    Base class for a component of a structural timeseries model.
 
     This base class contains a subset of the class attributes of the PyMCStateSpace class, and none of the class
     methods. The purpose of a component is to allow the partial definition of a structural model. Components are
     assembled into a full model by the StructuralTimeSeries class.
-
     """
 
     def __init__(self, k_endog, k_states, k_posdef):
@@ -376,6 +376,10 @@ class LevelTrendComponent(Component):
 
     Parameters
     __________
+    order : int or sequence of int
+
+    innovations_order : int or sequence of int, optional
+
 
     Notes
     -----
@@ -389,7 +393,6 @@ class LevelTrendComponent(Component):
             \zeta_t &\sim N(0, \sigma_\zeta) \\
             \xi_t &\sim N(0, \sigma_\xi)
         \end{align}
-
 
     Where :math:`\mu_{t+1}` is the mean of the timeseries at time t, and :math:`\nu_t` is the drift or the slope of
     the process. When both innovations :math:`\zeta_t` and :math:`\xi_t` are included in the model, it is known as a
@@ -457,28 +460,68 @@ class LevelTrendComponent(Component):
         self.Q = np.zeros((k_posdef, k_posdef))
 
         state_names = ["level", "trend", "acceleration", "jerk", "snap", "crackle", "pop"]
+
+        self.param_names = ["initial_trend"]
         self.state_names = state_names[:k_states]
-        self.shock_names = list(np.array(self.state_names)[innovations_order])
-
-        self.param_names = ["trend_sigmas", "initial_trend"]
-
         self.param_indices = {
-            "trend_sigmas": ("state_cov", *np.diag_indices(k_posdef)),
             "initial_trend": ("initial_state", np.arange(k_states, dtype="int")),
         }
-        self.param_dims = {"trend_sigmas": ("trend_shocks",), "initial_trend": ("trend_states",)}
-        self.param_counts = {"trend_sigmas": k_posdef, "initial_trend": k_states}
+        self.param_dims = {"initial_trend": ("trend_states",)}
+        self.param_counts = {"initial_trend": k_states}
+        self.coords = {"trend_states": self.state_names}
+        self.param_info = {"initial_trend": {"shape": (k_states,), "constraints": "None"}}
 
-        self.coords = {"trend_shocks": self.shock_names, "trend_states": self.state_names}
-        self.param_info = {
-            "trend_sigmas": {"shape": (k_posdef,), "constraints": "Positive"},
-            "initial_trend": {"shape": (k_states,), "constraints": "None"},
-        }
+        if k_posdef > 0:
+            self.param_names += ["trend_sigmas"]
+            self.shock_names = list(np.array(self.state_names)[innovations_order])
+
+            self.param_indices["trend_sigmas"] = (("state_cov", *np.diag_indices(k_posdef)),)
+            self.param_dims["trend_sigmas"] = ("trend_shocks",)
+            self.param_counts["trend_sigmas"] = k_posdef
+            self.coords["trend_shocks"] = self.shock_names
+            self.param_info["trend_sigmas"] = {"shape": (k_posdef,), "constraints": "Positive"}
+
         for name in self.param_names:
             self.param_info[name]["dims"] = self.param_dims[name]
 
 
 class MeasurementError(Component):
+    """
+    Measurement error term for a structural timeseries model
+
+    Parameters
+    ----------
+
+    name: str, optional
+        Name of the observed data. Default is "obs".
+
+    Notes
+    -----
+    This component should only be used in combination with other components, because it has no states. It's only use
+    is to add a variance parameter to the model, associated with the observation noise matrix H.
+
+    Examples
+    --------
+    Create and estimate a deterministic linear trend with measurement error
+
+    .. code:: python
+        from pymc_experimental.statespace import structural as st
+        import pymc as pm
+        import pytensor.tensor as pt
+
+        trend = st.LevelTrendComponent(order=2, innovations_order=0)
+        error = st.MeasurementError()
+        ss_mod = (trend + error).build()
+
+        with pm.Model(coords=ss_mod.coords) as model:
+            P0 = pm.Deterministic('P0', pt.eye(ss_mod.k_states) * 10, dims=ss_mod.param_dims['P0'])
+            intitial_trend = pm.Normal('initial_trend', sigma=10, dims=ss_mod.param_dims['initial_trend'])
+            sigma_obs = pm.Exponential('sigma_obs', 1, dims=ss_mod.param_dims['sigma_obs'])
+
+            ss_mod.build_statespace_graph(data, mode='JAX')
+            idata = pm.sample(nuts_sampler='numpyro')
+    """
+
     def __init__(self, name=None):
         if name is None:
             name = "obs"
@@ -490,7 +533,7 @@ class MeasurementError(Component):
 
         self.param_names = [f"sigma_{name}"]
         self.param_indices = {f"sigma_{name}": ("obs_cov", *np.diag_indices(1))}
-        self.param_dims = {f"sigma_{name}": (f"sigma_{name}",)}
+        self.param_dims = {f"sigma_{name}": (OBS_STATE_DIM,)}
         self.param_info = {
             f"sigma_{name}": {"shape": (1,), "constraints": "Positive", "dims": "None"}
         }
