@@ -6,6 +6,6 @@ Statespace Models
 .. autosummary::
    :toctree: generated
 
-    BayesianLocalLevel
+    structural
     BayesianARIMA
     BayesianVARMAX

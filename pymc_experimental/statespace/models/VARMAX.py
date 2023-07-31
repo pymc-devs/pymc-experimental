@@ -73,7 +73,7 @@ class BayesianVARMAX(PyMCStateSpace):
     Notes
     -----
 
-    The VARMA model is a multivariate extension of the SARIMAX model. Given a set of timeseries :math:`\{x_t\}_{t=0}^T\`,
+    The VARMA model is a multivariate extension of the SARIMAX model. Given a set of timeseries :math:`\{x_t\}_{t=0}^T`,
     with :math:`x_t = \begin{bmatrix} x_{1,t} & x_{2,t} & \cdots & x_{k,t} \end{bmatrix}^T`, a VARMA models each series
     as a function of the histories of all series. Specifically, denoting the AR-MA order as (p, q),  a VARMA can be
     written:
@@ -89,12 +89,24 @@ class BayesianVARMAX(PyMCStateSpace):
     .. math::
         A_i = \begin{bmatrix} \rho_{1,i,1} & \rho_{1,i,2} & \cdots & \rho_{1,i,k} \\
                               \rho_{2,i,1} & \rho_{2,i,2} & \cdots & \rho_{2,i,k} \\
-                              \vdots     &  \vdots    & \cdots & \vdoes     \\
+                              \vdots     &  \vdots    & \cdots & \vdots     \\
                               \rho{k,i,1}  & \rho_{k,i,2} & \cdots & rho_{k,i,k}  \end{bmatrix}
 
     Internally, this representation is not used. Instead, the vectors :math:`x_t, x_{t-1}, \cdots, x_{t-p},
     \varepsilon_{t-1}, \cdots, \varepsilon_{t-q}` are concatenated into a single column vector of length ``k * (p+q)``,
     while the coefficients matrices are likewise concatenated into a single coefficient matrix, :math:`T`.
+
+    As the dimensionality of the VARMA system increases -- either because there are a large number of timeseries
+    included in the analysis, or because the order is large -- the probability of sampling a stationary matrix :math:`T`
+    goes to zero. This has two implications for applied work. First, a non-stationary system will exhibit explosive
+    behavior, potentially rending impulse response functions and long-term forecasts useless. Secondly, it is not
+    possible to do stationary initialization. Stationary initialization significantly speeds up sampling, and should be
+    preferred when possible.
+
+    Examples
+    --------
+
+
 
 
     """
