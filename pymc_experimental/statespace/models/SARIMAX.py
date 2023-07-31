@@ -36,9 +36,9 @@ class BayesianARIMA(PyMCStateSpace):
         If true, the initial state and initial state covariance will not be assigned priors. Instead, their steady
         state values will be used.
 
-        **Note**: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
-        for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
-        error.
+        ..warn :: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
+                  for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
+                  error.
 
     filter_type: str, default "standard"
         The type of Kalman Filter to use. Options are "standard", "single", "univariate", "steady_state",

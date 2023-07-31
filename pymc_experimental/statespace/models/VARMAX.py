@@ -47,9 +47,9 @@ class BayesianVARMAX(PyMCStateSpace):
         state values will be used. If False, the user is responsible for setting priors on the initial state and
         initial covariance.
 
-        **Note**: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
-        for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
-        error.
+        ..warn :: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
+                  for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
+                  error.
 
     filter_type: str, default "standard"
         The type of Kalman Filter to use. Options are "standard", "single", "univariate", "steady_state",
@@ -73,20 +73,20 @@ class BayesianVARMAX(PyMCStateSpace):
     Notes
     -----
 
-    The VARMA model is a multivariate extension of the SARIMAX model. Given a set of timeseries :math:`\{x_t}_{t=0}^T\}`,
-    with :math:`x_t = \begin{bmatrix} x_{1,t} & x_{2, t} & \cdots & x_{k,t}\end{bmatrix}^T`, a VARMA models each series
+    The VARMA model is a multivariate extension of the SARIMAX model. Given a set of timeseries :math:`\{x_t\}_{t=0}^T\`,
+    with :math:`x_t = \begin{bmatrix} x_{1,t} & x_{2,t} & \cdots & x_{k,t} \end{bmatrix}^T`, a VARMA models each series
     as a function of the histories of all series. Specifically, denoting the AR-MA order as (p, q),  a VARMA can be
     written:
 
-    ..math::
+    .. math::
         x_t = A_1 x_{t-1} + A_2 x_{t-2} + \cdots + A_p x_{t-p} + B_1 \varepsilon_{t-1} + \cdots
             + B_q \varepsilon_{t-q} + \varepsilon_t
 
-    Where :math:`\varepsilon_t = \begin{bvector} \varepsilon_{1,t} & \varepsilon_{2,t} & \cdots &
+    Where :math:`\varepsilon_t = \begin{bmatrix} \varepsilon_{1,t} & \varepsilon_{2,t} & \cdots &
     \varepsilon_{k,t}\end{bmatrix}^T \sim N(0, \Sigma)` is a vector of i.i.d stochastic innovations or shocks that drive
     intertemporal variation in the data. Matrices :math:`A_i, B_i` are :math:`k \times k` coefficient matrices:
 
-    ..math::
+    .. math::
         A_i = \begin{bmatrix} \rho_{1,i,1} & \rho_{1,i,2} & \cdots & \rho_{1,i,k} \\
                               \rho_{2,i,1} & \rho_{2,i,2} & \cdots & \rho_{2,i,k} \\
                               \vdots     &  \vdots    & \cdots & \vdoes     \\
