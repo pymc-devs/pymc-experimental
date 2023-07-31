@@ -9,7 +9,6 @@ import pytest
 
 from pymc_experimental.statespace.models import structural
 from pymc_experimental.statespace.utils.constants import (
-    EXTENDED_TIME_DIM,
     FILTER_OUTPUT_DIMS,
     FILTER_OUTPUT_NAMES,
     MATRIX_DIMS,
@@ -128,21 +127,3 @@ def test_data_index_is_coord(f, warning, create_model):
     with warning:
         pymc_model = create_model(f)
     assert TIME_DIM in pymc_model.coords
-
-
-@pytest.mark.parametrize("freq", ["Y", "YS", "Q", "QS", "M", "MS", "D", "B"])
-def test_extended_date_index(freq, generate_timeseries):
-    df = generate_timeseries(freq)
-    ss_mod = structural.LevelTrendComponent().build(verbose=False)
-    with pm.Model(coords=ss_mod.coords) as mod:
-        P0_diag = pm.Exponential("P0_diag", 1, dims=["state"])
-        P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=["state", "state_aux"])
-        initial_trend = pm.Normal("initial_trend", dims=["trend_states"])
-        trend_sigmas = pm.Exponential("trend_sigmas", 1, dims=["trend_shocks"])
-        ss_mod.build_statespace_graph(df)
-
-    assert len(mod.coords[TIME_DIM]) == 100
-    assert len(mod.coords[EXTENDED_TIME_DIM]) == 101
-
-    index = pd.DatetimeIndex(mod.coords[EXTENDED_TIME_DIM])
-    assert index.inferred_freq.startswith(freq.replace("Y", "A"))

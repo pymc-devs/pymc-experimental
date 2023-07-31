@@ -27,6 +27,11 @@ def data():
     return df
 
 
+@pytest.fixture
+def rng():
+    return np.random.default_rng(1337)
+
+
 ps = [0, 1, 2, 3]
 qs = [0, 1, 2, 3]
 orders = list(product(ps, qs))[1:]
@@ -65,7 +70,7 @@ def test_VARMAX_param_counts_match_statsmodels(data, order, var):
 
 @pytest.mark.parametrize("order", orders, ids=ids)
 @pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
-def test_VARMAX_update_matches_statsmodels(data, order, matrix):
+def test_VARMAX_update_matches_statsmodels(data, order, matrix, rng):
     p, q = order
 
     with warnings.catch_warnings():
@@ -77,9 +82,7 @@ def test_VARMAX_update_matches_statsmodels(data, order, matrix):
     param_lists = [trend, ar, ma, reg, state_cov, obs_cov] = [
         sm_var.param_names[idx] for idx in param_slices
     ]
-    param_d = {
-        k: np.random.normal(scale=0.1) ** 2 for param_list in param_lists for k in param_list
-    }
+    param_d = {k: rng.normal(scale=0.1) ** 2 for param_list in param_lists for k in param_list}
 
     res = sm_var.fit_constrained(param_d)
 

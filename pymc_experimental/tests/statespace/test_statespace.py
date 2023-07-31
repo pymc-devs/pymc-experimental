@@ -18,6 +18,11 @@ floatX = pytensor.config.floatX
 nile = load_nile_test_data()
 
 
+@pytest.fixture
+def rng():
+    return np.random.default_rng(1337)
+
+
 @pytest.fixture()
 def ss_mod():
     class StateSpace(PyMCStateSpace):
@@ -96,9 +101,9 @@ def test_singleseriesfilter_raises_if_k_endog_gt_one():
         mod = PyMCStateSpace(k_endog=10, k_states=5, k_posdef=1, filter_type="single")
 
 
-def test_unpack_matrices():
+def test_unpack_matrices(rng):
     p, m, r, n = 2, 5, 1, 10
-    data, *inputs = make_test_inputs(p, m, r, n, missing_data=0)
+    data, *inputs = make_test_inputs(p, m, r, n, rng, missing_data=0)
     mod = PyMCStateSpace(k_endog=p, k_states=m, k_posdef=r, filter_type="standard", verbose=False)
 
     outputs = mod.unpack_statespace()

@@ -82,7 +82,7 @@ def test_autoregressive_model(order, rng):
 
 @pytest.mark.parametrize("s", [10, 25, 50])
 def test_time_seasonality(s, rng):
-    mod = st.TimeSeasonality(season_length=s, seasonal_innovations=False)
+    mod = st.TimeSeasonality(season_length=s, innovations=False)
     mod.x0[0] = 1
     x, y = simulate_from_numpy_model(mod, rng)
 

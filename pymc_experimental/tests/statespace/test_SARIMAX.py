@@ -23,6 +23,11 @@ def data():
     return load_nile_test_data()
 
 
+@pytest.fixture
+def rng():
+    return np.random.default_rng(1337)
+
+
 ps = [0, 1, 2, 3]
 ds = [0, 1, 2]
 qs = [0, 1, 2, 3]
@@ -45,7 +50,7 @@ def test_SARIMAX_init_matches_statsmodels(data, order, matrix):
 
 @pytest.mark.parametrize("order", orders, ids=ids)
 @pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
-def test_SARIMAX_update_matches_statsmodels(data, order, matrix):
+def test_SARIMAX_update_matches_statsmodels(data, order, matrix, rng):
     p, d, q = order
 
     with warnings.catch_warnings():
@@ -53,7 +58,7 @@ def test_SARIMAX_update_matches_statsmodels(data, order, matrix):
         sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
 
         param_names = sm_sarimax.param_names
-        param_d = {name: np.random.normal(scale=0.1) ** 2 for name in param_names}
+        param_d = {name: rng.normal(scale=0.1) ** 2 for name in param_names}
 
         res = sm_sarimax.fit_constrained(param_d)
     mod = BayesianARIMA(order=(p, d, q), verbose=False)

@@ -5,7 +5,6 @@ OBS_STATE_AUX_DIM = "observed_state_aux"
 SHOCK_DIM = "shock"
 SHOCK_AUX_DIM = "shock_aux"
 TIME_DIM = "time"
-EXTENDED_TIME_DIM = "extended_time"
 AR_PARAM_DIM = "ar_lag"
 MA_PARAM_DIM = "ma_lag"
 
@@ -50,9 +49,9 @@ MATRIX_DIMS = {
 FILTER_OUTPUT_DIMS = {
     "filtered_state": (TIME_DIM, ALL_STATE_DIM),
     "smoothed_state": (TIME_DIM, ALL_STATE_DIM),
-    "predicted_state": (EXTENDED_TIME_DIM, ALL_STATE_DIM),
+    "predicted_state": (TIME_DIM, ALL_STATE_DIM),
     "filtered_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
     "smoothed_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
-    "predicted_covariance": (EXTENDED_TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
+    "predicted_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
     "obs": (TIME_DIM, OBS_STATE_DIM),
 }

@@ -62,18 +62,18 @@ def initialize_filter(kfilter, mode=None):
     return inputs, outputs
 
 
-def add_missing_data(data, n_missing):
+def add_missing_data(data, n_missing, rng):
     n = data.shape[0]
-    missing_idx = np.random.choice(n, n_missing, replace=False)
+    missing_idx = rng.choice(n, n_missing, replace=False)
     data[missing_idx] = np.nan
 
     return data
 
 
-def make_test_inputs(p, m, r, n, missing_data=None, H_is_zero=False):
+def make_test_inputs(p, m, r, n, rng, missing_data=None, H_is_zero=False):
     data = np.arange(n * p, dtype=floatX).reshape(-1, p)
     if missing_data is not None:
-        data = add_missing_data(data, missing_data)
+        data = add_missing_data(data, missing_data, rng)
 
     a0 = np.zeros(m, dtype=floatX)
     P0 = np.eye(m, dtype=floatX)
@@ -99,8 +99,6 @@ def get_expected_shape(name, p, m, r, n):
     elif name == "ll_obs":
         return (n,)
     filter_type, variable = name.split("_")
-    if filter_type == "predicted":
-        n += 1
     if variable == "states":
         return n, m
     if variable == "covs":
@@ -124,7 +122,7 @@ def get_sm_state_from_output_name(res, name):
         return getattr(sm_states, name[:-1]).reshape(-1, m, m)
 
 
-def nile_test_test_helper(n_missing=0):
+def nile_test_test_helper(rng, n_missing=0):
     a0 = np.zeros(2, dtype=floatX)
     P0 = np.eye(2, dtype=floatX) * 1e6
     c = np.zeros(2, dtype=floatX)
@@ -137,7 +135,7 @@ def nile_test_test_helper(n_missing=0):
 
     data = load_nile_test_data().values
     if n_missing > 0:
-        data = add_missing_data(data, n_missing)
+        data = add_missing_data(data, n_missing, rng)
 
     sm_model = LocalLinearTrend(
         endog=data,

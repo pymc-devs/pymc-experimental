@@ -62,6 +62,11 @@ output_names = [
 ]
 
 
+@pytest.fixture
+def rng():
+    return np.random.default_rng(1337)
+
+
 def test_base_class_update_raises():
     filter = BaseFilter()
     inputs = [None] * 8
@@ -71,9 +76,9 @@ def test_base_class_update_raises():
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
-def test_output_shapes_one_state_one_observed(filter_func, output_idx, name):
+def test_output_shapes_one_state_one_observed(filter_func, output_idx, name, rng):
     p, m, r, n = 1, 1, 1, 10
-    inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n, rng)
     outputs = filter_func(*inputs)
     expected_output = get_expected_shape(name, p, m, r, n)
 
@@ -82,9 +87,9 @@ def test_output_shapes_one_state_one_observed(filter_func, output_idx, name):
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
-def test_output_shapes_when_all_states_are_stochastic(filter_func, output_idx, name):
+def test_output_shapes_when_all_states_are_stochastic(filter_func, output_idx, name, rng):
     p, m, r, n = 1, 2, 2, 10
-    inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n, rng)
 
     outputs = filter_func(*inputs)
     expected_output = get_expected_shape(name, p, m, r, n)
@@ -94,9 +99,9 @@ def test_output_shapes_when_all_states_are_stochastic(filter_func, output_idx, n
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
-def test_output_shapes_when_some_states_are_deterministic(filter_func, output_idx, name):
+def test_output_shapes_when_some_states_are_deterministic(filter_func, output_idx, name, rng):
     p, m, r, n = 1, 5, 2, 10
-    inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n, rng)
 
     outputs = filter_func(*inputs)
     expected_output = get_expected_shape(name, p, m, r, n)
@@ -149,9 +154,9 @@ def f_standard_nd():
 
 
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
-def test_output_shapes_with_time_varying_matrices(f_standard_nd, output_idx, name):
+def test_output_shapes_with_time_varying_matrices(f_standard_nd, output_idx, name, rng):
     p, m, r, n = 1, 5, 2, 10
-    data, a0, P0, c, d, T, Z, R, H, Q = make_test_inputs(p, m, r, n)
+    data, a0, P0, c, d, T, Z, R, H, Q = make_test_inputs(p, m, r, n, rng)
     T = np.concatenate([np.expand_dims(T, 0)] * n, axis=0)
     Z = np.concatenate([np.expand_dims(Z, 0)] * n, axis=0)
     R = np.concatenate([np.expand_dims(R, 0)] * n, axis=0)
@@ -166,9 +171,9 @@ def test_output_shapes_with_time_varying_matrices(f_standard_nd, output_idx, nam
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
-def test_output_with_deterministic_observation_equation(filter_func, output_idx, name):
+def test_output_with_deterministic_observation_equation(filter_func, output_idx, name, rng):
     p, m, r, n = 1, 5, 1, 10
-    inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n, rng)
 
     outputs = filter_func(*inputs)
     expected_output = get_expected_shape(name, p, m, r, n)
@@ -180,9 +185,9 @@ def test_output_with_deterministic_observation_equation(filter_func, output_idx,
     ("filter_func", "filter_name"), zip(filter_funcs, filter_names), ids=filter_names
 )
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
-def test_output_with_multiple_observed(filter_func, filter_name, output_idx, name):
+def test_output_with_multiple_observed(filter_func, filter_name, output_idx, name, rng):
     p, m, r, n = 5, 5, 1, 10
-    inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n, rng)
     expected_output = get_expected_shape(name, p, m, r, n)
 
     if filter_name == "SingleTimeSeriesFilter":
@@ -202,9 +207,9 @@ def test_output_with_multiple_observed(filter_func, filter_name, output_idx, nam
 )
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
 @pytest.mark.parametrize("p", [1, 5], ids=["univariate (p=1)", "multivariate (p=5)"])
-def test_missing_data(filter_func, filter_name, output_idx, name, p):
+def test_missing_data(filter_func, filter_name, output_idx, name, p, rng):
     m, r, n = 5, 1, 10
-    inputs = make_test_inputs(p, m, r, n, missing_data=1)
+    inputs = make_test_inputs(p, m, r, n, rng, missing_data=1)
     if p > 1 and filter_name == "SingleTimeSeriesFilter":
         with pytest.raises(
             AssertionError,
@@ -219,9 +224,9 @@ def test_missing_data(filter_func, filter_name, output_idx, name, p):
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
 @pytest.mark.parametrize("output_idx", [(0, 2), (3, 5)], ids=["smoothed_states", "smoothed_covs"])
-def test_last_smoother_is_last_filtered(filter_func, output_idx):
+def test_last_smoother_is_last_filtered(filter_func, output_idx, rng):
     p, m, r, n = 1, 5, 1, 10
-    inputs = make_test_inputs(p, m, r, n)
+    inputs = make_test_inputs(p, m, r, n, rng)
     outputs = filter_func(*inputs)
 
     filtered = outputs[output_idx[0]]
@@ -235,8 +240,8 @@ def test_last_smoother_is_last_filtered(filter_func, output_idx):
 @pytest.mark.parametrize(("output_idx", "name"), list(enumerate(output_names)), ids=output_names)
 @pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
 @pytest.mark.skipif(floatX == "float32", reason="Tests are too sensitive for float32")
-def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missing):
-    fit_sm_mod, inputs = nile_test_test_helper(n_missing)
+def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missing, rng):
+    fit_sm_mod, inputs = nile_test_test_helper(rng, n_missing)
     outputs = filter_func(*inputs)
 
     val_to_test = outputs[output_idx].squeeze()
@@ -245,6 +250,9 @@ def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missin
     if name == "smoothed_covs":
         # TODO: The smoothed covariance matrices have large errors (1e-2) ONLY in the first few states -- no idea why.
         assert_allclose(val_to_test[5:], ref_val[5:], atol=ATOL, rtol=RTOL)
+    elif name.startswith("predicted"):
+        # statsmodels doesn't throw away the T+1 forecast in the predicted states like we do
+        assert_allclose(val_to_test, ref_val[:-1], atol=ATOL, rtol=RTOL)
     else:
         # Need atol = 1e-7 for smoother tests to pass
         assert_allclose(val_to_test, ref_val, atol=ATOL, rtol=RTOL)

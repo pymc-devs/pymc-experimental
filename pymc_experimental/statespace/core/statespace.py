@@ -26,7 +26,6 @@ from pymc_experimental.statespace.filters.distributions import (
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
-    EXTENDED_TIME_DIM,
     FILTER_OUTPUT_DIMS,
     FILTER_OUTPUT_NAMES,
     MATRIX_DIMS,
@@ -432,13 +431,8 @@ class PyMCStateSpace:
         mu_shape = idata[f"{filter_output}_state"].values.shape[2:]
         cov_shape = idata[f"{filter_output}_covariance"].values.shape[2:]
 
-        if all(
-            [
-                dim in self._fit_coords
-                for dim in [TIME_DIM, EXTENDED_TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]
-            ]
-        ):
-            time_dim = EXTENDED_TIME_DIM if filter_output == "predicted" else TIME_DIM
+        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]]):
+            time_dim = TIME_DIM
             mu_dims = [time_dim, ALL_STATE_DIM]
             cov_dims = [time_dim, ALL_STATE_DIM, ALL_STATE_AUX_DIM]
 
@@ -594,7 +588,7 @@ class PyMCStateSpace:
 
         register_data : bool, optional, default=True
             If True, the observed data will be registered with PyMC as a pm.MutableData variable. In addition,
-            "time" and "extended_time" dims will be created an added to the model's coords.
+            a "time" dim will be created an added to the model's coords.
 
         mode : Optional[str], optional, default=None
             The Pytensor mode used for the computation graph construction. If None, the default mode will be used.
@@ -1086,7 +1080,7 @@ class PyMCStateSpace:
         dims = None
         temp_coords = self._fit_coords.copy()
 
-        filter_time_dim = EXTENDED_TIME_DIM if filter_output == "predicted" else TIME_DIM
+        filter_time_dim = TIME_DIM
 
         if all([dim in temp_coords for dim in [filter_time_dim, ALL_STATE_DIM, OBS_STATE_DIM]]):
             dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]

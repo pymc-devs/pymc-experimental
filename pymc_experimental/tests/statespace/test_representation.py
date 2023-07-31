@@ -22,6 +22,9 @@ def unpack_ssm_dims(ssm):
 
 
 class BasicFunctionality(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.default_rng(1337)
+
     def test_numpy_to_pytensor(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
         X = np.eye(5)
@@ -68,7 +71,9 @@ class BasicFunctionality(unittest.TestCase):
 
     def test_build_representation_from_data(self):
         p, m, r, n = 3, 6, 1, 10
-        inputs = [data, a0, P0, c, d, T, Z, R, H, Q] = make_test_inputs(p, m, r, n, missing_data=0)
+        inputs = [data, a0, P0, c, d, T, Z, R, H, Q] = make_test_inputs(
+            p, m, r, n, self.rng, missing_data=0
+        )
 
         ssm = PytensorRepresentation(
             k_endog=p,

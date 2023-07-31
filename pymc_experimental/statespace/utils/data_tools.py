@@ -9,7 +9,6 @@ from pymc import modelcontext
 from pytensor.tensor.sharedvar import TensorSharedVariable
 
 from pymc_experimental.statespace.utils.constants import (
-    EXTENDED_TIME_DIM,
     MISSING_FILL,
     OBS_STATE_DIM,
     TIME_DIM,
@@ -64,9 +63,8 @@ def preprocess_tensor_data(data, n_obs, obs_coords=None):
     if obs_coords is not None:
         warnings.warn(NO_TIME_INDEX_WARNING)
     index = np.arange(data_shape[0], dtype="int")
-    extended_index = np.r_[[index[0] - 1], index]
 
-    return data.eval(), index, extended_index
+    return data.eval(), index
 
 
 def preprocess_numpy_data(data, n_obs, obs_coords=None):
@@ -75,9 +73,8 @@ def preprocess_numpy_data(data, n_obs, obs_coords=None):
         warnings.warn(NO_TIME_INDEX_WARNING)
 
     index = np.arange(data.shape[0], dtype="int")
-    extended_index = np.r_[[index[0] - 1], index]
 
-    return data, index, extended_index
+    return data, index
 
 
 def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=False):
@@ -100,9 +97,7 @@ def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=Fals
             data.index.freq = data.index.inferred_freq
 
         index = data.index
-        extended_index = index.shift(-1).union(index)
-
-        return data.values, index, extended_index
+        return data.values, index
 
     else:
         raise IndexError(
@@ -110,7 +105,7 @@ def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=Fals
         )
 
 
-def add_data_to_active_model(values, index, extended_index):
+def add_data_to_active_model(values, index):
     pymc_mod = modelcontext(None)
     data_dims = None
 
@@ -118,8 +113,6 @@ def add_data_to_active_model(values, index, extended_index):
         data_dims = [TIME_DIM, OBS_STATE_DIM]
 
     pymc_mod.add_coord(TIME_DIM, index, mutable=True)
-    pymc_mod.add_coord(EXTENDED_TIME_DIM, extended_index, mutable=True)
-
     data = pm.ConstantData("data", values, dims=data_dims)
 
     return data
@@ -135,18 +128,18 @@ def mask_missing_values_in_data(values):
 
 def register_data_with_pymc(data, n_obs, obs_coords, register_data=True):
     if isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
-        values, index, extended_index = preprocess_tensor_data(data, n_obs, obs_coords)
+        values, index = preprocess_tensor_data(data, n_obs, obs_coords)
     elif isinstance(data, np.ndarray):
-        values, index, extended_index = preprocess_numpy_data(data, n_obs, obs_coords)
+        values, index = preprocess_numpy_data(data, n_obs, obs_coords)
     elif isinstance(data, (pd.DataFrame, pd.Series)):
-        values, index, extended_index = preprocess_pandas_data(data, n_obs, obs_coords)
+        values, index = preprocess_pandas_data(data, n_obs, obs_coords)
     else:
         raise ValueError("Data should be one of pytensor tensor, numpy array, or pandas dataframe")
 
     data, nan_mask = mask_missing_values_in_data(values)
 
     if register_data:
-        data = add_data_to_active_model(data, index, extended_index)
+        data = add_data_to_active_model(data, index)
     else:
         data = pytensor.shared(data, name="data")
     return data, nan_mask

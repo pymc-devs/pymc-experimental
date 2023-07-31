@@ -228,9 +228,16 @@ class BaseFilter(ABC):
     def _postprocess_scan_results(results, a0, P0) -> List[TensorVariable]:
         """
         Transform the values returned by the Kalman Filter scan into a form expected by users. In particular:
-            1. Append the initial state and covariance matrix to their respective Kalman predictions. This matches the
-                output returned by Statsmodels state space models.
-            2. Squeeze away the 3rd dimension from the filtered and predicted states, as well as the likelihoods.
+        1. Append the initial state and covariance matrix to their respective Kalman predictions. This matches the
+        output returned by Statsmodels state space models.
+
+        2. Discard the last state and covariance matrix from the Kalman predictions. This is beacuse the kalman filter
+        starts with the (random variable) initial state x0, and treats it as a predicted state. The first step (t=0)
+        will filter x0 to make filtered_states[0], then do a predict step to make predicted_states[1]. This means
+        the last step (t=T) predicted state will be a *forecast* for T+1. If the user wants this forecast, he should
+        use the forecast method.
+
+        3. Squeeze away extra dimensions from the filtered and predicted states, as well as the likelihoods.
         """
         (
             filtered_states,
@@ -242,9 +249,11 @@ class BaseFilter(ABC):
             loglike_obs,
         ) = results
 
-        predicted_states = pt.concatenate([pt.expand_dims(a0, axis=(0,)), predicted_states], axis=0)
+        predicted_states = pt.concatenate(
+            [pt.expand_dims(a0, axis=(0,)), predicted_states[:-1]], axis=0
+        )
         predicted_covariances = pt.concatenate(
-            [pt.expand_dims(P0, axis=(0,)), predicted_covariances], axis=0
+            [pt.expand_dims(P0, axis=(0,)), predicted_covariances[:-1]], axis=0
         )
 
         filter_results = [
