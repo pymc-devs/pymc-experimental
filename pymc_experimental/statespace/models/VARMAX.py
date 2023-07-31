@@ -105,10 +105,36 @@ class BayesianVARMAX(PyMCStateSpace):
 
     Examples
     --------
+    The following code snippet estimates a VARMA(1, 1):
 
+    .. code:: python
+        import pymc_experimental.statespace as pmss
+        import pymc as pm
 
+        # Create VAR Statespace Model
+        bvar_mod = pmss.BayesianVARMAX(endog_names=data.columns, order=(2, 0),
+                                       stationary_initialization=False, measurement_error=False,
+                                       filter_type="standard", verbose=True)
 
+        # Unpack dims and coords
+        x0_dims, P0_dims, state_cov_dims, ar_dims = bvar_mod.param_dims.values()
+        coords = bvar_mod.coords
 
+        # Estimate PyMC model
+        with pm.Model(coords=coords) as var_mod:
+            x0 = pm.Normal("x0", dims=x0_dims)
+            P0_diag = pm.Gamma("P0_diag", alpha=2, beta=1, size=data.shape[1] * 2, dims=P0_dims[0])
+            P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=P0_dims)
+
+            state_chol, _, _ = pm.LKJCholeskyCov(
+                "state_chol", eta=1, n=bvar_mod.k_posdef, sd_dist=pm.Exponential.dist(lam=1)
+            )
+
+            ar_params = pm.Normal("ar_params", mu=0, sigma=1, dims=ar_dims)
+            state_cov = pm.Deterministic("state_cov", state_chol @ state_chol.T, dims=state_cov_dims)
+
+            bvar_mod.build_statespace_graph(data, mode="JAX")
+            idata = pm.sample(nuts_sampler="numpyro")
     """
 
     def __init__(

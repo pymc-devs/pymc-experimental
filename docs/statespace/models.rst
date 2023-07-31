@@ -9,3 +9,13 @@ Statespace Models
     structural
     BayesianARIMA
     BayesianVARMAX
+
+*********************
+Structural Components
+*********************
+
+.. automodule:: pymc_experimental.statespace.models
+.. toctree::
+   :maxdepth: 1
+
+    models/structural
