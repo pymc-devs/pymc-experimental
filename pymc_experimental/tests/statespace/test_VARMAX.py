@@ -43,7 +43,9 @@ ids = [f"p={x[0]}, q={x[1]}" for x in orders]
 def test_VARMAX_init_matches_statsmodels(data, order, matrix):
     p, q = order
 
-    mod = BayesianVARMAX(k_endog=data.shape[1], order=(p, q), verbose=False)
+    mod = BayesianVARMAX(
+        k_endog=data.shape[1], order=(p, q), verbose=False, stationary_initialization=True
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         sm_var = sm.tsa.VARMAX(data, order=(p, q))
@@ -87,7 +89,11 @@ def test_VARMAX_update_matches_statsmodels(data, order, matrix, rng):
     res = sm_var.fit_constrained(param_d)
 
     mod = BayesianVARMAX(
-        k_endog=data.shape[1], order=(p, q), verbose=False, measurement_error=False
+        k_endog=data.shape[1],
+        order=(p, q),
+        verbose=False,
+        measurement_error=False,
+        stationary_initialization=True,
     )
 
     with pm.Model() as pm_mod:
