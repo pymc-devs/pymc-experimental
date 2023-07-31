@@ -13,8 +13,8 @@ Statespace Models
 Structural Components
 *********************
 
-.. automodule:: pymc_experimental.statespace.models
+.. currentmodule:: pymc_experimental.statespace.models
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
-    structural
+   models/structural

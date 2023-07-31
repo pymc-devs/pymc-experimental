@@ -36,7 +36,7 @@ class BayesianARIMA(PyMCStateSpace):
         If true, the initial state and initial state covariance will not be assigned priors. Instead, their steady
         state values will be used.
 
-        ..warn :: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
+        .. warning:: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
                   for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
                   error.
 

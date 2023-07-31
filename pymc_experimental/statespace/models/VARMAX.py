@@ -47,7 +47,7 @@ class BayesianVARMAX(PyMCStateSpace):
         state values will be used. If False, the user is responsible for setting priors on the initial state and
         initial covariance.
 
-        ..warn :: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
+        .. warning:: This option is very sensitive to the priors placed on the AR and MA parameters. If the model dynamics
                   for a given sample are not stationary, sampling will fail with a "covariance is not positive semi-definite"
                   error.
 
@@ -108,6 +108,7 @@ class BayesianVARMAX(PyMCStateSpace):
     The following code snippet estimates a VARMA(1, 1):
 
     .. code:: python
+
         import pymc_experimental.statespace as pmss
         import pymc as pm
 

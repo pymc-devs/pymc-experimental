@@ -346,6 +346,28 @@ class Component(ABC):
         return new_comp
 
     def build(self, name=None, filter_type="standard", verbose=True):
+        """
+        Build a StructuralTimeSeries statespace model from the current component(s)
+
+        Parameters
+        ----------
+        name: str, optional
+            Name of the exogenous data being modeled. Default is "obs"
+
+        filter_type : str, optional
+            The type of Kalman filter to use. Valid options are "standard", "univariate", "single", "cholesky", and
+            "steady_state". For more information, see the docs for each filter. Default is "standard".
+
+        verbose : bool, optional
+            If True, displays information about the initialized model. Defaults to True.
+
+        Returns
+        -------
+        PyMCStateSpace
+            An initialized instance of a PyMCStateSpace, constructed using the system matrices contained in the
+            components.
+        """
+
         x0, c, d, T, Z, R, H, Q = self.x0, self.c, self.d, self.T, self.Z, self.R, self.H, self.Q
         return StructuralTimeSeries(
             x0,
@@ -376,55 +398,100 @@ class LevelTrendComponent(Component):
 
     Parameters
     __________
-    order : int or sequence of int
+    order : int
+
+        Number of time derivatives of the trend to include in the model. For example, when order=3, the trend will
+        be of the form ``y = a + b * t + c * t ** 2``, where the coefficients ``a, b, c`` come from the initial
+        state values.
 
     innovations_order : int or sequence of int, optional
 
+        The number of stochastic innovations to include in the model. By default, ``innovations_order = order``
 
     Notes
     -----
     This class implements the level and trend components of the general structural time series model. In the most
     general form, the level and trend is described by a system of two time-varying equations.
 
-    ..math::
+    .. math::
         \begin{align}
-            \mu_{t+1} &= \mu_t + \nu_t + \zeta_t \tag{1} \\
-            \nu_{t+1} &= \nu_t + \xi_t \tag{2}
+            \mu_{t+1} &= \mu_t + \nu_t + \zeta_t \\
+            \nu_{t+1} &= \nu_t + \xi_t
             \zeta_t &\sim N(0, \sigma_\zeta) \\
             \xi_t &\sim N(0, \sigma_\xi)
         \end{align}
 
     Where :math:`\mu_{t+1}` is the mean of the timeseries at time t, and :math:`\nu_t` is the drift or the slope of
     the process. When both innovations :math:`\zeta_t` and :math:`\xi_t` are included in the model, it is known as a
-    *local linear trend* model.
+    *local linear trend* model. This system of two equations, corresponding to ``order=2``, can be expanded or
+    contracted by adding or removing equations. ``order=3`` would add an acceleration term to the sytsem:
 
-    Additional models can be obtained by excluding terms from this general system. Possibilities include:
+    .. math::
+        \begin{align}
+            \mu_{t+1} &= \mu_t + \nu_t + \zeta_t \\
+            \nu_{t+1} &= \nu_t + \eta_t + \xi_t \\
+            \eta_{t+1} &= \eta_{t-1} + \omega_t \\
+            \zeta_t &\sim N(0, \sigma_\zeta) \\
+            \xi_t &\sim N(0, \sigma_\xi) \\
+            \omega_t &\sim N(0, \sigma_\omega)
+        \end{align}
 
-    **Constant intercept**
-    ..math::
+    After setting all innovation terms to zero and defining initial states :math:`\mu_0, \nu_0, \eta_0`, these equations
+    can be collapsed to:
+
+    .. math::
+        \mu_t = \mu_0 + \nu_0 \cdot t + \eta_0 \cdot t^2
+
+    Which clarifies how the order and initial states influence the model. In particular, the initial states are the
+    coefficients on the intercept, slope, acceleration, and so on.
+
+    In this light, allowing for innovations can be understood as allowing these coefficients to vary over time. Each
+    component can be individually selected for time variation by passing a list to the ``innovations_order`` argument.
+    For example, a constant intercept with time varying trend and acceleration is specified as ``order=3,
+    innovations_order=[0, 1, 1]``.
+
+    By choosing the ``order`` and ``innovations_order``, a large variety of models can be obtained. Notable
+    models include:
+
+    * Constant intercept, ``order=1, innovations_order=0``
+
+    .. math::
         \mu_t = \mu
 
-    **Constant linear slope**
-    ..math::
+    * Constant linear slope, ``order=2, innovations_order=0``
+
+    .. math::
         \mu_t = \mu_{t-1} + \nu
 
-    **Gaussian Random Walk**
-    ..math::
+    * Gaussian Random Walk, ``order=1, innovations_order=1``
+
+    .. math::
         \mu_t = \mu_{t-1} + \zeta_t
 
-    **Gaussian Random Walk with Drift**
-    ..math::
+    * Gaussian Random Walk with Drift, ``order=2, innovations_order=1``
+
+    .. math::
         \mu_t = \mu_{t-1} + \nu + \zeta_t
 
-    **Smooth Trend**
-    ..math::
+    * Smooth Trend, ``order=2, innovations_order=[0, 1]``
+
+    .. math::
         \begin{align}
             \mu_t &= \mu_{t-1} + \nu_{t-1} \\
             \nu_t &= \nu_{t-1} + \xi_t
         \end{align}
 
+    * Local Level, ``order=2, innovations_order=2``
+
     [1] notes that the smooth trend model produces more gradually changing slopes than the full local linear trend
     model, and is equivalent to an "integrated trend model".
+
+    References
+    ----------
+    .. [1] Durbin, James, and Siem Jan Koopman. 2012.
+        Time Series Analysis by State Space Methods: Second Edition.
+        Oxford University Press.
+
     """
 
     def __init__(self, order: int = 2, innovations_order: Optional[int] = None):
@@ -475,7 +542,7 @@ class LevelTrendComponent(Component):
             self.param_names += ["trend_sigmas"]
             self.shock_names = list(np.array(self.state_names)[innovations_order])
 
-            self.param_indices["trend_sigmas"] = (("state_cov", *np.diag_indices(k_posdef)),)
+            self.param_indices["trend_sigmas"] = ("state_cov", *np.diag_indices(k_posdef))
             self.param_dims["trend_sigmas"] = ("trend_shocks",)
             self.param_counts["trend_sigmas"] = k_posdef
             self.coords["trend_shocks"] = self.shock_names
@@ -486,13 +553,14 @@ class LevelTrendComponent(Component):
 
 
 class MeasurementError(Component):
-    """
+    r"""
     Measurement error term for a structural timeseries model
 
     Parameters
     ----------
 
     name: str, optional
+
         Name of the observed data. Default is "obs".
 
     Notes
@@ -505,6 +573,7 @@ class MeasurementError(Component):
     Create and estimate a deterministic linear trend with measurement error
 
     .. code:: python
+
         from pymc_experimental.statespace import structural as st
         import pymc as pm
         import pytensor.tensor as pt
@@ -541,57 +610,242 @@ class MeasurementError(Component):
 
 
 class AutoregressiveComponent(Component):
-    def __init__(self, order=1, innovations=True):
+    r"""
+    Autoregressive timeseries component
+
+    Parameters
+    ----------
+    order: int or sequence of int
+
+        If int, the number of lags to include in the model.
+        If a sequence, an array-like of zeros and ones indicating which lags to include in the model.
+
+    Notes
+    -----
+    An autoregressive component can be thought of as a way o introducing serially correlated errors into the model.
+    The process is modeled:
+
+    .. math::
+        x_t = \sum_{i=1}^p \rho_i x_{t-i}
+
+    Where ``p``, the number of autoregressive terms to model, is the order of the process. By default, all lags up to
+    ``p`` are included in the model. To disable lags, pass a list of zeros and ones to the ``order`` argumnet. For
+    example, ``order=[1, 1, 0, 1]`` would become:
+
+    .. math::
+        x_t = \rho_1 x_{t-1} + \rho_2 x_{t-1} + \rho_4 x_{t-1}
+
+    The coefficient :math:`\rho_3` has been constrained to zero.
+
+    .. warning:: This class is meant to be used as a component in a structural time series model. For modeling of
+              stationary processes with ARIMA, use ``statespace.BayesianARIMA``.
+
+    Examples
+    --------
+    Model a timeseries as an AR(2) process with non-zero mean:
+
+    .. code:: python
+
+        from pymc_experimental.statespace import structural as st
+        import pymc as pm
+        import pytensor.tensor as pt
+
+        trend = st.LevelTrendComponent(order=1, innovations_order=0)
+        ar = st.AutoregressiveComponent(2)
+        ss_mod = (trend + ar).build()
+
+        with pm.Model(coords=ss_mod.coords) as model:
+            P0 = pm.Deterministic('P0', pt.eye(ss_mod.k_states) * 10, dims=ss_mod.param_dims['P0'])
+            intitial_trend = pm.Normal('initial_trend', sigma=10, dims=ss_mod.param_dims['initial_trend'])
+            ar_params = pm.Normal('ar_params', dims=ss_mod.param_dims['ar_params'])
+            sigma_ar = pm.Exponential('sigma_ar', 1, dims=ss_mod.param_dims['sigma_ar'])
+
+            ss_mod.build_statespace_graph(data, mode='JAX')
+            idata = pm.sample(nuts_sampler='numpyro')
+
+    """
+
+    def __init__(self, order=1):
         order = order_to_mask(order)
         ar_lags = np.flatnonzero(order).ravel().astype(int) + 1
         k_states = int(sum(order))
-        super().__init__(k_endog=1, k_states=k_states, k_posdef=int(innovations))
+        super().__init__(k_endog=1, k_states=k_states, k_posdef=1)
 
         self.T = np.eye(k_states, k=-1)
         self.R[0] = 1
         self.Z[0, 0] = 1
 
         self.state_names = [f"L{i + 1}.data" for i in range(k_states)]
-        self.param_names = ["ar_params"]
-        self.param_indices = {"ar_params": ("transition", 0, slice(0, k_states))}
+        self.shock_names = ["L1.data"]
+
+        self.param_names = ["ar_params", "sigma_ar"]
+        self.param_indices = {
+            "ar_params": ("transition", 0, slice(0, k_states)),
+            "sigma_ar": ("state_cov", *np.diag_indices(1)),
+        }
         self.param_dims = {"ar_params": ("ar_lags",)}
         self.coords = {"ar_lags": ar_lags}
         self.param_info = {
-            "ar_params": {"shape": (k_states,), "constraints": "None", "dims": "(ar_lags, )"}
+            "ar_params": {"shape": (k_states,), "constraints": "None", "dims": "(ar_lags, )"},
+            "sigma_ar": {"shape": (1,), "constraints": "Positive", "dims": None},
         }
-        self.param_counts["ar_params"] = k_states
-
-        if innovations:
-            self.shock_names = ["L1.data"]
-            self.param_names += ["sigma_ar"]
-            self.param_indices["sigma_ar"] = ("state_cov", *np.diag_indices(1))
-            self.param_info["sigma_ar"] = {"shape": (1,), "constraints": "Positive", "dims": None}
-            self.param_counts["sigma_ar"] = 1
+        self.param_counts = {"ar_params": k_states, "sigma_ar": 1}
 
 
 class TimeSeasonality(Component):
-    def __init__(self, season_length, name=None, innovations=True):
+    r"""
+    Seasonal component, modeled in the time domain
+
+    Parameters
+    ----------
+    season_length: int
+        The number of periods in a single seasonal cycle, e.g. 12 for monthly data with annual seasonal pattern, 7 for
+        daily data with weekly seasonal pattern, etc.
+
+    innovations: bool, default True
+        Whether to include stochastic innovations in the strength of the seasonal effect
+
+    name: str, default None
+        A name for this seasonal component. Used to label dimensions and coordinates. Useful when multiple seasonal
+        components are included in the same model. Default is ``f"Seasonal[s={season_length}]"``
+
+    state_names: list of str, default None
+        List of strings for seasonal effect labels. If provided, it must be of length ``season_length``. An example
+        would be ``state_names = ['Mon', 'Tue', 'Wed', 'Thur', 'Fri', 'Sat', 'Sun']`` when data is daily with a weekly
+        seasonal pattern (``season_length = 7``).
+
+        If None, states will be numbered ``[State_0, ..., State_s]``
+    Notes
+    -----
+    A seasonal effect is any pattern that repeats every fixed interval. Although there are many possible ways to
+    model seasonal effects, the implementation used here is the one described by [1] as the "canonical" time domain
+    representation. The seasonal component can be expressed:
+
+    .. math::
+        \gamma_t = -\sum_{i=1}^{s-1} \gamma_{t-i} + \omega_t, \quad \omega_t \sim N(0, \sigma_\gamma)
+
+    Where :math:`s` is the ``seasonal_length`` parameter and :math:`\omega_t` is the (optional) stochastic innovation.
+    To give interpretation to the :math:`\gamma` terms, it is helpful to work  through the algebra for a simple
+    example. Let :math:`s=4`, and omit the shock term. Define initial conditions :math:`\gamma_0, \gamma_{-1},
+    \gamma_{-2}. The value of the seasonal component for the first 5 timesteps will be:
+
+    .. math::
+        \begin{align}
+            \gamma_1 &= -\gamma_0 - \gamma_{-1} - \gamma_{-2} \\
+             \gamma_2 &= -\gamma_1 - \gamma_0 - \gamma_{-1} \\
+                       &= -(-\gamma_0 - \gamma_{-1} - \gamma_{-2}) - \gamma_0 - \gamma_{-1}  \\
+                       &= (\gamma_0 - \gamma_0 )+ (\gamma_{-1} - \gamma_{-1}) + \gamma_{-2} \\
+                       &= \gamma_{-2} \\
+              \gamma_3 &= -\gamma_2 - \gamma_1 - \gamma_0  \\
+                       &= -\gamma_{-2} - (-\gamma_0 - \gamma_{-1} - \gamma_{-2}) - \gamma_0 \\
+                       &=  (\gamma_{-2} - \gamma_{-2}) + \gamma_{-1} + (\gamma_0 - \gamma_0) \\
+                       &= \gamma_{-1} \\
+              \gamma_4 &= -\gamma_3 - \gamma_2 - \gamma_1 \\
+                       &= -\gamma_{-1} - \gamma_{-2} -(-\gamma_0 - \gamma_{-1} - \gamma_{-2}) \\
+                       &= (\gamma_{-2} - \gamma_{-2}) + (\gamma_{-1} - \gamma_{-1}) + \gamma_0 \\
+                       &= \gamma_0 \\
+              \gamma_5 &= -\gamma_4 - \gamma_3 - \gamma_2 \\
+                       &= -\gamma_0 - \gamma_{-1} - \gamma_{-2} \\
+                       &= \gamma_1
+        \end{align}
+
+    This exercise shows that, given a list ``initial_conditions`` of length ``s-1``, the effects of this model will be:
+
+        - Period 1: ``-sum(initial_conditions)``
+        - Period 2: ``initial_conditions[-1]``
+        - Period 3: ``initial_conditions[-2]``
+        - ...
+        - Period s: ``initial_conditions[0]``
+        - Period s+1: ``-sum(initial_condition)``
+
+    And so on. So for interpretation, the ``season_length - 1`` initial states are, when reversed, the coefficients
+    associated with ``state_names[1:]``.
+
+    .. warning:: Although the ``season_names`` argument expects a list of length ``season_length``, only
+                ``season_names[1:]`` will be saved as model dimensions, since the 1st coefficient is not estimated (it is the sum
+                of the other 11).
+
+    Examples
+    --------
+    Estimate monthly with a model with a gaussian random walk trend and monthly seasonality:
+
+    .. code:: python
+
+        from pymc_experimental.statespace import structural as st
+        import pymc as pm
+        import pytensor.tensor as pt
+        import pandas as pd
+
+        # Get month names
+        state_names = pd.date_range('1900-01-01', '1900-12-31', freq='MS').month_name().tolist()
+
+        # Build the structural model
+        grw = st.LevelTrendComponent(order=1, innovations_order=1)
+        annual_season = st.TimeSeasonality(season_length=12, name='annual', state_names=state_names, innovations=False)
+        ss_mod = (grw + annual_season).build()
+
+        # Estimate with PyMC
+        with pm.Model(coords=ss_mod.coords) as model:
+            P0 = pm.Deterministic('P0', pt.eye(ss_mod.k_states) * 10, dims=ss_mod.param_dims['P0'])
+            intitial_trend = pm.Deterministic('initial_trend', pt.zeros(1), dims=ss_mod.param_dims['initial_trend'])
+            annual_coefs = pm.Normal('annual_coefs', sigma=1e-2, dims=ss_mod.param_dims['annual_coefs'])
+            trend_sigmas = pm.HalfNormal('trend_sigmas', sigma=1e-6, dims=ss_mod.param_dims['trend_sigmas'])
+            ss_mod.build_statespace_graph(data, mode='JAX')
+            idata = pm.sample(nuts_sampler='numpyro')
+
+    References
+    ----------
+    .. [1] Durbin, James, and Siem Jan Koopman. 2012.
+        Time Series Analysis by State Space Methods: Second Edition.
+        Oxford University Press.
+    """
+
+    def __init__(
+        self,
+        season_length: int,
+        innovations: bool = True,
+        name: Optional[str] = None,
+        state_names: Optional[list] = None,
+    ):
         if name is None:
             name = f"Seasonal[s={season_length}]"
-        k_states = season_length - 1
-        super().__init__(k_endog=1, k_states=k_states, k_posdef=1)
+        if state_names is None:
+            state_names = [f"{name}_{i}" for i in range(season_length)]
+        else:
+            if len(state_names) != season_length:
+                raise ValueError(
+                    f"state_names must be a list of length season_length, got {len(state_names)}"
+                )
+            state_names = state_names.copy()
 
+        # The first state doesn't get a coefficient, it is defined as -sum(state_coefs)
+        # TODO: Can I stash that information in the model somewhere so users don't have to know that?
+        state_0 = state_names.pop(-1)
+        k_states = season_length - 1
+
+        super().__init__(k_endog=1, k_states=k_states, k_posdef=int(innovations))
+
+        self.state_names = state_names
         self.T = np.eye(k_states, k=-1)
         self.T[0, :] = -1
         self.Z[0, 0] = 1
-        self.R[0] = 1
 
-        self.state_names = [f"{name}_{i}" for i in range(k_states)]
-        self.param_names = [f"{name}"]
-        self.param_indices = {f"{name}": ("initial_state", np.arange(k_states, dtype=int))}
+        self.param_names = [f"{name}_coefs"]
+        self.param_indices = {f"{name}_coefs": ("initial_state", np.arange(k_states, dtype=int))}
         self.param_info = {
-            f"{name}": {"shape": (k_states,), "constraints": "None", "dims": f"({name}_state, )"}
+            f"{name}_coefs": {
+                "shape": (k_states,),
+                "constraints": "None",
+                "dims": f"({name}_state, )",
+            }
         }
-        self.param_dims = {name: (f"{name}_state",)}
-        self.param_counts[f"{name}"] = k_states
-        self.coords = {f"{name}_state": self.state_names}
+        self.param_dims = {f"{name}_coefs": (f"{name}_periods",)}
+        self.param_counts[f"{name}_coefs"] = k_states
+        self.coords = {f"{name}_periods": self.state_names}
 
         if innovations:
+            self.R[0] = 1
+
             self.param_names += [f"sigma_{name}"]
             self.param_indices[f"sigma_{name}"] = ("state_cov", *np.diag_indices(1))
             self.param_info[f"sigma_{name}"] = {
@@ -604,6 +858,35 @@ class TimeSeasonality(Component):
 
 
 class FrequencySeasonality(Component):
+    """
+    Seasonal component, modeled in the frequency domain
+
+    Parameters
+    ----------
+    season_length: int
+        The number of periods in a single seasonal cycle, e.g. 12 for monthly data with annual seasonal pattern, 7 for
+        daily data with weekly seasonal pattern, etc.
+
+    n: int
+        Number of fourier features to include in the seasonal component. Default is ``season_length // 2``, which
+        is the maximum possible. A smaller number can be used for a more wave-like seasonal pattern.
+
+    name: str, default None
+        A name for this seasonal component. Used to label dimensions and coordinates. Useful when multiple seasonal
+        components are included in the same model. Default is ``f"Seasonal[s={season_length}, n={n}]"``
+
+    innovations: bool, default True
+        Whether to include stochastic innovations in the strength of the seasonal effect
+
+    Notes
+    -----
+    A seasonal effect is any pattern that repeats every fixed interval. Although there are many possible ways to
+    model seasonal effects, the implementation used here is the one described by [1] as the "canonical" frequency domain
+    representation. The seasonal component can be expressed:
+
+
+    """
+
     @staticmethod
     def _compute_transition_block(s, j):
         lam = 2 * np.pi * j / s
