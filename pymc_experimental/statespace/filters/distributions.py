@@ -12,7 +12,7 @@ from pymc.logprob.abstract import _logprob
 # from pymc.logprob.basic import logp
 from pytensor.graph.basic import Node
 
-JITTER_DEFAULT = 1e-8
+from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT
 
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):

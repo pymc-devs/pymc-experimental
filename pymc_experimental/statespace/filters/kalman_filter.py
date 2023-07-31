@@ -15,12 +15,11 @@ from pytensor.tensor.slinalg import SolveTriangular
 from pymc_experimental.statespace.filters.utilities import (
     split_vars_into_seq_and_nonseq,
 )
-from pymc_experimental.statespace.utils.constants import MISSING_FILL
+from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT, MISSING_FILL
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
 PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
-JITTER_DEFAULT = 1e-8
 
 solve_lower_triangular = SolveTriangular(lower=True)
 assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")

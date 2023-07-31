@@ -7,6 +7,7 @@ import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 from arviz import InferenceData
+from pymc.gp.util import stabilize
 from pymc.model import modelcontext
 from pytensor.compile import get_mode
 
@@ -28,6 +29,7 @@ from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_DIM,
     FILTER_OUTPUT_DIMS,
     FILTER_OUTPUT_NAMES,
+    JITTER_DEFAULT,
     MATRIX_DIMS,
     MATRIX_NAMES,
     OBS_STATE_DIM,
@@ -1209,15 +1211,12 @@ class PyMCStateSpace:
             An Arviz InferenceData object containing impulse response function in a variable named "irf".
         """
         options = [shock_size, shock_cov, shock_trajectory]
-        Q_value = None  # default case -- sample from posterior
+        n_nones = sum(x is not None for x in options)
+        sample_posterior_Q = n_nones == 0
 
-        if sum(x is not None for x in options) > 1:
+        if n_nones > 1:
             raise ValueError("Specify exactly 0 or 1 of shock_size, shock_cov, or shock_trajectory")
-        elif shock_size is not None:
-            Q_value = pt.eye(self.k_posdef) * shock_size
-        elif shock_cov is not None:
-            Q_value = pt.as_tensor_variable(shock_cov)
-        elif shock_trajectory is not None:
+        if shock_trajectory is not None:
             n, k = shock_trajectory.shape
             if k != self.k_posdef:
                 raise ValueError(
@@ -1241,24 +1240,40 @@ class PyMCStateSpace:
 
         with pm.Model(coords=simulation_coords):
             x0 = pm.Deterministic("x0_new", pt.zeros(self.k_states), dims=[ALL_STATE_DIM])
-            matrices = self._build_dummy_graph(
-                skip_matrices=["x0"] if Q_value is None else ["x0", "Q"]
-            )
+            Q = None
 
-            if Q_value is None:
+            if sample_posterior_Q:
+                matrices = self._build_dummy_graph(skip_matrices=["x0"])
                 # x0 was not loaded into the model
                 P0, c, _, T, _, R, _, Q = matrices
+
             else:
+                matrices = self._build_dummy_graph(skip_matrices=["x0", "Q"])
+
                 # Neither x0 nor Q was loaded into the model
                 P0, c, _, T, _, R, _ = matrices
-                Q = pm.Deterministic("Q_new", Q_value, dims=[SHOCK_DIM, SHOCK_AUX_DIM])
+
+                if shock_cov is not None:
+                    Q = pm.Deterministic(
+                        "Q_new", pt.as_tensor_variable(shock_cov), dims=[SHOCK_DIM, SHOCK_AUX_DIM]
+                    )
 
             if shock_trajectory is None:
                 shock_trajectory = pt.zeros((steps, self.k_posdef))
-                if orthogonalize_shocks:
-                    Q = pt.linalg.cholesky(Q)
-                initial_shock = pm.MvNormal("initial_shock", mu=0, cov=Q, dims=[SHOCK_DIM])
-                shock_trajectory = pt.set_subtensor(shock_trajectory[0], initial_shock)
+                if Q is not None:
+                    if orthogonalize_shocks:
+                        Q = pt.linalg.cholesky(Q)
+                    init_shock = pm.MvNormal(
+                        "initial_shock", mu=0, cov=stabilize(Q, JITTER_DEFAULT), dims=[SHOCK_DIM]
+                    )
+                else:
+                    init_shock = pm.Deterministic(
+                        "initial_shock", pt.as_tensor_variable(shock_size), dims=[SHOCK_DIM]
+                    )
+                shock_trajectory = pt.set_subtensor(shock_trajectory[0], init_shock)
+
+            else:
+                shock_trajectory = pt.as_tensor_variable(shock_trajectory)
 
             def irf_step(shock, x, c, T, R):
                 next_x = c + T @ x + R @ shock
@@ -1278,4 +1293,4 @@ class PyMCStateSpace:
                 idata, var_names=["irf"], compile_kwargs={"mode": self._fit_mode}
             )
 
-            return irf_idata
+            return irf_idata.posterior_predictive
