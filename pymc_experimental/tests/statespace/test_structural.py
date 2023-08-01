@@ -103,13 +103,13 @@ def test_time_seasonality(s, innovations, rng):
 
 
 @pytest.mark.parametrize("n", np.arange(1, 6, dtype="int"))
-@pytest.mark.parametrize("s", [10, 25, 50])
+@pytest.mark.parametrize("s", [5, 10, 25, 50.231])
 def test_frequency_seasonality(n, s, rng):
     mod = st.FrequencySeasonality(season_length=s, n=n)
     mod.x0[0] = 1
     x, y = simulate_from_numpy_model(mod, rng)
-
-    assert_allclose(y[:s], y[s : s * 2])
+    int_s = int(s)
+    assert_allclose(y[: (int_s - 1)], y[int_s : 2 * int_s - 1])
 
     mod2 = sm.tsa.UnobservedComponents(
         endog=rng.normal(size=100), freq_seasonal=[{"period": s, "harmonics": n}]

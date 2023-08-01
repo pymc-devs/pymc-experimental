@@ -858,14 +858,15 @@ class TimeSeasonality(Component):
 
 
 class FrequencySeasonality(Component):
-    """
+    r"""
     Seasonal component, modeled in the frequency domain
 
     Parameters
     ----------
-    season_length: int
+    season_length: float
         The number of periods in a single seasonal cycle, e.g. 12 for monthly data with annual seasonal pattern, 7 for
-        daily data with weekly seasonal pattern, etc.
+        daily data with weekly seasonal pattern, etc. Non-integer seasonal_length is also permitted, for example
+        365.2422 days in a (solar) year.
 
     n: int
         Number of fourier features to include in the seasonal component. Default is ``season_length // 2``, which
@@ -884,7 +885,27 @@ class FrequencySeasonality(Component):
     model seasonal effects, the implementation used here is the one described by [1] as the "canonical" frequency domain
     representation. The seasonal component can be expressed:
 
+    .. math::
+        \begin{align}
+            \gamma_t &= \sum_{j=1}^{2n} \gamma_{j,t} \\
+            \gamma_{j, t+1} &= \gamma_{j,t} \cos \lambda_j + \gamma_{j,t}^\star \sin \lambda_j + \omega_{j, t} \\
+            \gamma_{j, t}^\star &= -\gamma_{j,t} \sin \lambda_j + \gamma_{j,t}^\star \cos \lambda_j + \omega_{j,t}^\star
+            \lambda_j &= \frac{2\pi j}{s}
+        \end{align}
 
+    Where :math:`s` is the ``seasonal_length``.
+
+    Unlike a ``TimeSeasonality`` component, a ``FrequencySeasonality`` component does not require integer season
+    length. In addition, for long seasonal periods, it is possible to obtain a more compact state space representation
+    by choosing ``n << s // 2``. Using ``TimeSeasonality``, an annual seasonal pattern in daily data requires 364
+    states, whereas ``FrequencySeasonality`` always requires ``2 * n`` states, regardless of the ``seasonal_length``.
+    The price of this compactness is less representational power. At ``n = 1``, the seasonal pattern will be a pure
+    sine wave. At ``n = s // 2``, any arbitrary pattern can be represented.
+
+    One cost of the added flexibility of ``FrequencySeasonality`` is reduced interpretability. States of this model are
+    coefficients :math:`\gamma_1, \gamma^\star_1, \gamma_2, \gamma_2^\star ..., \gamma_n, \gamma^\star_n` associated
+    with different frequencies in the fourier representation of the seasonal pattern. As a result, it is not possible
+    to isolate and identify a "Monday" effect, for instance.
     """
 
     @staticmethod
@@ -895,7 +916,7 @@ class FrequencySeasonality(Component):
 
     def __init__(self, season_length, n=None, name=None, innovations=True):
         if n is None:
-            n = season_length // 2
+            n = int(season_length // 2)
         if name is None:
             name = f"Frequency[s={season_length}, n={n}]"
 
