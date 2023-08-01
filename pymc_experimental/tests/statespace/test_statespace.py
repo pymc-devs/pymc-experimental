@@ -12,7 +12,6 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
     make_test_inputs,
 )
 
-pytensor.config.floatX = "float32"
 floatX = pytensor.config.floatX
 nile = load_nile_test_data()
 
@@ -156,25 +155,27 @@ def test_build_smoother_graph(ss_mod, pymc_mod):
         assert name in [x.name for x in pymc_mod.deterministics]
 
 
-def test_sample_conditional_posterior(ss_mod, idata):
-    conditional_post = ss_mod.sample_conditional_posterior(idata)
+def test_sample_conditional_posterior(ss_mod, idata, rng):
+    conditional_post = ss_mod.sample_conditional_posterior(idata, random_seed=rng)
     for output in ["filtered", "predicted", "smoothed"]:
         assert f"{output}_posterior" in conditional_post
 
 
-def test_sample_conditional_prior(ss_mod, prior_idata):
-    conditional_prior = ss_mod.sample_conditional_prior(prior_idata)
+def test_sample_conditional_prior(ss_mod, prior_idata, rng):
+    conditional_prior = ss_mod.sample_conditional_prior(prior_idata, random_seed=rng)
     for output in ["filtered", "predicted", "smoothed"]:
         assert f"{output}_prior" in conditional_prior
 
 
-def test_sample_unconditional_prior(ss_mod, prior_idata):
-    unconditional_prior = ss_mod.sample_unconditional_prior(prior_idata)
+def test_sample_unconditional_prior(ss_mod, prior_idata, rng):
+    unconditional_prior = ss_mod.sample_unconditional_prior(prior_idata, random_seed=rng)
     for output in ["latent", "observed"]:
         assert f"prior_{output}" in unconditional_prior
 
 
-def test_sample_unconditional_posterior(ss_mod, idata):
-    unconditional_posterior = ss_mod.sample_unconditional_posterior(idata, steps=100)
+def test_sample_unconditional_posterior(ss_mod, idata, rng):
+    unconditional_posterior = ss_mod.sample_unconditional_posterior(
+        idata, steps=100, random_seed=rng
+    )
     for output in ["latent", "observed"]:
         assert f"posterior_{output}" in unconditional_posterior

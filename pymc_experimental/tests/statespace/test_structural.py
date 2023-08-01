@@ -1,4 +1,5 @@
 import numpy as np
+import pytensor
 import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose
@@ -6,24 +7,34 @@ from numpy.testing import assert_allclose
 from pymc_experimental.statespace import structural as st
 from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
 
+floatX = pytensor.config.floatX
+ATOL = 1e-8 if floatX.endswith("64") else 1e-4
+RTOL = 0
+
 
 @pytest.fixture
 def rng():
     return np.random.default_rng(1337)
 
 
-def simulate_from_numpy_model(mod, rng):
+def simulate_from_numpy_model(mod, rng, steps=100):
+    """
+    Helper function to visualize the components outside of a PyMC model context
+    """
     x0, P0, c, d, T, Z, R, H, Q = mod.x0, mod.P0, mod.c, mod.d, mod.T, mod.Z, mod.R, mod.H, mod.Q
     k_states = mod.k_states
     k_posdef = mod.k_posdef
 
-    x = np.zeros((100, k_states))
-    y = np.zeros(100)
+    x = np.zeros((steps, k_states))
+    y = np.zeros(steps)
 
     x[0] = x0
     y[0] = Z @ x0
 
-    for t in range(1, 100):
+    if not np.allclose(H, 0):
+        y[0] += rng.multivariate_normal(mean=np.zeros(1), cov=H)
+
+    for t in range(1, steps):
         if k_posdef > 0:
             shock = rng.multivariate_normal(mean=np.zeros(k_posdef), cov=Q)
             innov = R @ shock
@@ -102,19 +113,44 @@ def test_time_seasonality(s, innovations, rng):
         assert_allclose(mod2.ssm[name], getattr(mod, matrix), err_msg=name)
 
 
-@pytest.mark.parametrize("n", np.arange(1, 6, dtype="int"))
-@pytest.mark.parametrize("s", [5, 10, 25, 50.231])
+def get_shift_factor(s):
+    s_str = str(s)
+    if "." not in s_str:
+        return 1
+    _, decimal = s_str.split(".")
+    return 10 ** len(decimal)
+
+
+@pytest.mark.parametrize("n", np.arange(1, 6, dtype="int").tolist() + [None])
+@pytest.mark.parametrize("s", [5, 10, 25, 25.2])
 def test_frequency_seasonality(n, s, rng):
     mod = st.FrequencySeasonality(season_length=s, n=n)
-    mod.x0[0] = 1
-    x, y = simulate_from_numpy_model(mod, rng)
-    int_s = int(s)
-    assert_allclose(y[: (int_s - 1)], y[int_s : 2 * int_s - 1])
+    mod.x0[:] = rng.normal(size=mod.k_states)
+    k = get_shift_factor(s)
+    T = int(s * k)
 
-    mod2 = sm.tsa.UnobservedComponents(
-        endog=rng.normal(size=100), freq_seasonal=[{"period": s, "harmonics": n}]
+    x, y = simulate_from_numpy_model(mod, rng, 2 * T)
+    assert_allclose(
+        np.diff(y.reshape(-1, T), axis=0),
+        0,
+        err_msg="seasonal pattern does not repeat",
+        atol=ATOL,
+        rtol=RTOL,
     )
 
-    for matrix in ["T", "R", "Z", "Q"]:
+    init_dict = {"period": s}
+    if n is not None:
+        init_dict["harmonics"] = n
+
+    mod2 = sm.tsa.UnobservedComponents(endog=rng.normal(size=100), freq_seasonal=[init_dict])
+    mod2.initialize_default()
+
+    for matrix in ["T", "Z", "R", "Q"]:
         name = SHORT_NAME_TO_LONG[matrix]
-        assert_allclose(mod2.ssm[name], getattr(mod, matrix), err_msg=name)
+        assert_allclose(
+            mod2.ssm[name],
+            getattr(mod, matrix),
+            err_msg=f"matrix {name} does not match statsmodels",
+        )
+
+    assert mod2.initialization.constant.shape == mod.x0.shape

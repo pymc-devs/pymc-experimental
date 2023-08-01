@@ -9,6 +9,7 @@ import pytensor.tensor as pt
 from arviz import InferenceData
 from pymc.gp.util import stabilize
 from pymc.model import modelcontext
+from pymc.util import RandomState
 from pytensor.compile import get_mode
 
 from pymc_experimental.statespace.core.representation import PytensorRepresentation
@@ -507,7 +508,7 @@ class PyMCStateSpace:
             import pymc as pm
             import pymc_experimental.statespace as pmss
 
-            RANDOM_SEED = 1337
+            RANDOM_SEED = sum(map(ord, 'statespace'))
 
             ss_mod = pmss.BayesianARIMA(order=(2, 0, 2), verbose=False, stationary_initialization=True)
             with pm.Model():
@@ -769,7 +770,9 @@ class PyMCStateSpace:
 
         return matrices
 
-    def _sample_conditional(self, idata: InferenceData, group: str):
+    def _sample_conditional(
+        self, idata: InferenceData, group: str, random_seed: Optional[RandomState] = None
+    ):
         """
         Common functionality shared between `sample_conditional_prior` and `sample_conditional_posterior`. See those
         methods for details.
@@ -779,8 +782,12 @@ class PyMCStateSpace:
         ----------
         idata : InferenceData
             An Arviz InferenceData object containing the posterior distribution over model parameters.
+
         group : str
             InferenceData group from which to draw samples. Should be one of "prior" or "posterior".
+
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
 
         Returns
         -------
@@ -812,6 +819,7 @@ class PyMCStateSpace:
                 group_idata,
                 var_names=[f"filtered_{group}", f"predicted_{group}", f"smoothed_{group}"],
                 compile_kwargs={"mode": get_mode(self._fit_mode)},
+                random_seed=random_seed,
             )
         return idata_conditional.posterior_predictive
 
@@ -821,6 +829,7 @@ class PyMCStateSpace:
         group: str,
         steps: Optional[int] = None,
         use_data_time_dim: bool = False,
+        random_seed: Optional[RandomState] = None,
     ):
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the
@@ -845,6 +854,9 @@ class PyMCStateSpace:
             If True, the function uses the time dimension present in the provided `idata` object to sample
             unconditional trajectories. If False, a custom time dimension is created based on the number of steps
             specified, or if steps is None, it uses the entire available time dimension in the posterior.
+
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
 
         Returns
         -------
@@ -891,11 +903,14 @@ class PyMCStateSpace:
                 group_idata,
                 var_names=[f"{group}_latent", f"{group}_observed"],
                 compile_kwargs={"mode": self._fit_mode},
+                random_seed=random_seed,
             )
 
         return idata_unconditional.posterior_predictive
 
-    def sample_conditional_prior(self, idata: InferenceData) -> InferenceData:
+    def sample_conditional_prior(
+        self, idata: InferenceData, random_seed: Optional[RandomState] = None
+    ) -> InferenceData:
         """
         Sample from the conditional prior; that is, given parameter draws from the prior distribution,
         compute Kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
@@ -907,6 +922,9 @@ class PyMCStateSpace:
             Arviz InferenceData with prior samples for state space matrices x0, P0, c, d, T, Z, R, H, Q.
             Obtained from `pm.sample_prior_predictive` after calling PyMCStateSpace.build_statespace_graph().
 
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
+
         Returns
         -------
         InferenceData
@@ -915,9 +933,11 @@ class PyMCStateSpace:
              "predicted_prior", and "smoothed_prior".
         """
 
-        return self._sample_conditional(idata, "prior")
+        return self._sample_conditional(idata, "prior", random_seed)
 
-    def sample_conditional_posterior(self, idata: InferenceData):
+    def sample_conditional_posterior(
+        self, idata: InferenceData, random_seed: Optional[RandomState] = None
+    ):
         """
         Sample from the conditional posterior; that is, given parameter draws from the posterior distribution,
         compute Kalman filtered trajectories. Trajectories are drawn from a single multivariate normal with mean and
@@ -928,6 +948,9 @@ class PyMCStateSpace:
         idata : InferenceData
             An Arviz InferenceData object containing the posterior distribution over model parameters.
 
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
+
         Returns
         -------
         InferenceData
@@ -936,10 +959,14 @@ class PyMCStateSpace:
              "predicted_posterior", and "smoothed_posterior".
         """
 
-        return self._sample_conditional(idata, "posterior")
+        return self._sample_conditional(idata, "posterior", random_seed)
 
     def sample_unconditional_prior(
-        self, idata: InferenceData, steps: Optional[int] = None, use_data_time_dim: bool = False
+        self,
+        idata: InferenceData,
+        steps: Optional[int] = None,
+        use_data_time_dim: bool = False,
+        random_seed: Optional[RandomState] = None,
     ) -> InferenceData:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the prior
@@ -964,6 +991,9 @@ class PyMCStateSpace:
             unconditional trajectories. If False, a custom time dimension is created based on the number of steps
             specified, or if steps is None, it uses the entire available time dimension in the posterior.
 
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
+
         Returns
         -------
         InferenceData
@@ -976,10 +1006,10 @@ class PyMCStateSpace:
               the observation equation: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
         """
 
-        return self._sample_unconditional(idata, "prior", steps, use_data_time_dim)
+        return self._sample_unconditional(idata, "prior", steps, use_data_time_dim, random_seed)
 
     def sample_unconditional_posterior(
-        self, idata, steps=None, use_data_time_dim=False
+        self, idata, steps=None, use_data_time_dim=False, random_seed: Optional[RandomState] = None
     ) -> InferenceData:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the
@@ -1005,6 +1035,9 @@ class PyMCStateSpace:
             unconditional trajectories. If False, a custom time dimension is created based on the number of steps
             specified, or if steps is None, it uses the entire available time dimension in the posterior.
 
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
+
         Returns
         -------
         InferenceData
@@ -1017,7 +1050,7 @@ class PyMCStateSpace:
               the latent state trajectories: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
         """
 
-        return self._sample_unconditional(idata, "posterior", steps, use_data_time_dim)
+        return self._sample_unconditional(idata, "posterior", steps, use_data_time_dim, random_seed)
 
     def forecast(
         self,
@@ -1026,6 +1059,7 @@ class PyMCStateSpace:
         periods: int = None,
         end: Union[int, pd.Timestamp] = None,
         filter_output="smoothed",
+        random_seed: Optional[RandomState] = None,
     ) -> InferenceData:
         """
         Generate forecasts of state space model trajectories into the future.
@@ -1059,6 +1093,9 @@ class PyMCStateSpace:
             The type of Kalman Filter output used to initialize the forecasts. The 0th timestep of the forecast will
             be sampled from x[0] ~ N(filter_output_mean[start], filter_output_covariance[start]). Default is "smoothed",
             which uses past and future data to make the best possible hidden state estimate.
+
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
 
         Returns
         -------
@@ -1170,6 +1207,7 @@ class PyMCStateSpace:
         shock_cov: Optional[np.ndarray] = None,
         shock_trajectory: Optional[np.ndarray] = None,
         orthogonalize_shocks: bool = False,
+        random_seed: Optional[RandomState] = None,
     ):
         """
         Generate impulse response functions (IRF) from state space model dynamics.
@@ -1204,6 +1242,9 @@ class PyMCStateSpace:
         orthogonalize_shocks : bool, default=False
             If True, orthogonalize the shocks using Cholesky decomposition when generating the impulse
             response. This option is only relevant when `shock_trajectory` is not provided.
+
+        random_seed : int, RandomState or Generator, optional
+            Seed for the random number generator.
 
         Returns
         -------
