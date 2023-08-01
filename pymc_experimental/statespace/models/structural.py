@@ -727,7 +727,7 @@ class TimeSeasonality(Component):
     Where :math:`s` is the ``seasonal_length`` parameter and :math:`\omega_t` is the (optional) stochastic innovation.
     To give interpretation to the :math:`\gamma` terms, it is helpful to work  through the algebra for a simple
     example. Let :math:`s=4`, and omit the shock term. Define initial conditions :math:`\gamma_0, \gamma_{-1},
-    \gamma_{-2}. The value of the seasonal component for the first 5 timesteps will be:
+    \gamma_{-2}`. The value of the seasonal component for the first 5 timesteps will be:
 
     .. math::
         \begin{align}
@@ -823,7 +823,7 @@ class TimeSeasonality(Component):
         state_0 = state_names.pop(-1)
         k_states = season_length - 1
 
-        super().__init__(k_endog=1, k_states=k_states, k_posdef=int(innovations))
+        super().__init__(k_endog=1, k_states=k_states, k_posdef=1)
 
         self.state_names = state_names
         self.T = np.eye(k_states, k=-1)

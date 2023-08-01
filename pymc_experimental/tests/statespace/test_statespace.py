@@ -12,6 +12,7 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
     make_test_inputs,
 )
 
+pytensor.config.floatX = "float32"
 floatX = pytensor.config.floatX
 nile = load_nile_test_data()
 
@@ -72,17 +73,17 @@ def pymc_mod(ss_mod):
 
 
 @pytest.fixture
-def prior_idata(pymc_mod):
+def prior_idata(pymc_mod, rng):
     with pymc_mod:
-        idata = pm.sample_prior_predictive(samples=10)
+        idata = pm.sample_prior_predictive(samples=10, random_seed=rng)
 
     return idata
 
 
 @pytest.fixture
-def idata(pymc_mod):
+def idata(pymc_mod, rng):
     with pymc_mod:
-        idata = pm.sample(draws=10, tune=0, chains=1)
+        idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
 
     return idata
 

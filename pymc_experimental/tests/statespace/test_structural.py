@@ -81,14 +81,21 @@ def test_autoregressive_model(order, rng):
 
 
 @pytest.mark.parametrize("s", [10, 25, 50])
-def test_time_seasonality(s, rng):
-    mod = st.TimeSeasonality(season_length=s, innovations=False)
+@pytest.mark.parametrize("innovations", [True, False])
+def test_time_seasonality(s, innovations, rng):
+    mod = st.TimeSeasonality(season_length=s, innovations=innovations)
     mod.x0[0] = 1
     x, y = simulate_from_numpy_model(mod, rng)
 
     assert_allclose(y[:s], y[s : s * 2])
 
-    mod2 = sm.tsa.UnobservedComponents(endog=rng.normal(size=100), seasonal=s)
+    mod2 = sm.tsa.UnobservedComponents(
+        endog=rng.normal(size=100),
+        seasonal=s,
+        stochastic_seasonal=innovations,
+        # Silence a warning about no innovations when innovations = False
+        irregular=True,
+    )
 
     for matrix in ["T", "R", "Z", "Q"]:
         name = SHORT_NAME_TO_LONG[matrix]
