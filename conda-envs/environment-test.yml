@@ -10,7 +10,6 @@ dependencies:
 - dask
 - xhistogram
 - statsmodels
-- numba
 - pip:
   - pymc>=5.6.0  # CI was failing to resolve
   - blackjax
