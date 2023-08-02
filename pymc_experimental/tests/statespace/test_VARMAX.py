@@ -12,6 +12,9 @@ from numpy.testing import assert_allclose
 from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace import BayesianVARMAX
+from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+    rng,
+)
 
 floatX = pytensor.config.floatX
 
@@ -25,11 +28,6 @@ def data():
     ).astype(floatX)
     df.index.freq = df.index.inferred_freq
     return df
-
-
-@pytest.fixture
-def rng():
-    return np.random.default_rng(1337)
 
 
 ps = [0, 1, 2, 3]

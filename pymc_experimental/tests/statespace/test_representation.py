@@ -7,6 +7,7 @@ from numpy.testing import assert_allclose
 from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace.core.representation import PytensorRepresentation
+from pymc_experimental.tests.statespace.utilities.shared_fixtures import TEST_SEED
 from pymc_experimental.tests.statespace.utilities.test_helpers import make_test_inputs
 
 floatX = pytensor.config.floatX
@@ -23,7 +24,7 @@ def unpack_ssm_dims(ssm):
 
 class BasicFunctionality(unittest.TestCase):
     def setUp(self):
-        self.rng = np.random.default_rng(1337)
+        self.rng = np.random.default_rng(TEST_SEED)
 
     def test_numpy_to_pytensor(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)

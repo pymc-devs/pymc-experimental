@@ -7,6 +7,9 @@ from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
 from pymc_experimental.statespace.utils.constants import ALL_STATE_DIM, OBS_STATE_DIM
+from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+    rng,
+)
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
     load_nile_test_data,
     make_test_inputs,
@@ -14,11 +17,6 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 
 floatX = pytensor.config.floatX
 nile = load_nile_test_data()
-
-
-@pytest.fixture
-def rng():
-    return np.random.default_rng(1337)
 
 
 @pytest.fixture()

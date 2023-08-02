@@ -11,6 +11,9 @@ from numpy.testing import assert_allclose
 from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace import BayesianARIMA
+from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+    rng,
+)
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
     load_nile_test_data,
 )
@@ -23,9 +26,9 @@ def data():
     return load_nile_test_data()
 
 
-@pytest.fixture
-def rng():
-    return np.random.default_rng(1337)
+# @pytest.fixture
+# def rng():
+#     return np.random.default_rng(TEST_SEED)
 
 
 ps = [0, 1, 2, 3]

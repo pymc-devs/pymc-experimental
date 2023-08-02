@@ -6,15 +6,13 @@ from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace import structural as st
 from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
+from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+    rng,
+)
 
 floatX = pytensor.config.floatX
 ATOL = 1e-8 if floatX.endswith("64") else 1e-4
 RTOL = 0
-
-
-@pytest.fixture
-def rng():
-    return np.random.default_rng(1337)
 
 
 def simulate_from_numpy_model(mod, rng, steps=100):
