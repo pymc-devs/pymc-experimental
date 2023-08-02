@@ -4,7 +4,6 @@ import pytensor
 import pytensor.tensor as pt
 import pytest
 from numpy.testing import assert_allclose
-from pymc.model_graph import fast_eval
 from scipy.stats import multivariate_normal
 
 from pymc_experimental.statespace import structural
@@ -15,6 +14,7 @@ from pymc_experimental.statespace.utils.constants import (
     TIME_DIM,
 )
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
+    fast_eval,
     load_nile_test_data,
 )
 

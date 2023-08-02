@@ -155,3 +155,7 @@ def nile_test_test_helper(rng, n_missing=0):
     inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
 
     return res, inputs
+
+
+def fast_eval(var):
+    return pytensor.function([], var, mode="FAST_COMPILE")()

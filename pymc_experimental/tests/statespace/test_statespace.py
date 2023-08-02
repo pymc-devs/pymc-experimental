@@ -3,7 +3,6 @@ import pymc as pm
 import pytensor
 import pytest
 from numpy.testing import assert_allclose
-from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
 from pymc_experimental.statespace.utils.constants import ALL_STATE_DIM, OBS_STATE_DIM
@@ -11,6 +10,7 @@ from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # py
     rng,
 )
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
+    fast_eval,
     load_nile_test_data,
     make_test_inputs,
 )

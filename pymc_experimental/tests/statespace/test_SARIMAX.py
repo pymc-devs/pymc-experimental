@@ -8,13 +8,13 @@ import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose
-from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace import BayesianARIMA
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
+    fast_eval,
     load_nile_test_data,
 )
 
@@ -24,11 +24,6 @@ floatX = pytensor.config.floatX
 @pytest.fixture
 def data():
     return load_nile_test_data()
-
-
-# @pytest.fixture
-# def rng():
-#     return np.random.default_rng(TEST_SEED)
 
 
 ps = [0, 1, 2, 3]
@@ -44,9 +39,7 @@ def test_SARIMAX_init_matches_statsmodels(data, order, matrix):
     p, d, q = order
 
     mod = BayesianARIMA(order=(p, d, q), verbose=False)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
+    sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
 
     assert_allclose(fast_eval(mod.ssm[matrix]), sm_sarimax.ssm[matrix])
 

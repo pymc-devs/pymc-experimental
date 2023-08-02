@@ -9,12 +9,12 @@ import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose
-from pymc.model_graph import fast_eval
 
 from pymc_experimental.statespace import BayesianVARMAX
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
+from pymc_experimental.tests.statespace.utilities.test_helpers import fast_eval
 
 floatX = pytensor.config.floatX
 
