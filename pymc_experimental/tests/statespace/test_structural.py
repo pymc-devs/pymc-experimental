@@ -152,3 +152,12 @@ def test_frequency_seasonality(n, s, rng):
         )
 
     assert mod2.initialization.constant.shape == mod.x0.shape
+
+
+@pytest.mark.parametrize("s,n", [(10, 5), pytest.param(10.2, 5, marks=pytest.mark.xfail)])
+def test_state_removed_when_freq_seasonality_is_saturated(s, n):
+    mod = st.FrequencySeasonality(season_length=s, n=n, name="test")
+    _, *x0_idx = mod.param_indices["test"]
+    mod.x0[x0_idx] = 1
+
+    assert mod.x0.sum() == (n * 2 - 1)

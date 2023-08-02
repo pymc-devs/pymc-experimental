@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 import pytensor.tensor as pt
+import xarray as xr
 from scipy import linalg
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
@@ -84,6 +85,7 @@ class StructuralTimeSeries(PyMCStateSpace):
         param_info,
         param_counts,
         param_indices,
+        component_info,
         name=None,
         verbose=True,
         filter_type: str = "standard",
@@ -125,6 +127,7 @@ class StructuralTimeSeries(PyMCStateSpace):
 
         self.param_indices = param_indices
         self.param_counts = param_counts
+        self._component_info = component_info
 
     @staticmethod
     def _add_inital_state_cov_to_properties(
@@ -207,6 +210,125 @@ class StructuralTimeSeries(PyMCStateSpace):
             else:
                 self.ssm[ssm_index] = theta[param_slice]
 
+    def _state_slices_from_info(self):
+        info = self._component_info.copy()
+        comp_states = np.cumsum([0] + [info["k_states"] for info in info.values()])
+        state_slices = [slice(i, j) for i, j in zip(comp_states[:-1], comp_states[1:])]
+
+        return state_slices
+
+    def hidden_states_from_data(self, data):
+        state_slices = self._state_slices_from_info()
+        info = self._component_info
+        names = info.keys()
+        result = []
+
+        for i, (name, s) in enumerate(zip(names, state_slices)):
+            Z = self.ssm["design", 0, s].eval()
+            if Z.shape[0] == 0:
+                continue
+            X = data[..., s]
+            if info[name]["combine_hidden_states"]:
+                sum_idx = np.flatnonzero(Z)
+                result.append(X[..., sum_idx].sum(axis=-1)[..., None])
+            else:
+                comp_names = self.state_names[s]
+                for j, state_name in enumerate(comp_names):
+                    result.append(X[..., j, None])
+
+        return np.concatenate(result, axis=-1)
+
+    def _get_subcomponent_names(self):
+        state_slices = self._state_slices_from_info()
+        info = self._component_info
+        names = info.keys()
+        result = []
+
+        for i, (name, s) in enumerate(zip(names, state_slices)):
+            Z = self.ssm["design", 0, s].eval()
+            if Z.shape[0] == 0:
+                continue
+            if info[name]["combine_hidden_states"]:
+                result.append(name)
+            else:
+                comp_names = self.state_names[s]
+                result.extend([f"{name}[{comp_name}]" for comp_name in comp_names])
+        return result
+
+    def extract_components_from_idata(self, idata: xr.Dataset) -> xr.Dataset:
+        r"""
+        Extract interpretable hidden states from an InferenceData returned by a PyMCStateSpace sampling method
+
+        Parameters
+        ----------
+        idata: Dataset
+            A Dataset object, returned by a PyMCStateSpace sampling method
+
+        Returns
+        -------
+        idata: Dataset
+            An Dataset object with hidden states transformed to represent only the "interpretable" subcomponents
+            of the structural model.
+
+        Notes
+        -----
+        In general, a structural statespace model can be represented as:
+
+        .. math::
+            y_t = \mu_t + \nu_t + \cdots + \gamma_t + c_t + \xi_t + \epsilon_t \tag{1}
+
+        Where:
+
+            - :math:`\mu_t` is the level of the data at time t
+            - :math:`\nu_t` is the slope of the data at time t
+            - :math:`\cdots` are higher time derivatives of the position (acceleration, jerk, etc) at time t
+            - :math:`\gamma_t` is the seasonal component at time t
+            - :math:`c_t` is the cycle component at time t
+            - :math:`\xi_t` is the autoregressive error at time t
+            - :math:`\varepsilon_t` is the measurement error at time t
+
+        In state space form, some or all of these components are represented as linear combinations of other
+        subcomponents, making interpretation of the outputs of the outputs difficult. The purpose of this function is
+        to take the expended statespace representation and return a "reduced form" of only the components shown in
+        equation (1).
+        """
+
+        def _extract_and_transform_variable(idata, new_state_names):
+            *_, time_dim, state_dim = idata.dims
+            new_idata = xr.apply_ufunc(
+                self.hidden_states_from_data,
+                idata,
+                input_core_dims=[[time_dim, state_dim]],
+                output_core_dims=[[time_dim, state_dim]],
+                exclude_dims={state_dim},
+            )
+            new_idata.coords.update({state_dim: new_state_names})
+            return new_idata
+
+        var_names = list(idata.data_vars.keys())
+        is_latent = [idata[name].shape[-1] == self.k_states for name in var_names]
+        new_state_names = self._get_subcomponent_names()
+
+        latent_names = [name for latent, name in zip(is_latent, var_names) if latent]
+        dropped_vars = set(var_names) - set(latent_names)
+        if len(dropped_vars) > 0:
+            _log.warning(
+                f'Variables {", ".join(dropped_vars)} do not contain all hidden states (their last dimension '
+                f"is not {self.k_states}). They will not be present in the modified idata."
+            )
+        if len(dropped_vars) == len(var_names):
+            raise ValueError(
+                "Provided idata had no variables with all hidden states; cannot extract components."
+            )
+
+        idata_new = xr.Dataset(
+            {
+                name: _extract_and_transform_variable(idata[name], new_state_names)
+                for name in latent_names
+            }
+        )
+        return idata_new
+
 
 class Component(ABC):
     r"""
@@ -215,9 +337,26 @@ class Component(ABC):
     This base class contains a subset of the class attributes of the PyMCStateSpace class, and none of the class
     methods. The purpose of a component is to allow the partial definition of a structural model. Components are
     assembled into a full model by the StructuralTimeSeries class.
+
+    Parameters
+    ----------
+    name: str
+        The name of the component
+    k_endog: int
+        Number of endogenous variables being modeled. Currently, must be one because structural models only support
+        univariate data.
+    k_states: int
+        Number of hidden states in the component model
+    k_posdef: int
+        Rank of the state covariance matrix, or the number of sources of innovations in the component model
+    combine_hidden_states: bool
+        Flag for the ``extract_hidden_states_from_data`` method. When ``True``, hidden states from the component model
+        are extracted as ``hidden_states[:, np.flatnonzero(Z)]``. Should be True in models where hidden states
+        individually have no interpretation, such as seasonal or autoregressive components.
     """
 
-    def __init__(self, k_endog, k_states, k_posdef):
+    def __init__(self, name, k_endog, k_states, k_posdef, combine_hidden_states=True):
+        self.name = name
         self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
@@ -254,6 +393,15 @@ class Component(ABC):
             "selection": (self.k_states, self.k_posdef),
             "obs_cov": (0, None),
             "state_cov": (self.k_posdef, self.k_posdef),
+        }
+
+        self._component_info = {
+            self.name: {
+                "k_states": self.k_states,
+                "k_enodg": self.k_endog,
+                "k_posdef": self.k_posdef,
+                "combine_hidden_states": combine_hidden_states,
+            }
         }
 
     def _combine_matrices(self, other):
@@ -302,6 +450,27 @@ class Component(ABC):
 
         return new_indices
 
+    def _combine_component_info(self, other):
+        combined_info = {}
+        for key, value in self._component_info.items():
+            if not key.startswith("StateSpace"):
+                if key in combined_info.keys():
+                    raise ValueError(f"Found duplicate component named {key}")
+                combined_info[key] = value
+
+        for key, value in other._component_info.items():
+            if not key.startswith("StateSpace"):
+                if key in combined_info.keys():
+                    raise ValueError(f"Found duplicate component named {key}")
+                combined_info[key] = value
+
+        return combined_info
+
+    def _make_combined_name(self):
+        components = self._component_info.keys()
+        name = f'StateSpace[{", ".join(components)}]'
+        return name
+
     def __add__(self, other):
         matrices = self._combine_matrices(other)
         k_states, k_posdef = self._get_new_shapes(matrices)
@@ -316,7 +485,10 @@ class Component(ABC):
 
         param_indices = self._combine_param_indices(other)
 
-        new_comp = Component(k_endog=1, k_states=k_states, k_posdef=k_posdef)
+        new_comp = Component(name="", k_endog=1, k_states=k_states, k_posdef=k_posdef)
+        new_comp._component_info = self._combine_component_info(other)
+        new_comp.name = new_comp._make_combined_name()
+
         property_names = [
             "state_names",
             "param_names",
@@ -387,6 +559,7 @@ class Component(ABC):
             param_info=self.param_info,
             param_counts=self.param_counts,
             param_indices=self.param_indices,
+            component_info=self._component_info,
             filter_type=filter_type,
             verbose=verbose,
         )
@@ -494,7 +667,9 @@ class LevelTrendComponent(Component):
 
     """
 
-    def __init__(self, order: int = 2, innovations_order: Optional[int] = None):
+    def __init__(
+        self, order: int = 2, innovations_order: Optional[int] = None, name: str = "LevelTrend"
+    ):
         if innovations_order is None:
             innovations_order = order
 
@@ -513,7 +688,7 @@ class LevelTrendComponent(Component):
 
         k_posdef = int(sum(innovations_order))
 
-        super().__init__(1, k_states, k_posdef)
+        super().__init__(name, 1, k_states, k_posdef, combine_hidden_states=False)
 
         self.x0 = np.zeros(k_states)
 
@@ -591,14 +766,12 @@ class MeasurementError(Component):
             idata = pm.sample(nuts_sampler='numpyro')
     """
 
-    def __init__(self, name=None):
-        if name is None:
-            name = "obs"
+    def __init__(self, name: str = "MeasurementError"):
         k_endog = 1
         k_states = 0
         k_posdef = 0
 
-        super().__init__(k_endog, k_states, k_posdef)
+        super().__init__(name, k_endog, k_states, k_posdef, combine_hidden_states=False)
 
         self.param_names = [f"sigma_{name}"]
         self.param_indices = {f"sigma_{name}": ("obs_cov", *np.diag_indices(1))}
@@ -665,18 +838,20 @@ class AutoregressiveComponent(Component):
 
     """
 
-    def __init__(self, order=1):
+    def __init__(self, order: int = 1, name: str = "AutoRegressive"):
         order = order_to_mask(order)
         ar_lags = np.flatnonzero(order).ravel().astype(int) + 1
         k_states = int(sum(order))
-        super().__init__(k_endog=1, k_states=k_states, k_posdef=1)
+        super().__init__(
+            name=name, k_endog=1, k_states=k_states, k_posdef=1, combine_hidden_states=True
+        )
 
         self.T = np.eye(k_states, k=-1)
         self.R[0] = 1
         self.Z[0, 0] = 1
 
         self.state_names = [f"L{i + 1}.data" for i in range(k_states)]
-        self.shock_names = ["L1.data"]
+        self.shock_names = [f"{name}_innovation"]
 
         self.param_names = ["ar_params", "sigma_ar"]
         self.param_indices = {
@@ -823,7 +998,9 @@ class TimeSeasonality(Component):
         state_0 = state_names.pop(-1)
         k_states = season_length - 1
 
-        super().__init__(k_endog=1, k_states=k_states, k_posdef=1)
+        super().__init__(
+            name=name, k_endog=1, k_states=k_states, k_posdef=1, combine_hidden_states=True
+        )
 
         self.state_names = state_names
         self.T = np.eye(k_states, k=-1)
@@ -921,7 +1098,9 @@ class FrequencySeasonality(Component):
             name = f"Frequency[s={season_length}, n={n}]"
 
         k_states = n * 2
-        super().__init__(k_endog=1, k_states=k_states, k_posdef=k_states)
+        super().__init__(
+            name=name, k_endog=1, k_states=k_states, k_posdef=k_states, combine_hidden_states=True
+        )
 
         T_mats = [self._compute_transition_block(season_length, j + 1) for j in range(n)]
 
@@ -931,12 +1110,26 @@ class FrequencySeasonality(Component):
 
         self.state_names = [f"{name}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
         self.param_names = [f"{name}"]
-        self.param_indices = {f"{name}": ("initial_state", np.arange(k_states, dtype=int))}
+
+        # If the model is completely saturated (n = s // 2), the last state will not be identified, so it shouldn't
+        # get a parameter assigned to it and should just be fixed to zero.
+        # Test this way (rather than n == s // 2) to catch cases when n is non-integer.
+        last_state_not_identified = season_length / n == 2.0
+
+        init_state_idx = np.arange(k_states, dtype=int)
+        if last_state_not_identified:
+            init_state_idx = init_state_idx[:-1]
+
+        self.param_indices = {f"{name}": ("initial_state", init_state_idx)}
         self.param_dims = {name: (f"{name}_state",)}
         self.param_info = {
-            f"{name}": {"shape": (k_states,), "constraints": "None", "dims": f"({name}_state, )"}
+            f"{name}": {
+                "shape": (k_states - int(last_state_not_identified),),
+                "constraints": "None",
+                "dims": f"({name}_state, )",
+            }
         }
-        self.param_counts[f"{name}"] = k_states
+        self.param_counts[f"{name}"] = k_states - int(last_state_not_identified)
         self.coords = {f"{name}_state": self.state_names}
 
         if innovations:
