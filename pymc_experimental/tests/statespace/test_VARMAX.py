@@ -1,4 +1,3 @@
-import warnings
 from itertools import product
 
 import numpy as np
@@ -38,28 +37,27 @@ ids = [f"p={x[0]}, q={x[1]}" for x in orders]
 
 @pytest.mark.parametrize("order", orders, ids=ids)
 @pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
+@pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.EstimationWarning")
 def test_VARMAX_init_matches_statsmodels(data, order, matrix):
     p, q = order
 
     mod = BayesianVARMAX(
         k_endog=data.shape[1], order=(p, q), verbose=False, stationary_initialization=True
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        sm_var = sm.tsa.VARMAX(data, order=(p, q))
+
+    sm_var = sm.tsa.VARMAX(data, order=(p, q))
 
     assert_allclose(fast_eval(mod.ssm[matrix]), sm_var.ssm[matrix])
 
 
 @pytest.mark.parametrize("order", orders, ids=ids)
 @pytest.mark.parametrize("var", ["AR", "MA", "state_cov"])
+@pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.EstimationWarning")
 def test_VARMAX_param_counts_match_statsmodels(data, order, var):
     p, q = order
 
     mod = BayesianVARMAX(k_endog=data.shape[1], order=(p, q), verbose=False)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        sm_var = sm.tsa.VARMAX(data, order=(p, q))
+    sm_var = sm.tsa.VARMAX(data, order=(p, q))
 
     count = mod.param_counts[var]
     if var == "state_cov":
@@ -70,12 +68,11 @@ def test_VARMAX_param_counts_match_statsmodels(data, order, var):
 
 @pytest.mark.parametrize("order", orders, ids=ids)
 @pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
+@pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.EstimationWarning")
 def test_VARMAX_update_matches_statsmodels(data, order, matrix, rng):
     p, q = order
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        sm_var = sm.tsa.VARMAX(data, order=(p, q))
+    sm_var = sm.tsa.VARMAX(data, order=(p, q))
 
     param_counts = [None] + np.cumsum(list(sm_var.parameters.values())).tolist()
     param_slices = [slice(a, b) for a, b in zip(param_counts[:-1], param_counts[1:])]

@@ -1,4 +1,3 @@
-import warnings
 from itertools import product
 
 import numpy as np
@@ -46,17 +45,19 @@ def test_SARIMAX_init_matches_statsmodels(data, order, matrix):
 
 @pytest.mark.parametrize("order", orders, ids=ids)
 @pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
+@pytest.mark.filterwarnings(
+    "ignore:Non-invertible starting MA parameters found.",
+    "ignore:Non-stationary starting autoregressive parameters found",
+)
 def test_SARIMAX_update_matches_statsmodels(data, order, matrix, rng):
     p, d, q = order
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
+    sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
 
-        param_names = sm_sarimax.param_names
-        param_d = {name: rng.normal(scale=0.1) ** 2 for name in param_names}
+    param_names = sm_sarimax.param_names
+    param_d = {name: rng.normal(scale=0.1) ** 2 for name in param_names}
 
-        res = sm_sarimax.fit_constrained(param_d)
+    res = sm_sarimax.fit_constrained(param_d)
     mod = BayesianARIMA(order=(p, d, q), verbose=False)
 
     with pm.Model() as pm_mod:
