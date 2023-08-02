@@ -19,7 +19,7 @@ floatX = pytensor.config.floatX
 nile = load_nile_test_data()
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def ss_mod():
     class StateSpace(PyMCStateSpace):
         @property
@@ -61,7 +61,7 @@ def ss_mod():
     return ss_mod
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def pymc_mod(ss_mod):
     with pm.Model(coords={ALL_STATE_DIM: ["a", "b"], OBS_STATE_DIM: ["a"]}) as pymc_mod:
         rho = pm.Normal("rho")
@@ -71,19 +71,13 @@ def pymc_mod(ss_mod):
     return pymc_mod
 
 
-@pytest.fixture
-def prior_idata(pymc_mod, rng):
-    with pymc_mod:
-        idata = pm.sample_prior_predictive(samples=10, random_seed=rng)
-
-    return idata
-
-
-@pytest.fixture
+@pytest.fixture(scope="session")
 def idata(pymc_mod, rng):
     with pymc_mod:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(samples=10, random_seed=rng)
 
+    idata.extend(idata_prior)
     return idata
 
 
@@ -155,27 +149,17 @@ def test_build_smoother_graph(ss_mod, pymc_mod):
         assert name in [x.name for x in pymc_mod.deterministics]
 
 
-def test_sample_conditional_posterior(ss_mod, idata, rng):
-    conditional_post = ss_mod.sample_conditional_posterior(idata, random_seed=rng)
-    for output in ["filtered", "predicted", "smoothed"]:
-        assert f"{output}_posterior" in conditional_post
+@pytest.mark.parametrize("group", ["posterior", "prior"])
+@pytest.mark.parametrize("kind", ["conditional", "unconditional"])
+def test_sampling_methods(group, kind, ss_mod, idata, rng):
+    f = getattr(ss_mod, f"sample_{kind}_{group}")
+    test_idata = f(idata, random_seed=rng)
 
-
-def test_sample_conditional_prior(ss_mod, prior_idata, rng):
-    conditional_prior = ss_mod.sample_conditional_prior(prior_idata, random_seed=rng)
-    for output in ["filtered", "predicted", "smoothed"]:
-        assert f"{output}_prior" in conditional_prior
-
-
-def test_sample_unconditional_prior(ss_mod, prior_idata, rng):
-    unconditional_prior = ss_mod.sample_unconditional_prior(prior_idata, random_seed=rng)
-    for output in ["latent", "observed"]:
-        assert f"prior_{output}" in unconditional_prior
-
-
-def test_sample_unconditional_posterior(ss_mod, idata, rng):
-    unconditional_posterior = ss_mod.sample_unconditional_posterior(
-        idata, steps=100, random_seed=rng
-    )
-    for output in ["latent", "observed"]:
-        assert f"posterior_{output}" in unconditional_posterior
+    if kind == "conditional":
+        for output in ["filtered", "predicted", "smoothed"]:
+            assert f"{output}_{group}" in test_idata
+            assert not np.any(np.isnan(test_idata[f"{output}_{group}"].values))
+    if kind == "unconditional":
+        for output in ["latent", "observed"]:
+            assert f"{group}_{output}" in test_idata
+            assert not np.any(np.isnan(test_idata[f"{group}_{output}"].values))

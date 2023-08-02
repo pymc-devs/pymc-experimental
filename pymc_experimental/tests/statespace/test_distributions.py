@@ -33,12 +33,12 @@ filter_names = [
 ]
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def data():
     return load_nile_test_data()
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def pymc_model(data):
     with pm.Model() as mod:
         data = pm.ConstantData("data", data.values)

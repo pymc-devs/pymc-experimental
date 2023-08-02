@@ -19,7 +19,7 @@ floatX = pytensor.config.floatX
 
 
 @pytest.fixture
-def data():
+def data(scope="session"):
     df = pd.read_csv(
         "pymc_experimental/tests/statespace/test_data/statsmodels_macrodata_processed.csv",
         index_col=0,
