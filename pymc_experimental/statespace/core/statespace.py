@@ -30,6 +30,7 @@ from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_DIM,
     FILTER_OUTPUT_DIMS,
     FILTER_OUTPUT_NAMES,
+    FILTER_OUTPUT_TYPES,
     JITTER_DEFAULT,
     MATRIX_DIMS,
     MATRIX_NAMES,
@@ -55,9 +56,9 @@ FILTER_FACTORY = {
 
 
 def _validate_filter_arg(filter_arg):
-    if filter_arg.lower() not in ["filtered", "predicted", "smoothed"]:
+    if filter_arg.lower() not in FILTER_OUTPUT_TYPES:
         raise ValueError(
-            f"filter_output should be one of filtered, predicted, or smoothed, recieved {filter_arg}"
+            f'filter_output should be one of {", ".join(FILTER_OUTPUT_TYPES)}, received {filter_arg}'
         )
 
 

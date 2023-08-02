@@ -11,6 +11,8 @@ MA_PARAM_DIM = "ma_lag"
 MISSING_FILL = -9999.0
 JITTER_DEFAULT = 1e-8
 
+FILTER_OUTPUT_TYPES = ["filtered", "predicted", "smoothed"]
+
 MATRIX_NAMES = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
 
 SHORT_NAME_TO_LONG = {

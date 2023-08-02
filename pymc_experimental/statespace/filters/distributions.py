@@ -4,12 +4,14 @@ import pytensor
 import pytensor.tensor as pt
 from pymc import intX
 from pymc.distributions.dist_math import check_parameters
-from pymc.distributions.distribution import Distribution, SymbolicRandomVariable
+from pymc.distributions.distribution import (
+    Continuous,
+    Distribution,
+    SymbolicRandomVariable,
+)
 from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
 from pymc.gp.util import stabilize
 from pymc.logprob.abstract import _logprob
-
-# from pymc.logprob.basic import logp
 from pytensor.graph.basic import Node
 
 from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT
@@ -134,7 +136,7 @@ class _LinearGaussianStateSpace(Distribution):
         return linear_gaussian_ss
 
 
-class LinearGaussianStateSpace:
+class LinearGaussianStateSpace(Continuous):
     """
     Linear Gaussian Statespace distribution
 
@@ -255,13 +257,6 @@ class SequenceMvNormal(Distribution):
 
 @_logprob.register(SequenceMvNormalRV)
 def sequence_mvnormal_logp(op, values, mus, covs, logp, steps, rng, **kwargs):
-    # def step_logp(x, mu, cov):
-    #     return logp(pm.MvNormal.dist(mu, cov), x)
-    #
-    # logp_values, updates = pytensor.scan(
-    #     step_logp, sequences=[values[0], mus, covs], strict=True
-    # )
-
     return check_parameters(
         logp,
         pt.eq(values[0].shape[0], steps),

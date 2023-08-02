@@ -1,4 +1,3 @@
-from functools import reduce
 from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -22,8 +21,9 @@ def _preprocess_data(data: Union[DataFrame, np.ndarray], expected_dims=3):
 
     if data.ndim < expected_dims:
         n_dims = data.ndim
-        n_to_add = expected_dims - n_dims + 1
-        data = reduce(lambda a, b: np.expand_dims(a, -1), [data] * n_to_add)
+        n_to_add = expected_dims - n_dims
+        expand_idx = tuple(n_dims + np.arange(n_to_add, dtype="int"))
+        data = np.expand_dims(data, axis=expand_idx)
 
     return data
 
