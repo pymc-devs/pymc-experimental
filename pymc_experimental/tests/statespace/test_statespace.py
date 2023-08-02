@@ -47,12 +47,14 @@ def ss_mod():
     R = np.array([[1.0], [0.0]], dtype=floatX)
     H = np.array([[0.1]], dtype=floatX)
     Q = np.array([[0.8]], dtype=floatX)
+    P0 = np.eye(2, dtype=floatX) * 1e6
 
     ss_mod = StateSpace(
         k_endog=nile.shape[1], k_states=2, k_posdef=1, filter_type="standard", verbose=False
     )
     for X, name in zip(
-        [T, Z, R, H, Q], ["transition", "design", "selection", "obs_cov", "state_cov"]
+        [T, Z, R, H, Q, P0],
+        ["transition", "design", "selection", "obs_cov", "state_cov", "initial_state_cov"],
     ):
         ss_mod.ssm[name] = X
 
