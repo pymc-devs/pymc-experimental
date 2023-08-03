@@ -616,7 +616,7 @@ class PyMCStateSpace:
         pm_mod = modelcontext(None)
 
         theta = self._gather_required_random_variables()
-        self.update(theta, mode)
+        self.update(theta, mode=mode)
 
         matrices = self.unpack_statespace()
         n_obs = self.ssm.shapes["obs_intercept"][0]
