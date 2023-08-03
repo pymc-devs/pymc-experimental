@@ -6,11 +6,10 @@ from pymc import intX
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous, SymbolicRandomVariable
 from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
-from pymc.gp.util import stabilize
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
 
-from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT
+from pymc_experimental.statespace.filters.utilities import stabilize
 
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
@@ -93,10 +92,10 @@ class _LinearGaussianStateSpace(Continuous):
             a = state[:k]
 
             middle_rng, a_innovation = pm.MvNormal.dist(
-                mu=0, cov=stabilize(Q, JITTER_DEFAULT), rng=rng
+                mu=0, cov=stabilize(Q), rng=rng
             ).owner.outputs
             next_rng, y_innovation = pm.MvNormal.dist(
-                mu=0, cov=stabilize(H, JITTER_DEFAULT), rng=middle_rng
+                mu=0, cov=stabilize(H), rng=middle_rng
             ).owner.outputs
 
             a_next = c + T @ a + R @ a_innovation
@@ -106,8 +105,8 @@ class _LinearGaussianStateSpace(Continuous):
 
             return next_state, {rng: next_rng}
 
-        init_x_ = pm.MvNormal.dist(a0_, stabilize(P0_, JITTER_DEFAULT), rng=rng)
-        init_y_ = pm.MvNormal.dist(Z_ @ init_x_, stabilize(H_, JITTER_DEFAULT), rng=rng)
+        init_x_ = pm.MvNormal.dist(a0_, stabilize(P0_), rng=rng)
+        init_y_ = pm.MvNormal.dist(Z_ @ init_x_, stabilize(H_), rng=rng)
         init_dist_ = pt.concatenate([init_x_, init_y_], axis=0)
 
         statespace, updates = pytensor.scan(
@@ -233,7 +232,7 @@ class SequenceMvNormal(Continuous):
 
         def step(mu, cov, rng):
             new_rng, mvn = pm.MvNormal.dist(
-                mu=mu, cov=stabilize(cov, JITTER_DEFAULT), rng=rng, size=batch_size
+                mu=mu, cov=stabilize(cov), rng=rng, size=batch_size
             ).owner.outputs
             return mvn, {rng: new_rng}
 

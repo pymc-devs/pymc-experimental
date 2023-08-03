@@ -22,7 +22,8 @@ floatX = pytensor.config.floatX
 
 # TODO: This needs to be VERY large for float32 to pass, is there a way to put scipy into float32 computation
 #  to get an apples-to-apples comparison?
-ATOL = 1e-8 if floatX.endswith("64") else 0.1
+ATOL = 1e-8 if floatX.endswith("64") else 1e-6
+RTOL = 0 if floatX.endswith("64") else 1e-6
 
 filter_names = [
     "standard",
@@ -73,7 +74,7 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
     scipy_lls = []
     for y, mu, cov in zip(data_np, obs_mu_np, obs_cov_np):
         scipy_lls.append(multivariate_normal.logpdf(y, mean=mu, cov=cov))
-    assert_allclose(test_ll, np.array(scipy_lls).ravel(), atol=ATOL)
+    assert_allclose(test_ll, np.array(scipy_lls).ravel(), atol=ATOL, rtol=RTOL)
 
 
 def test_lgss_distribution_from_steps():

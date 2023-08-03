@@ -4,7 +4,6 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
-from pymc.gp.util import stabilize
 from pytensor.compile.mode import get_mode
 from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
@@ -14,8 +13,9 @@ from pytensor.tensor.slinalg import SolveTriangular
 
 from pymc_experimental.statespace.filters.utilities import (
     split_vars_into_seq_and_nonseq,
+    stabilize,
 )
-from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT, MISSING_FILL
+from pymc_experimental.statespace.utils.constants import MISSING_FILL
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
@@ -380,7 +380,7 @@ class BaseFilter(ABC):
         """
         a_hat = T.dot(a) + c
         P_hat = matrix_dot(T, P, T.T) + matrix_dot(R, Q, R.T)
-        P_hat = 0.5 * (P_hat + P_hat.T)
+        P_hat = stabilize(P_hat)
 
         return a_hat, P_hat
 
@@ -576,7 +576,7 @@ class StandardFilter(BaseFilter):
 
         PZT = P.dot(Z.T)
 
-        F = stabilize(Z.dot(PZT) + H, jitter=JITTER_DEFAULT)
+        F = stabilize(Z.dot(PZT) + H)
         F_inv = pt.linalg.solve(F, self.eye_endog, assume_a="pos", check_finite=False)
 
         K = PZT.dot(F_inv)

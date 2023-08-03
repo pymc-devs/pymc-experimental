@@ -9,7 +9,7 @@ AR_PARAM_DIM = "ar_lag"
 MA_PARAM_DIM = "ma_lag"
 
 MISSING_FILL = -9999.0
-JITTER_DEFAULT = 1e-8
+JITTER_DEFAULT = 1e-16
 
 FILTER_OUTPUT_TYPES = ["filtered", "predicted", "smoothed"]
 

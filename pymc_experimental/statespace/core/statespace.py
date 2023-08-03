@@ -7,7 +7,6 @@ import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 from arviz import InferenceData
-from pymc.gp.util import stabilize
 from pymc.model import modelcontext
 from pymc.util import RandomState
 from pytensor.compile import get_mode
@@ -25,6 +24,7 @@ from pymc_experimental.statespace.filters.distributions import (
     LinearGaussianStateSpace,
     SequenceMvNormal,
 )
+from pymc_experimental.statespace.filters.utilities import stabilize
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,

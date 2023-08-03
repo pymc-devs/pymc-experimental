@@ -1,7 +1,10 @@
+import pytensor.tensor as pt
+
 from pymc_experimental.statespace.core.representation import (
     NEVER_TIME_VARYING,
     VECTOR_VALUED,
 )
+from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT
 
 
 def decide_if_x_time_varies(x, name):
@@ -45,3 +48,16 @@ def split_vars_into_seq_and_nonseq(params, param_names):
             non_seq_names.append(name)
 
     return sequences, non_sequences, seq_names, non_seq_names
+
+
+def stabilize(cov, jitter=None):
+    if jitter is None:
+        jitter = JITTER_DEFAULT
+
+    # Ensure diagonal is non-zero
+    cov += pt.identity_like(cov) * jitter
+
+    # Ensure matrix is symmetric
+    cov = 0.5 * (cov + cov.T)
+
+    return cov
