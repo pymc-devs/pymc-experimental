@@ -64,7 +64,7 @@ def ss_mod():
 @pytest.fixture(scope="session")
 def pymc_mod(ss_mod):
     with pm.Model(coords={ALL_STATE_DIM: ["a", "b"], OBS_STATE_DIM: ["a"]}) as pymc_mod:
-        rho = pm.Normal("rho")
+        rho = pm.Beta("rho", 1, 1)
         zeta = pm.Deterministic("zeta", 1 - rho)
         ss_mod.build_statespace_graph(data=nile, include_smoother=True)
 
