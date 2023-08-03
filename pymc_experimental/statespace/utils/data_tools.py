@@ -5,7 +5,7 @@ import pandas as pd
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
-from pymc import modelcontext
+from pymc import ImputationWarning, modelcontext
 from pytensor.tensor.sharedvar import TensorSharedVariable
 
 from pymc_experimental.statespace.utils.constants import (
@@ -122,6 +122,13 @@ def mask_missing_values_in_data(values):
     masked_values = np.ma.masked_invalid(values)
     filled_values = masked_values.filled(MISSING_FILL)
     nan_mask = masked_values.mask
+    if np.any(nan_mask):
+        impute_message = (
+            f"Provided data contains missing values and"
+            " will be automatically imputed as hidden states"
+            " during Kalman filtering."
+        )
+        warnings.warn(impute_message, ImputationWarning)
 
     return filled_values, nan_mask
 
