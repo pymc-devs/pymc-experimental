@@ -21,6 +21,8 @@ from pytensor.tensor.elemwise import Elemwise
 
 __all__ = ["MarginalModel"]
 
+from pytensor.tensor.shape import Shape
+
 
 class MarginalModel(Model):
     """Subclass of PyMC Model that implements functionality for automatic
@@ -251,9 +253,24 @@ class FiniteDiscreteMarginalRV(MarginalRV):
     """Base class for Finite Discrete Marginalized RVs"""
 
 
+def static_shape_ancestors(vars):
+    """Identify ancestors Shape Ops of static shapes (therefore constant in a valid graph)."""
+    return [
+        var
+        for var in ancestors(vars)
+        if (
+            var.owner
+            and isinstance(var.owner.op, Shape)
+            # All static dims lengths of Shape input are known
+            and None not in var.owner.inputs[0].type.shape
+        )
+    ]
+
+
 def find_conditional_input_rvs(output_rvs, all_rvs):
-    """Find conditionally indepedent input RVs"""
+    """Find conditionally indepedent input RVs."""
     blockers = [other_rv for other_rv in all_rvs if other_rv not in output_rvs]
+    blockers += static_shape_ancestors(tuple(all_rvs) + tuple(output_rvs))
     return [
         var
         for var in ancestors(output_rvs, blockers=blockers)

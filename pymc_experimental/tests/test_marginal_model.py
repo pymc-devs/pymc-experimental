@@ -12,7 +12,11 @@ from pymc.logprob.abstract import _logprob
 from pymc.util import UNSET
 from scipy.special import logsumexp
 
-from pymc_experimental.marginal_model import FiniteDiscreteMarginalRV, MarginalModel
+from pymc_experimental.marginal_model import (
+    FiniteDiscreteMarginalRV,
+    MarginalModel,
+    is_conditional_dependent,
+)
 
 
 @pytest.fixture
@@ -411,3 +415,14 @@ def test_marginalized_transforms(transform, expected_warning):
             transform_name = transform.name
         assert f"sigma_{transform_name}__" in ip
     np.testing.assert_allclose(m.compile_logp()(ip), m_ref.compile_logp()(ip))
+
+
+def test_is_conditional_dependent_static_shape():
+    """Test that we don't consider dependencies through "constant" shape Ops"""
+    x1 = pt.matrix("x1", shape=(None, 5))
+    y1 = pt.random.normal(size=pt.shape(x1))
+    assert is_conditional_dependent(y1, x1, [x1, y1])
+
+    x2 = pt.matrix("x2", shape=(9, 5))
+    y2 = pt.random.normal(size=pt.shape(x2))
+    assert not is_conditional_dependent(y2, x2, [x2, y2])
