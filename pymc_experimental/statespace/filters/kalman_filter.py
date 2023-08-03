@@ -30,7 +30,7 @@ assert_time_varying_dim_correct = Assert(
 
 
 class BaseFilter(ABC):
-    def __init__(self, mode=None):
+    def __init__(self, mode=None, missing_fill_value=None):
         """
         Kalman Filter.
 
@@ -74,6 +74,7 @@ class BaseFilter(ABC):
         self.eye_states: Optional[TensorVariable] = None
         self.eye_posdef: Optional[TensorVariable] = None
         self.eye_endog: Optional[TensorVariable] = None
+        self.missing_fill_value: Optional[float] = None
 
     def initialize_eyes(self, R: TensorVariable, Z: TensorVariable) -> None:
         """
@@ -182,7 +183,20 @@ class BaseFilter(ABC):
         return y, a0, P0, c, d, T, Z, R, H, Q
 
     def build_graph(
-        self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None, return_updates=False
+        self,
+        data,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        mode=None,
+        return_updates=False,
+        missing_fill_value=None,
     ) -> List[TensorVariable]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
@@ -194,6 +208,9 @@ class BaseFilter(ABC):
            Econometrics Journal 2 (1): 107-60. doi:10.1111/1368-423X.00023.
         """
         self.mode = mode
+        if missing_fill_value is None:
+            missing_fill_value = MISSING_FILL
+        self.missing_fill_value = missing_fill_value
         self.initialize_eyes(R, Z)
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
@@ -267,9 +284,8 @@ class BaseFilter(ABC):
 
         return filter_results
 
-    @staticmethod
     def handle_missing_values(
-        y, Z, H
+        self, y, Z, H
     ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, float]:
         """
         This function handles missing values in the observation data `y` and adjusts the design matrix `Z` and the
@@ -307,7 +323,7 @@ class BaseFilter(ABC):
         .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
                2nd ed, Oxford University Press, 2012.
         """
-        nan_mask = pt.or_(pt.isnan(y), pt.eq(y, MISSING_FILL))
+        nan_mask = pt.or_(pt.isnan(y), pt.eq(y, self.missing_fill_value))
         all_nan_flag = pt.all(nan_mask).astype(pytensor.config.floatX)
         W = pt.diag(pt.bitwise_not(nan_mask).astype(pytensor.config.floatX))
 
@@ -676,11 +692,15 @@ class SteadyStateFilter(BaseFilter):
     only have differences from the standard approach in the early steps (T < 10?). A process of "learning" is lost.
     """
 
-    def build_graph(self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None):
+    def build_graph(self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None, missing_fill_value=None):
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
         self.mode = mode
+        if missing_fill_value is None:
+            missing_fill_value = MISSING_FILL
+
+        self.missing_fill_value = missing_fill_value
         self.initialize_eyes(R, Z)
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)

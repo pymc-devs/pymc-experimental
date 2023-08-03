@@ -118,22 +118,33 @@ def add_data_to_active_model(values, index):
     return data
 
 
-def mask_missing_values_in_data(values):
+def mask_missing_values_in_data(values, missing_fill_value=None):
+    if missing_fill_value is None:
+        missing_fill_value = MISSING_FILL
+
     masked_values = np.ma.masked_invalid(values)
-    filled_values = masked_values.filled(MISSING_FILL)
+    filled_values = masked_values.filled(missing_fill_value)
     nan_mask = masked_values.mask
+
     if np.any(nan_mask):
+        if np.any(values == missing_fill_value):
+            raise ValueError(
+                f"Provided data contains the value {missing_fill_value}, which is used as a missing value marker. "
+                f"Please manually change the missing_fill_value to avoid this collision."
+            )
+
         impute_message = (
             f"Provided data contains missing values and"
             " will be automatically imputed as hidden states"
             " during Kalman filtering."
         )
+
         warnings.warn(impute_message, ImputationWarning)
 
     return filled_values, nan_mask
 
 
-def register_data_with_pymc(data, n_obs, obs_coords, register_data=True):
+def register_data_with_pymc(data, n_obs, obs_coords, register_data=True, missing_fill_value=None):
     if isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
         values, index = preprocess_tensor_data(data, n_obs, obs_coords)
     elif isinstance(data, np.ndarray):
@@ -143,7 +154,7 @@ def register_data_with_pymc(data, n_obs, obs_coords, register_data=True):
     else:
         raise ValueError("Data should be one of pytensor tensor, numpy array, or pandas dataframe")
 
-    data, nan_mask = mask_missing_values_in_data(values)
+    data, nan_mask = mask_missing_values_in_data(values, missing_fill_value)
 
     if register_data:
         data = add_data_to_active_model(data, index)

@@ -575,6 +575,7 @@ class PyMCStateSpace:
         data: Union[np.ndarray, pd.DataFrame, pt.TensorVariable],
         register_data: bool = True,
         mode: Optional[str] = None,
+        missing_fill_value: Optional[float] = None,
         return_updates: bool = False,
         include_smoother: bool = True,
     ) -> None:
@@ -598,6 +599,15 @@ class PyMCStateSpace:
             The Pytensor mode used for the computation graph construction. If None, the default mode will be used.
             Other options include "JAX" and "NUMBA".
 
+        missing_fill_value: float, optional, default=-9999
+            A value to mask in missing values. NaN values in the data need to be filled with an arbitrary value to
+            avoid triggering PyMC's automatic imputation machinery (missing values are instead filled by treating them
+            as hidden states during Kalman filtering).
+
+            In general this never needs to be set. But if by a wild coincidence your data includes the value -9999.0,
+            you will need to change the missing_fill_value to something else, to avoid incorrectly mark in
+            data as missing.
+
         return_updates : bool, optional, default=False
             If True, the method will return the update dictionary used by pytensor.Scan to update random variables.
             Only useful for diagnostic purposes.
@@ -612,7 +622,6 @@ class PyMCStateSpace:
             If `return_updates` is True, the method will return a dictionary of updates from the Kalman filter.
             If `return_updates` is False, the method will return None.
         """
-
         pm_mod = modelcontext(None)
 
         theta = self._gather_required_random_variables()
@@ -623,7 +632,11 @@ class PyMCStateSpace:
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
 
         data, nan_mask = register_data_with_pymc(
-            data, n_obs=n_obs, obs_coords=obs_coords, register_data=register_data
+            data,
+            n_obs=n_obs,
+            obs_coords=obs_coords,
+            register_data=register_data,
+            missing_fill_value=missing_fill_value,
         )
 
         registered_matrices = []
@@ -639,6 +652,7 @@ class PyMCStateSpace:
             pt.as_tensor_variable(data),
             *registered_matrices,
             mode=mode,
+            missing_fill_value=missing_fill_value,
             return_updates=return_updates,
         )
 

@@ -1,10 +1,12 @@
 import numpy as np
 import pymc as pm
 import pytensor
+import pytensor.tensor as pt
 import pytest
 from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
+from pymc_experimental.statespace.models import structural as st
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_DIM,
     FILTER_OUTPUT_NAMES,
@@ -138,6 +140,30 @@ def test_gather_raises_if_variable_missing(ss_mod):
         msg = "The following required model parameters were not found in the PyMC model: zeta"
         with pytest.raises(ValueError, match=msg):
             theta = ss_mod._gather_required_random_variables()
+
+
+def test_build_statespace_graph_warns_if_data_has_nans():
+    # Breaks tests if it uses the session fixtures because we can't call build_statespace_graph over and over
+    ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
+
+    with pm.Model() as pymc_mod:
+        initial_trend = pm.Normal("initial_trend")
+        P0 = pm.Deterministic("P0", pt.eye(1))
+        with pytest.warns(pm.ImputationWarning):
+            ss_mod.build_statespace_graph(data=np.full((10, 1), np.nan), register_data=False)
+
+
+def test_build_statespace_graph_raises_if_data_has_missing_fill():
+    # Breaks tests if it uses the session fixtures because we can't call build_statespace_graph over and over
+    ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
+
+    with pm.Model() as pymc_mod:
+        initial_trend = pm.Normal("initial_trend")
+        P0 = pm.Deterministic("P0", pt.eye(1))
+        with pytest.raises(ValueError, match="Provided data contains the value 1.0"):
+            data = np.ones((10, 1))
+            data[3] = np.nan
+            ss_mod.build_statespace_graph(data=data, missing_fill_value=1.0, register_data=False)
 
 
 def test_build_statespace_graph(pymc_mod):
