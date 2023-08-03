@@ -5,7 +5,13 @@ import pytest
 from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
-from pymc_experimental.statespace.utils.constants import ALL_STATE_DIM, OBS_STATE_DIM
+from pymc_experimental.statespace.utils.constants import (
+    ALL_STATE_DIM,
+    FILTER_OUTPUT_NAMES,
+    MATRIX_NAMES,
+    OBS_STATE_DIM,
+    SMOOTHER_OUTPUT_NAMES,
+)
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
@@ -17,6 +23,7 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 
 floatX = pytensor.config.floatX
 nile = load_nile_test_data()
+ALL_SAMPLE_OUTPUTS = MATRIX_NAMES + FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES
 
 
 @pytest.fixture(scope="session")
@@ -147,6 +154,12 @@ def test_build_smoother_graph(ss_mod, pymc_mod):
     names = ["smoothed_state", "smoothed_covariance"]
     for name in names:
         assert name in [x.name for x in pymc_mod.deterministics]
+
+
+@pytest.mark.parametrize("group", ["posterior", "prior"])
+@pytest.mark.parametrize("matrix", ALL_SAMPLE_OUTPUTS)
+def test_no_nans_in_sampling_output(group, matrix, idata):
+    assert not np.any(np.isnan(idata[group][matrix].values))
 
 
 @pytest.mark.parametrize("group", ["posterior", "prior"])
