@@ -4,11 +4,7 @@ import pytensor
 import pytensor.tensor as pt
 from pymc import intX
 from pymc.distributions.dist_math import check_parameters
-from pymc.distributions.distribution import (
-    Continuous,
-    Distribution,
-    SymbolicRandomVariable,
-)
+from pymc.distributions.distribution import Continuous, SymbolicRandomVariable
 from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
 from pymc.gp.util import stabilize
 from pymc.logprob.abstract import _logprob
@@ -25,7 +21,7 @@ class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
         return {node.inputs[-1]: node.outputs[0]}
 
 
-class _LinearGaussianStateSpace(Distribution):
+class _LinearGaussianStateSpace(Continuous):
     rv_op = LinearGaussianStateSpaceRV
 
     def __new__(
@@ -191,7 +187,7 @@ class SequenceMvNormalRV(SymbolicRandomVariable):
         return {node.inputs[-1]: node.outputs[0]}
 
 
-class SequenceMvNormal(Distribution):
+class SequenceMvNormal(Continuous):
     rv_op = SequenceMvNormalRV
 
     def __new__(cls, *args, **kwargs):

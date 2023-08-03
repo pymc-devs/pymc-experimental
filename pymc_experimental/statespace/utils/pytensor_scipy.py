@@ -60,7 +60,7 @@ class SolveDiscreteARE(at.Op):
         return [A_bar, B_bar, Q_bar, R_bar]
 
 
-def solve_discrete_are(A, B, Q, R) -> TensorVariable:
+def solve_discrete_are(A, B, Q, R, enforce_Q_symmetric=False) -> TensorVariable:
     """
     Solve the discrete Algebraic Riccati equation :math:`A^TXA - X - (A^TXB)(R + B^TXB)^{-1}(B^TXA) + Q = 0`.
     Parameters
@@ -70,9 +70,11 @@ def solve_discrete_are(A, B, Q, R) -> TensorVariable:
     B: ArrayLike
         Square matrix of shape M x M
     Q: ArrayLike
-        Square matrix of shape M x M
+        Symmetric square matrix of shape M x M
     R: ArrayLike
         Square matrix of shape N x N
+    enforce_Q_symmetric: bool
+        If True, the provided Q matrix is transformed to 0.5 * (Q + Q.T) to ensure symmetry
 
     Returns
     -------
@@ -80,4 +82,4 @@ def solve_discrete_are(A, B, Q, R) -> TensorVariable:
         Square matrix of shape M x M, representing the solution to the DARE
     """
 
-    return SolveDiscreteARE()(A, B, Q, R)
+    return SolveDiscreteARE(enforce_Q_symmetric)(A, B, Q, R)
