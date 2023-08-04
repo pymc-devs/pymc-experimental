@@ -1,5 +1,3 @@
-import unittest
-
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
@@ -256,5 +254,20 @@ def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missin
         assert_allclose(val_to_test, ref_val, atol=ATOL, rtol=RTOL)
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.parametrize("filter_func", filter_funcs[:-1], ids=filter_names[:-1])
+@pytest.mark.parametrize(
+    ("output_idx", "name"), list(zip([3, 4, 5], output_names[3:-2])), ids=output_names[3:-2]
+)
+@pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
+@pytest.mark.parametrize("obs_noise", [True, False])
+def test_all_covariance_matrices_are_PSD(filter_func, output_idx, name, n_missing, obs_noise, rng):
+    fit_sm_mod, [data, a0, P0, c, d, T, Z, R, H, Q] = nile_test_test_helper(rng, n_missing)
+
+    H *= int(obs_noise)
+    inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
+    outputs = filter_func(*inputs)
+
+    cov_stack = outputs[output_idx]
+    w, v = np.linalg.eig(cov_stack)
+    assert np.all(w > 0)
+    assert_allclose(cov_stack, np.swapaxes(cov_stack, -2, -1))

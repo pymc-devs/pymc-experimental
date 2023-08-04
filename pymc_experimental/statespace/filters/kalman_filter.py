@@ -15,7 +15,7 @@ from pymc_experimental.statespace.filters.utilities import (
     split_vars_into_seq_and_nonseq,
     stabilize,
 )
-from pymc_experimental.statespace.utils.constants import MISSING_FILL
+from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT, MISSING_FILL
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
@@ -575,15 +575,15 @@ class StandardFilter(BaseFilter):
         v = y - y_hat
 
         PZT = P.dot(Z.T)
+        F = Z.dot(PZT) + stabilize(H)
 
-        F = stabilize(Z.dot(PZT) + H)
         F_inv = pt.linalg.solve(F, self.eye_endog, assume_a="pos", check_finite=False)
 
         K = PZT.dot(F_inv)
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
+        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
 
         inner_term = matrix_dot(v.T, F_inv, v)
         F_logdet = pt.log(pt.linalg.det(F))
@@ -616,18 +616,15 @@ class CholeskyFilter(BaseFilter):
         PZT = P.dot(Z.T)
 
         # If everything is missing, F will be [[0]] and F_chol will raise an error, so add identity to avoid the error
-        F = Z.dot(PZT) + H + self.eye_endog * all_nan_flag
-
+        F = Z.dot(PZT) + stabilize(H)
         F_chol = pt.linalg.cholesky(F)
 
         # If everything is missing, K = 0, IKZ = I
-        K = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, PZT.T)).T * (
-            1 - all_nan_flag
-        )
+        K = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, PZT.T)).T
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
+        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
 
         inner_term = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, v))
         n = y.shape[0]
@@ -667,13 +664,13 @@ class SingleTimeseriesFilter(BaseFilter):
         PZT = P.dot(Z.T)
 
         # F is scalar, K is a column vector
-        F = (Z.dot(PZT) + H + all_nan_flag).ravel()
+        F = stabilize(Z.dot(PZT) + H).ravel()
 
         K = PZT / F
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + (K * v).ravel()
-        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
+        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
 
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
 
@@ -737,13 +734,13 @@ class SteadyStateFilter(BaseFilter):
 
         PZT = P.dot(Z.T)
 
-        F = Z.dot(PZT) + H
+        F = Z.dot(PZT) + stabilize(H)
         K = PZT.dot(F_inv)
 
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
+        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
 
         inner_term = matrix_dot(v.T, F_inv, v)
         ll = pt.switch(
@@ -799,19 +796,16 @@ class UnivariateFilter(BaseFilter):
         v = y - y_hat
 
         PZT = P.dot(Z_row.T).squeeze()
-        F = Z_row.dot(PZT) + sigma_H
+        F = Z_row.dot(PZT) + sigma_H + JITTER_DEFAULT
 
         F_zero_flag = pt.or_(pt.eq(F, 0), nan_flag)
-
-        # This should easier than trying to dodge the log(F) and 1 / F with a switch
-        F = F + 1e-8 * F_zero_flag
 
         # If F is zero (implies y is NAN or another degenerate case), then we want:
         # K = 0, a = a, P = P, ll = 0
         K = PZT / F * (1 - F_zero_flag)
 
         a_filtered = a + K * v * (1 - F_zero_flag)
-        P_filtered = P - pt.outer(K, K) * F * (1 - F_zero_flag)
+        P_filtered = stabilize(P - pt.outer(K, K) * F * (1 - F_zero_flag))
         ll_inner = (pt.log(F) + v**2 / F) * (1 - F_zero_flag)
 
         return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll_inner

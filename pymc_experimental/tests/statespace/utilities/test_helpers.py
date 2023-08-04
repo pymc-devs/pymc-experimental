@@ -1,7 +1,10 @@
+from typing import List
+
 import numpy as np
 import pandas as pd
 import pytensor
 import pytensor.tensor as pt
+from pymc import modelcontext
 
 from pymc_experimental.statespace.filters.kalman_smoother import KalmanSmoother
 from pymc_experimental.tests.statespace.utilities.statsmodel_local_level import (
@@ -159,3 +162,36 @@ def nile_test_test_helper(rng, n_missing=0):
 
 def fast_eval(var):
     return pytensor.function([], var, mode="FAST_COMPILE")()
+
+
+def delete_rvs_from_model(rv_names: List[str]) -> None:
+    """Remove all model mappings referring to rv
+
+    This can be used to "delete" an RV from a model
+    """
+    mod = modelcontext(None)
+    all_rvs = mod.basic_RVs + mod.deterministics
+    all_rv_names = [x.name for x in all_rvs]
+
+    for name in rv_names:
+        assert name in all_rv_names, f"{name} is not part of the Model: {all_rv_names}"
+
+        rv_idx = all_rv_names.index(name)
+        rv = all_rvs[rv_idx]
+
+        mod.named_vars.pop(name)
+        if name in mod.named_vars_to_dims:
+            mod.named_vars_to_dims.pop(name)
+
+        if rv in mod.deterministics:
+            mod.deterministics.remove(rv)
+            continue
+
+        value = mod.rvs_to_values.pop(rv)
+        mod.values_to_rvs.pop(value)
+        mod.rvs_to_transforms.pop(rv)
+        if rv in mod.free_RVs:
+            mod.free_RVs.remove(rv)
+            mod.rvs_to_initial_values.pop(rv)
+        else:
+            mod.observed_RVs.remove(rv)

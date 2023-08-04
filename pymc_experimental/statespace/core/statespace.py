@@ -220,6 +220,7 @@ class PyMCStateSpace:
         self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
+        self.measurement_error = True
 
         # All models contain a state space representation and a Kalman filter
         self.ssm = PytensorRepresentation(k_endog, k_states, k_posdef)
@@ -913,7 +914,9 @@ class PyMCStateSpace:
                 steps=steps,
                 dims=dims,
                 mode=self._fit_mode,
+                measurement_error=self.measurement_error,
             )
+
             idata_unconditional = pm.sample_posterior_predictive(
                 group_idata,
                 var_names=[f"{group}_latent", f"{group}_observed"],

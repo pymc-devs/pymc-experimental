@@ -9,7 +9,10 @@ from pymc.distributions.shape_utils import get_support_shape, get_support_shape_
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
 
-from pymc_experimental.statespace.filters.utilities import stabilize
+lgss_shape_message = (
+    "The LinearGaussianStateSpace distribution needs shape information to be constructed. "
+    "Ensure that all input matrices have shape information specified."
+)
 
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
@@ -24,10 +27,22 @@ class _LinearGaussianStateSpace(Continuous):
     rv_op = LinearGaussianStateSpaceRV
 
     def __new__(
-        cls, name, a0, P0, c, d, T, Z, R, H, Q, steps=None, k_states=None, mode=None, **kwargs
+        cls,
+        name,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        measurement_error=True,
+        steps=None,
+        mode=None,
+        **kwargs,
     ):
-        k_states = cls._get_k_states(T)
-
         # Ignore dims in support shape because they are just passed along to the "observed" and "latent" distributions
         # created by LinearGaussianStateSpace. This "combined" distribution shouldn't ever be directly used.
         steps = get_support_shape_1d(
@@ -50,32 +65,47 @@ class _LinearGaussianStateSpace(Continuous):
             R,
             H,
             Q,
+            measurement_error=measurement_error,
             steps=steps,
-            k_states=k_states,
             mode=mode,
             **kwargs,
         )
 
     @classmethod
-    def dist(cls, a0, P0, c, d, T, Z, R, H, Q, steps=None, k_states=None, mode=None, **kwargs):
+    def dist(
+        cls, a0, P0, c, d, T, Z, R, H, Q, measurement_error=True, steps=None, mode=None, **kwargs
+    ):
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
         )
-        k_states = cls._get_k_states(T)
 
         if steps is None:
             raise ValueError("Must specify steps or shape parameter")
 
         steps = pt.as_tensor_variable(intX(steps), ndim=0)
+        measurement_error = pt.as_tensor_variable(np.array(measurement_error), ndim=0)
 
-        return super().dist([a0, P0, c, d, T, Z, R, H, Q, steps, k_states], mode=mode, **kwargs)
+        return super().dist(
+            [a0, P0, c, d, T, Z, R, H, Q, steps, measurement_error], mode=mode, **kwargs
+        )
 
     @classmethod
     def _get_k_states(cls, T):
-        return T.shape[0]
+        k_states = T.type.shape[0]
+        if k_states is None:
+            raise ValueError(lgss_shape_message)
+        return k_states
 
     @classmethod
-    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, k_states, size=None, mode=None):
+    def _get_k_endog(cls, H):
+        k_endog = H.type.shape[0]
+        if k_endog is None:
+            raise ValueError(lgss_shape_message)
+
+        return k_endog
+
+    @classmethod
+    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, measurement_error, size=None, mode=None):
         if size is not None:
             batch_size = size
 
@@ -84,19 +114,21 @@ class _LinearGaussianStateSpace(Continuous):
         )
 
         steps_ = steps.type()
+        measurement_error_ = measurement_error.type()
         rng = pytensor.shared(np.random.default_rng())
 
         def step_fn(*args):
-            state, c, d, T, Z, R, H, Q, rng = args
+            state, c, d, T, Z, R, H, Q, measurement_error, rng = args
             k = T.shape[0]
             a = state[:k]
 
-            middle_rng, a_innovation = pm.MvNormal.dist(
-                mu=0, cov=stabilize(Q), rng=rng
-            ).owner.outputs
-            next_rng, y_innovation = pm.MvNormal.dist(
-                mu=0, cov=stabilize(H), rng=middle_rng
-            ).owner.outputs
+            middle_rng, a_innovation = pm.MvNormal.dist(mu=0, cov=Q, rng=rng).owner.outputs
+
+            if measurement_error:
+                next_rng, y_innovation = pm.MvNormal.dist(mu=0, cov=H, rng=middle_rng).owner.outputs
+            else:
+                next_rng = middle_rng
+                y_innovation = 0
 
             a_next = c + T @ a + R @ a_innovation
             y_next = d + Z @ a_next + y_innovation
@@ -105,14 +137,19 @@ class _LinearGaussianStateSpace(Continuous):
 
             return next_state, {rng: next_rng}
 
-        init_x_ = pm.MvNormal.dist(a0_, stabilize(P0_), rng=rng)
-        init_y_ = pm.MvNormal.dist(Z_ @ init_x_, stabilize(H_), rng=rng)
+        init_x_ = pm.MvNormal.dist(a0_, P0_, rng=rng)
+
+        if measurement_error:
+            init_y_ = pm.MvNormal.dist(Z_ @ init_x_, H_, rng=rng)
+        else:
+            init_y_ = Z_ @ init_x_
+
         init_dist_ = pt.concatenate([init_x_, init_y_], axis=0)
 
         statespace, updates = pytensor.scan(
             step_fn,
             outputs_info=[init_dist_],
-            non_sequences=[c_, d_, T_, Z_, R_, H_, Q_, rng],
+            non_sequences=[c_, d_, T_, Z_, R_, H_, Q_, measurement_error_, rng],
             n_steps=steps_,
             mode=mode,
             strict=True,
@@ -122,12 +159,14 @@ class _LinearGaussianStateSpace(Continuous):
 
         (ss_rng,) = tuple(updates.values())
         linear_gaussian_ss_op = LinearGaussianStateSpaceRV(
-            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, steps_],
+            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, measurement_error_, steps_],
             outputs=[ss_rng, statespace_],
             ndim_supp=1,
         )
 
-        linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, steps)
+        linear_gaussian_ss = linear_gaussian_ss_op(
+            a0, P0, c, d, T, Z, R, H, Q, measurement_error, steps
+        )
         return linear_gaussian_ss
 
 
@@ -137,7 +176,24 @@ class LinearGaussianStateSpace(Continuous):
 
     """
 
-    def __new__(cls, name, a0, P0, c, d, T, Z, R, H, Q, *, steps=None, mode=None, **kwargs):
+    def __new__(
+        cls,
+        name,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        *,
+        measurement_error=True,
+        steps=None,
+        mode=None,
+        **kwargs,
+    ):
         dims = kwargs.pop("dims", None)
         latent_dims = None
         obs_dims = None
@@ -152,7 +208,12 @@ class LinearGaussianStateSpace(Continuous):
 
         matrices = (a0, P0, c, d, T, Z, R, H, Q)
         latent_obs_combined = _LinearGaussianStateSpace(
-            f"{name}_combined", *matrices, steps=steps, mode=mode, **kwargs
+            f"{name}_combined",
+            *matrices,
+            measurement_error=measurement_error,
+            steps=steps,
+            mode=mode,
+            **kwargs,
         )
 
         k_states = T.type.shape[0]
@@ -231,9 +292,7 @@ class SequenceMvNormal(Continuous):
         rng = pytensor.shared(np.random.default_rng())
 
         def step(mu, cov, rng):
-            new_rng, mvn = pm.MvNormal.dist(
-                mu=mu, cov=stabilize(cov), rng=rng, size=batch_size
-            ).owner.outputs
+            new_rng, mvn = pm.MvNormal.dist(mu=mu, cov=cov, rng=rng, size=batch_size).owner.outputs
             return mvn, {rng: new_rng}
 
         mvn_seq, updates = pytensor.scan(

@@ -86,6 +86,7 @@ class StructuralTimeSeries(PyMCStateSpace):
         param_counts,
         param_indices,
         component_info,
+        measurement_error,
         name=None,
         verbose=True,
         filter_type: str = "standard",
@@ -110,6 +111,7 @@ class StructuralTimeSeries(PyMCStateSpace):
         self._param_dims = param_dims
         self._coords = coords
         self._param_info = param_info
+        self.measurement_error = measurement_error
 
         super().__init__(1, k_states, k_posdef, filter_type=filter_type, verbose=verbose)
 
@@ -349,17 +351,22 @@ class Component(ABC):
         Number of hidden states in the component model
     k_posdef: int
         Rank of the state covariance matrix, or the number of sources of innovations in the component model
+    measurement_error: bool
+        Whether the observation associated with the component has measurement error. Default is False.
     combine_hidden_states: bool
         Flag for the ``extract_hidden_states_from_data`` method. When ``True``, hidden states from the component model
         are extracted as ``hidden_states[:, np.flatnonzero(Z)]``. Should be True in models where hidden states
         individually have no interpretation, such as seasonal or autoregressive components.
     """
 
-    def __init__(self, name, k_endog, k_states, k_posdef, combine_hidden_states=True):
+    def __init__(
+        self, name, k_endog, k_states, k_posdef, measurement_error=False, combine_hidden_states=True
+    ):
         self.name = name
         self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
+        self.measurement_error = measurement_error
 
         self.x0 = np.zeros(k_states)
         self.P0 = np.zeros((k_states, k_states))
@@ -484,8 +491,14 @@ class Component(ABC):
         coords = self._combine_property(other, "coords")
 
         param_indices = self._combine_param_indices(other)
-
-        new_comp = Component(name="", k_endog=1, k_states=k_states, k_posdef=k_posdef)
+        measurement_error = any([self.measurement_error, other.measurement_error])
+        new_comp = Component(
+            name="",
+            k_endog=1,
+            k_states=k_states,
+            k_posdef=k_posdef,
+            measurement_error=measurement_error,
+        )
         new_comp._component_info = self._combine_component_info(other)
         new_comp.name = new_comp._make_combined_name()
 
@@ -560,6 +573,7 @@ class Component(ABC):
             param_counts=self.param_counts,
             param_indices=self.param_indices,
             component_info=self._component_info,
+            measurement_error=self.measurement_error,
             filter_type=filter_type,
             verbose=verbose,
         )
@@ -688,7 +702,9 @@ class LevelTrendComponent(Component):
 
         k_posdef = int(sum(innovations_order))
 
-        super().__init__(name, 1, k_states, k_posdef, combine_hidden_states=False)
+        super().__init__(
+            name, 1, k_states, k_posdef, measurement_error=False, combine_hidden_states=False
+        )
 
         self.x0 = np.zeros(k_states)
 
@@ -771,7 +787,9 @@ class MeasurementError(Component):
         k_states = 0
         k_posdef = 0
 
-        super().__init__(name, k_endog, k_states, k_posdef, combine_hidden_states=False)
+        super().__init__(
+            name, k_endog, k_states, k_posdef, measurement_error=True, combine_hidden_states=False
+        )
 
         self.param_names = [f"sigma_{name}"]
         self.param_indices = {f"sigma_{name}": ("obs_cov", *np.diag_indices(1))}
@@ -843,7 +861,12 @@ class AutoregressiveComponent(Component):
         ar_lags = np.flatnonzero(order).ravel().astype(int) + 1
         k_states = int(sum(order))
         super().__init__(
-            name=name, k_endog=1, k_states=k_states, k_posdef=1, combine_hidden_states=True
+            name=name,
+            k_endog=1,
+            k_states=k_states,
+            k_posdef=1,
+            measurement_error=True,
+            combine_hidden_states=True,
         )
 
         self.T = np.eye(k_states, k=-1)
@@ -999,7 +1022,12 @@ class TimeSeasonality(Component):
         k_states = season_length - 1
 
         super().__init__(
-            name=name, k_endog=1, k_states=k_states, k_posdef=1, combine_hidden_states=True
+            name=name,
+            k_endog=1,
+            k_states=k_states,
+            k_posdef=1,
+            measurement_error=False,
+            combine_hidden_states=True,
         )
 
         self.state_names = state_names
@@ -1099,7 +1127,12 @@ class FrequencySeasonality(Component):
 
         k_states = n * 2
         super().__init__(
-            name=name, k_endog=1, k_states=k_states, k_posdef=k_states, combine_hidden_states=True
+            name=name,
+            k_endog=1,
+            k_states=k_states,
+            k_posdef=k_states,
+            measurement_error=False,
+            combine_hidden_states=True,
         )
 
         T_mats = [self._compute_transition_block(season_length, j + 1) for j in range(n)]
@@ -1121,16 +1154,16 @@ class FrequencySeasonality(Component):
             init_state_idx = init_state_idx[:-1]
 
         self.param_indices = {f"{name}": ("initial_state", init_state_idx)}
-        self.param_dims = {name: (f"{name}_state",)}
+        self.param_dims = {name: (f"{name}_initial_state",)}
         self.param_info = {
             f"{name}": {
                 "shape": (k_states - int(last_state_not_identified),),
                 "constraints": "None",
-                "dims": f"({name}_state, )",
+                "dims": f"({name}_initial_state, )",
             }
         }
         self.param_counts[f"{name}"] = k_states - int(last_state_not_identified)
-        self.coords = {f"{name}_state": self.state_names}
+        self.coords = {f"{name}_initial_state": [self.state_names[i] for i in init_state_idx]}
 
         if innovations:
             self.param_names += [f"sigma_{name}"]

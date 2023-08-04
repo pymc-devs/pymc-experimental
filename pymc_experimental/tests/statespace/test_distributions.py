@@ -14,6 +14,7 @@ from pymc_experimental.statespace.utils.constants import (
     TIME_DIM,
 )
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
+    delete_rvs_from_model,
     fast_eval,
     load_nile_test_data,
 )
@@ -51,6 +52,41 @@ def pymc_model(data):
     return mod
 
 
+@pytest.fixture(scope="session")
+def pymc_model_2(data):
+    coords = {
+        ALL_STATE_DIM: ["level", "trend"],
+        OBS_STATE_DIM: ["level"],
+        TIME_DIM: np.arange(101, dtype="int"),
+    }
+
+    with pm.Model(coords=coords) as mod:
+        P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
+        P0 = pm.Deterministic("P0", pt.diag(P0_diag))
+        initial_trend = pm.Normal("initial_trend", shape=(2,))
+        trend_sigmas = pm.Exponential("trend_sigmas", 1, shape=(2,))
+        sigma_me = pm.Exponential("sigma_error", 1)
+
+    return mod
+
+
+@pytest.fixture(scope="session")
+def ss_mod_me():
+    ss_mod = structural.LevelTrendComponent(order=2)
+    ss_mod += structural.MeasurementError(name="error")
+    ss_mod = ss_mod.build("data", verbose=False)
+
+    return ss_mod
+
+
+@pytest.fixture(scope="session")
+def ss_mod_no_me():
+    ss_mod = structural.LevelTrendComponent(order=2)
+    ss_mod = ss_mod.build("data", verbose=False)
+
+    return ss_mod
+
+
 @pytest.mark.parametrize("kfilter", filter_names, ids=filter_names)
 def test_loglike_vectors_agree(kfilter, pymc_model):
     ss_mod = structural.LevelTrendComponent(order=2).build(
@@ -77,42 +113,30 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
     assert_allclose(test_ll, np.array(scipy_lls).ravel(), atol=ATOL, rtol=RTOL)
 
 
-def test_lgss_distribution_from_steps():
-    ss_mod = structural.LevelTrendComponent(order=2).build("data", verbose=False)
-    coords = ss_mod.coords
-    coords.update({"time": np.arange(100, dtype="int")})
-    with pm.Model(coords=coords):
-        P0_diag = pm.Exponential("P0_diag", 1, dims=["state"])
-        P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=["state", "state_aux"])
-        initial_trend = pm.Normal("initial_trend", dims=["trend_states"])
-        trend_sigmas = pm.Exponential("trend_sigmas", 1, dims=["trend_shocks"])
-
-        theta = ss_mod._gather_required_random_variables()
-        ss_mod.update(theta)
-        matrices = ss_mod.unpack_statespace()
+@pytest.mark.parametrize("output_name", ["states_latent", "states_observed"])
+def test_lgss_distribution_from_steps(output_name, ss_mod_me, pymc_model_2):
+    with pymc_model_2:
+        theta = ss_mod_me._gather_required_random_variables()
+        ss_mod_me.update(theta)
+        matrices = ss_mod_me.unpack_statespace()
 
         # pylint: disable=unpacking-non-sequence
         latent_states, obs_states = LinearGaussianStateSpace("states", *matrices, steps=100)
         # pylint: enable=unpacking-non-sequence
+
         idata = pm.sample_prior_predictive(samples=10)
+        delete_rvs_from_model(["states_latent", "states_observed", "states_combined"])
 
-        assert idata.prior.coords["states_latent_dim_0"].shape == (101,)
+    assert idata.prior.coords["states_latent_dim_0"].shape == (101,)
+    assert not np.any(np.isnan(idata.prior[output_name].values))
 
 
-def test_lgss_distribution_with_dims():
-    ss_mod = structural.LevelTrendComponent(order=2).build("data", verbose=False)
-    coords = ss_mod.coords
-    coords.update({"time": np.arange(101, dtype="int")})
-
-    with pm.Model(coords=coords):
-        P0_diag = pm.Exponential("P0_diag", 1, dims=["state"])
-        P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=["state", "state_aux"])
-        initial_trend = pm.Normal("initial_trend", dims=["trend_states"])
-        trend_sigmas = pm.Exponential("trend_sigmas", 1, dims=["trend_shocks"])
-
-        theta = ss_mod._gather_required_random_variables()
-        ss_mod.update(theta)
-        matrices = ss_mod.unpack_statespace()
+@pytest.mark.parametrize("output_name", ["states_latent", "states_observed"])
+def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
+    with pymc_model_2:
+        theta = ss_mod_me._gather_required_random_variables()
+        ss_mod_me.update(theta)
+        matrices = ss_mod_me.unpack_statespace()
 
         # pylint: disable=unpacking-non-sequence
         latent_states, obs_states = LinearGaussianStateSpace(
@@ -120,11 +144,32 @@ def test_lgss_distribution_with_dims():
         )
         # pylint: enable=unpacking-non-sequence
         idata = pm.sample_prior_predictive(samples=10)
+        delete_rvs_from_model(["states_latent", "states_observed", "states_combined"])
 
-        assert idata.prior.coords["time"].shape == (101,)
-        assert all(
-            [dim in idata.prior.states_latent.coords.keys() for dim in [TIME_DIM, ALL_STATE_DIM]]
+    assert idata.prior.coords["time"].shape == (101,)
+    assert all(
+        [dim in idata.prior.states_latent.coords.keys() for dim in [TIME_DIM, ALL_STATE_DIM]]
+    )
+    assert all(
+        [dim in idata.prior.states_observed.coords.keys() for dim in [TIME_DIM, OBS_STATE_DIM]]
+    )
+    assert not np.any(np.isnan(idata.prior[output_name].values))
+
+
+@pytest.mark.parametrize("output_name", ["states_latent", "states_observed"])
+def test_lgss_distribution_no_measurement_error(output_name, pymc_model_2, ss_mod_no_me):
+    with pymc_model_2:
+        theta = ss_mod_no_me._gather_required_random_variables()
+        ss_mod_no_me.update(theta)
+        matrices = ss_mod_no_me.unpack_statespace()
+
+        # pylint: disable=unpacking-non-sequence
+        latent_states, obs_states = LinearGaussianStateSpace(
+            "states", *matrices, steps=100, measurement_error=False
         )
-        assert all(
-            [dim in idata.prior.states_observed.coords.keys() for dim in [TIME_DIM, OBS_STATE_DIM]]
-        )
+        # pylint: enable=unpacking-non-sequence
+
+        idata = pm.sample_prior_predictive(samples=10)
+        delete_rvs_from_model(["states_latent", "states_observed", "states_combined"])
+
+    assert not np.any(np.isnan(idata.prior[output_name].values))

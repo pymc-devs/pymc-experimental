@@ -1,4 +1,5 @@
 import pytensor.tensor as pt
+from pytensor.tensor.nlinalg import matrix_dot
 
 from pymc_experimental.statespace.core.representation import (
     NEVER_TIME_VARYING,
@@ -50,14 +51,17 @@ def split_vars_into_seq_and_nonseq(params, param_names):
     return sequences, non_sequences, seq_names, non_seq_names
 
 
-def stabilize(cov, jitter=None):
-    if jitter is None:
-        jitter = JITTER_DEFAULT
-
+def stabilize(cov, jitter=JITTER_DEFAULT, enforce_symmetry=False):
     # Ensure diagonal is non-zero
     cov += pt.identity_like(cov) * jitter
 
     # Ensure matrix is symmetric
-    cov = 0.5 * (cov + cov.T)
+    if enforce_symmetry:
+        cov = 0.5 * (cov + cov.T)
 
     return cov
+
+
+def quad_form_sym(A, B):
+    out = matrix_dot(A, B, A.T)
+    return 0.5 * (out + out.T)
