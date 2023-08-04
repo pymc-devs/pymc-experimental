@@ -16,10 +16,14 @@ from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # py
 from pymc_experimental.tests.statespace.utilities.test_helpers import fast_eval
 
 floatX = pytensor.config.floatX
+ps = [0, 1, 2, 3]
+qs = [0, 1, 2, 3]
+orders = list(product(ps, qs))[1:]
+ids = [f"p={x[0]}, q={x[1]}" for x in orders]
 
 
-@pytest.fixture
-def data(scope="session"):
+@pytest.fixture(scope="session")
+def data():
     df = pd.read_csv(
         "pymc_experimental/tests/statespace/test_data/statsmodels_macrodata_processed.csv",
         index_col=0,
@@ -29,10 +33,35 @@ def data(scope="session"):
     return df
 
 
-ps = [0, 1, 2, 3]
-qs = [0, 1, 2, 3]
-orders = list(product(ps, qs))[1:]
-ids = [f"p={x[0]}, q={x[1]}" for x in orders]
+@pytest.fixture(scope="session")
+def varma_mod(data):
+    return BayesianVARMAX(
+        endog_names=data.columns, order=(2, 0), stationary_initialization=False, verbose=False
+    )
+
+
+@pytest.fixture(scope="session")
+def pymc_mod(varma_mod, data):
+    with pm.Model(coords=varma_mod.coords) as pymc_mod:
+        x0 = pm.Normal("x0", dims=["state"])
+        P0_sigma = pm.Exponential("P0_diag", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(varma_mod.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
+        state_chol, *_ = pm.LKJCholeskyCov(
+            "state_chol", n=varma_mod.k_posdef, eta=1, sd_dist=pm.Exponential.dist(1)
+        )
+
+        ar_params = pm.Normal(
+            "ar_params", mu=0, sigma=1, dims=["observed_state", "ar_lag", "observed_state_aux"]
+        )
+        state_cov = pm.Deterministic(
+            "state_cov", state_chol @ state_chol.T, dims=["shock", "shock_aux"]
+        )
+        theta = varma_mod._gather_required_random_variables()
+        varma_mod.build_statespace_graph(data=data)
+
+    return pymc_mod
 
 
 @pytest.mark.parametrize("order", orders, ids=ids)
@@ -105,3 +134,11 @@ def test_VARMAX_update_matches_statsmodels(data, order, matrix, rng):
         mod.build_statespace_graph(data=data)
 
     assert_allclose(fast_eval(mod.ssm[matrix]), sm_var.ssm[matrix])
+
+
+@pytest.mark.parametrize("filter_output", ["filtered", "predicted", "smoothed"])
+def test_all_prior_covariances_are_PSD(filter_output, pymc_mod, rng):
+    rv = pymc_mod[f"{filter_output}_covariance"]
+    cov_mats = pm.draw(rv, 100, random_seed=rng)
+    w, v = np.linalg.eig(cov_mats)
+    assert not np.any(w <= 0)

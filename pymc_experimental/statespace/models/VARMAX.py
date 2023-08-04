@@ -145,7 +145,7 @@ class BayesianVARMAX(PyMCStateSpace):
         k_endog: int = None,
         stationary_initialization: bool = False,
         filter_type: str = "standard",
-        measurement_error: bool = True,
+        measurement_error: bool = False,
         verbose=True,
     ):
 
@@ -342,7 +342,6 @@ class BayesianVARMAX(PyMCStateSpace):
         mode: optional, str
             Compile mode used by pytensor
         """
-
         cursor = 0
 
         if not self.stationary_initialization:
