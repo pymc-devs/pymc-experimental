@@ -12,6 +12,7 @@ from pytensor.tensor.nlinalg import matrix_dot
 from pytensor.tensor.slinalg import SolveTriangular
 
 from pymc_experimental.statespace.filters.utilities import (
+    quad_form_sym,
     split_vars_into_seq_and_nonseq,
     stabilize,
 )
@@ -379,8 +380,7 @@ class BaseFilter(ABC):
                2nd ed, Oxford University Press, 2012.
         """
         a_hat = T.dot(a) + c
-        P_hat = matrix_dot(T, P, T.T) + matrix_dot(R, Q, R.T)
-        P_hat = stabilize(P_hat)
+        P_hat = quad_form_sym(T, P) + quad_form_sym(R, Q)
 
         return a_hat, P_hat
 
@@ -583,7 +583,8 @@ class StandardFilter(BaseFilter):
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+        # P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
+        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         inner_term = matrix_dot(v.T, F_inv, v)
         F_logdet = pt.log(pt.linalg.det(F))
@@ -624,7 +625,8 @@ class CholeskyFilter(BaseFilter):
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+        # P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         inner_term = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, v))
         n = y.shape[0]
@@ -670,7 +672,8 @@ class SingleTimeseriesFilter(BaseFilter):
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + (K * v).ravel()
-        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+        # P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
 
@@ -740,7 +743,8 @@ class SteadyStateFilter(BaseFilter):
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+        # P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         inner_term = matrix_dot(v.T, F_inv, v)
         ll = pt.switch(
@@ -795,18 +799,20 @@ class UnivariateFilter(BaseFilter):
         y_hat = Z_row.dot(a) + d_row
         v = y - y_hat
 
-        PZT = P.dot(Z_row.T).squeeze()
-        F = Z_row.dot(PZT) + sigma_H + JITTER_DEFAULT
+        PZT = P.dot(Z_row.T)
+        F = Z_row.dot(PZT) + sigma_H
 
         F_zero_flag = pt.or_(pt.eq(F, 0), nan_flag)
 
         # If F is zero (implies y is NAN or another degenerate case), then we want:
         # K = 0, a = a, P = P, ll = 0
-        K = PZT / F * (1 - F_zero_flag)
+        K = PZT / (F + JITTER_DEFAULT) * (1 - F_zero_flag)
 
-        a_filtered = a + K * v * (1 - F_zero_flag)
-        P_filtered = stabilize(P - pt.outer(K, K) * F * (1 - F_zero_flag))
-        ll_inner = (pt.log(F) + v**2 / F) * (1 - F_zero_flag)
+        a_filtered = a + K * v
+        P_filtered = P - pt.outer(K, K) * F
+        P_filtered = 0.5 * (P_filtered + P_filtered.T)
+
+        ll_inner = pt.switch(F_zero_flag, 0.0, pt.log(F) + v**2 / F)
 
         return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll_inner
 

@@ -381,13 +381,10 @@ class BayesianARIMA(PyMCStateSpace):
             Q = self.ssm["state_cov"]
             c = self.ssm["state_intercept"]
 
-            x0 = pt.linalg.solve(pt.eye(T.shape[0]) - T, c, assume_a="gen", check_finite=False)
+            x0 = pt.linalg.solve(pt.identity_like(T) - T, c, assume_a="gen", check_finite=True)
 
-            P0 = solve_discrete_lyapunov(
-                T,
-                pt.linalg.matrix_dot(R, Q, R.T),
-                method="direct" if (self.k_states < 5) or (mode == "JAX") else "bilinear",
-            )
+            method = "direct" if (self.k_states < 5) or (mode == "JAX") else "bilinear"
+            P0 = solve_discrete_lyapunov(T, pt.linalg.matrix_dot(R, Q, R.T), method=method)
 
             self.ssm["initial_state", :] = x0
             self.ssm["initial_state_cov", :, :] = P0

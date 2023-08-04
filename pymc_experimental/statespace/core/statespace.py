@@ -787,7 +787,7 @@ class PyMCStateSpace:
         return matrices
 
     def _sample_conditional(
-        self, idata: InferenceData, group: str, random_seed: Optional[RandomState] = None
+        self, idata: InferenceData, group: str, random_seed: Optional[RandomState] = None, **kwargs
     ):
         """
         Common functionality shared between `sample_conditional_prior` and `sample_conditional_posterior`. See those
@@ -804,6 +804,9 @@ class PyMCStateSpace:
 
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
+
+        kwargs:
+            Additional keyword arguments are passed to pymc.sample_posterior_predictive
 
         Returns
         -------
@@ -836,7 +839,9 @@ class PyMCStateSpace:
                 var_names=[f"filtered_{group}", f"predicted_{group}", f"smoothed_{group}"],
                 compile_kwargs={"mode": get_mode(self._fit_mode)},
                 random_seed=random_seed,
+                **kwargs,
             )
+
         return idata_conditional.posterior_predictive
 
     def _sample_unconditional(
@@ -846,6 +851,7 @@ class PyMCStateSpace:
         steps: Optional[int] = None,
         use_data_time_dim: bool = False,
         random_seed: Optional[RandomState] = None,
+        **kwargs,
     ):
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the
@@ -873,6 +879,9 @@ class PyMCStateSpace:
 
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
+
+        kwargs:
+            Additional keyword arguments are passed to pymc.sample_posterior_predictive
 
         Returns
         -------
@@ -922,12 +931,13 @@ class PyMCStateSpace:
                 var_names=[f"{group}_latent", f"{group}_observed"],
                 compile_kwargs={"mode": self._fit_mode},
                 random_seed=random_seed,
+                **kwargs,
             )
 
         return idata_unconditional.posterior_predictive
 
     def sample_conditional_prior(
-        self, idata: InferenceData, random_seed: Optional[RandomState] = None
+        self, idata: InferenceData, random_seed: Optional[RandomState] = None, **kwargs
     ) -> InferenceData:
         """
         Sample from the conditional prior; that is, given parameter draws from the prior distribution,
@@ -943,6 +953,9 @@ class PyMCStateSpace:
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
 
+        kwargs:
+            Additional keyword arguments are passed to pymc.sample_posterior_predictive
+
         Returns
         -------
         InferenceData
@@ -951,10 +964,10 @@ class PyMCStateSpace:
              "predicted_prior", and "smoothed_prior".
         """
 
-        return self._sample_conditional(idata, "prior", random_seed)
+        return self._sample_conditional(idata, "prior", random_seed, **kwargs)
 
     def sample_conditional_posterior(
-        self, idata: InferenceData, random_seed: Optional[RandomState] = None
+        self, idata: InferenceData, random_seed: Optional[RandomState] = None, **kwargs
     ):
         """
         Sample from the conditional posterior; that is, given parameter draws from the posterior distribution,
@@ -969,6 +982,9 @@ class PyMCStateSpace:
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
 
+        kwargs:
+            Additional keyword arguments are passed to pymc.sample_posterior_predictive
+
         Returns
         -------
         InferenceData
@@ -977,7 +993,7 @@ class PyMCStateSpace:
              "predicted_posterior", and "smoothed_posterior".
         """
 
-        return self._sample_conditional(idata, "posterior", random_seed)
+        return self._sample_conditional(idata, "posterior", random_seed, **kwargs)
 
     def sample_unconditional_prior(
         self,
@@ -985,6 +1001,7 @@ class PyMCStateSpace:
         steps: Optional[int] = None,
         use_data_time_dim: bool = False,
         random_seed: Optional[RandomState] = None,
+        **kwargs,
     ) -> InferenceData:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the prior
@@ -1012,6 +1029,9 @@ class PyMCStateSpace:
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
 
+        kwargs:
+            Additional keyword arguments are passed to pymc.sample_posterior_predictive
+
         Returns
         -------
         InferenceData
@@ -1024,10 +1044,17 @@ class PyMCStateSpace:
               the observation equation: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
         """
 
-        return self._sample_unconditional(idata, "prior", steps, use_data_time_dim, random_seed)
+        return self._sample_unconditional(
+            idata, "prior", steps, use_data_time_dim, random_seed, **kwargs
+        )
 
     def sample_unconditional_posterior(
-        self, idata, steps=None, use_data_time_dim=False, random_seed: Optional[RandomState] = None
+        self,
+        idata,
+        steps=None,
+        use_data_time_dim=False,
+        random_seed: Optional[RandomState] = None,
+        **kwargs,
     ) -> InferenceData:
         """
         Draw unconditional sample trajectories according to state space dynamics, using random samples from the
@@ -1068,7 +1095,9 @@ class PyMCStateSpace:
               the latent state trajectories: `y[t] = Z @ x[t] + nu[t]`, where `nu ~ N(0, H)`.
         """
 
-        return self._sample_unconditional(idata, "posterior", steps, use_data_time_dim, random_seed)
+        return self._sample_unconditional(
+            idata, "posterior", steps, use_data_time_dim, random_seed, **kwargs
+        )
 
     def forecast(
         self,
@@ -1078,6 +1107,7 @@ class PyMCStateSpace:
         end: Union[int, pd.Timestamp] = None,
         filter_output="smoothed",
         random_seed: Optional[RandomState] = None,
+        **kwargs,
     ) -> InferenceData:
         """
         Generate forecasts of state space model trajectories into the future.
@@ -1114,6 +1144,9 @@ class PyMCStateSpace:
 
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
+
+        kwargs:
+            Additional keyword arguments are passed to pymc.sample_posterior_predictive
 
         Returns
         -------
@@ -1213,6 +1246,8 @@ class PyMCStateSpace:
                 idata,
                 var_names=["forecast_latent", "forecast_observed"],
                 compile_kwargs={"mode": self._fit_mode},
+                random_seed=random_seed,
+                **kwargs,
             )
 
             return idata_forecast.posterior_predictive
@@ -1226,6 +1261,7 @@ class PyMCStateSpace:
         shock_trajectory: Optional[np.ndarray] = None,
         orthogonalize_shocks: bool = False,
         random_seed: Optional[RandomState] = None,
+        **kwargs,
     ):
         """
         Generate impulse response functions (IRF) from state space model dynamics.
@@ -1263,6 +1299,9 @@ class PyMCStateSpace:
 
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
+
+        kwargs:
+            Additional keyword arguments are passed to pymc.sample_posterior_predictive
 
         Returns
         -------
@@ -1347,9 +1386,28 @@ class PyMCStateSpace:
                 strict=True,
                 mode=self._fit_mode,
             )
+
             irf = pm.Deterministic("irf", irf, dims=[TIME_DIM, ALL_STATE_DIM])
+
+            compile_kwargs = kwargs.get("compile_kwargs", None)
+            if compile_kwargs is None:
+                compile_kwargs = {"mode": self._fit_mode}
+            else:
+                mode = compile_kwargs.get("mode")
+                if mode is not None and mode != self._fit_mode:
+                    raise ValueError(
+                        f"User provided compile mode ({mode}) does not match the compile mode used to "
+                        f"construct the model ({self._fit_mode})."
+                    )
+
+                compile_kwargs.update({"mode": self._fit_mode})
+
             irf_idata = pm.sample_posterior_predictive(
-                idata, var_names=["irf"], compile_kwargs={"mode": self._fit_mode}
+                idata,
+                var_names=["irf"],
+                compile_kwargs=compile_kwargs,
+                random_seed=random_seed,
+                **kwargs,
             )
 
             return irf_idata.posterior_predictive
