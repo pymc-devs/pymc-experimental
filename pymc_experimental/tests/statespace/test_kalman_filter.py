@@ -269,5 +269,5 @@ def test_all_covariance_matrices_are_PSD(filter_func, output_idx, name, n_missin
 
     cov_stack = outputs[output_idx]
     w, v = np.linalg.eig(cov_stack)
-    assert np.all(w > 0)
+    assert np.all(w >= 0)
     assert_allclose(cov_stack, np.swapaxes(cov_stack, -2, -1))

@@ -692,7 +692,22 @@ class SteadyStateFilter(BaseFilter):
     only have differences from the standard approach in the early steps (T < 10?). A process of "learning" is lost.
     """
 
-    def build_graph(self, data, a0, P0, c, d, T, Z, R, H, Q, mode=None, missing_fill_value=None):
+    def build_graph(
+        self,
+        data,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        mode=None,
+        return_updates=False,
+        missing_fill_value=None,
+    ) -> List[TensorVariable]:
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
