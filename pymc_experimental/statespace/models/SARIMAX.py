@@ -150,7 +150,6 @@ class BayesianARIMA(PyMCStateSpace):
         # Model order
         self.p, self.d, self.q = order
         self.stationary_initialization = stationary_initialization
-        self.measurement_error = measurement_error
 
         if state_structure not in STATE_STRUCTURES:
             raise ValueError(
@@ -173,7 +172,14 @@ class BayesianARIMA(PyMCStateSpace):
         k_posdef = 1
         k_endog = 1
 
-        super().__init__(k_endog, k_states, k_posdef, filter_type, verbose=verbose)
+        super().__init__(
+            k_endog,
+            k_states,
+            k_posdef,
+            filter_type,
+            verbose=verbose,
+            measurement_error=measurement_error,
+        )
 
         # Initialize the matrices
         self.ssm["design"] = np.r_[[1.0] * (k_diffs + 1), np.zeros(k_states - k_diffs - 1)][None]

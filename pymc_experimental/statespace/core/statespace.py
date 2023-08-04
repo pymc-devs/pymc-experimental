@@ -92,6 +92,11 @@ class PyMCStateSpace:
     verbose : bool, optional
         If True, displays information about the initialized model. Defaults to True.
 
+    measurement_error : bool, optional
+        If true, the model contains measurement error. Needed by post-estimation sampling methods to decide how to
+        compute the observation errors. If False, these errors are deterministically zero; if True, they are sampled
+        from a multivariate normal.
+
     Notes
     -----
     Based on the statsmodels statespace implementation https://github.com/statsmodels/statsmodels/blob/main/statsmodels/tsa/statespace/representation.py,
@@ -212,6 +217,7 @@ class PyMCStateSpace:
         k_posdef: int,
         filter_type: str = "standard",
         verbose: bool = True,
+        measurement_error: bool = True,
     ):
         self._fit_mode = None
         self._fit_coords = None
@@ -220,7 +226,7 @@ class PyMCStateSpace:
         self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
-        self.measurement_error = True
+        self.measurement_error = measurement_error
 
         # All models contain a state space representation and a Kalman filter
         self.ssm = PytensorRepresentation(k_endog, k_states, k_posdef)

@@ -162,13 +162,19 @@ class BayesianVARMAX(PyMCStateSpace):
         self.endog_names = list(endog_names)
         self.p, self.q = order
         self.stationary_initialization = stationary_initialization
-        self.measurement_error = measurement_error
 
         k_order = max(self.p, 1) + self.q
         k_states = int(k_endog * k_order)
         k_posdef = k_endog
 
-        super().__init__(k_endog, k_states, k_posdef, filter_type, verbose=verbose)
+        super().__init__(
+            k_endog,
+            k_states,
+            k_posdef,
+            filter_type,
+            verbose=verbose,
+            measurement_error=measurement_error,
+        )
 
         # Save counts of the number of parameters in each category
         self.param_counts = {

@@ -113,7 +113,14 @@ class StructuralTimeSeries(PyMCStateSpace):
         self._param_info = param_info
         self.measurement_error = measurement_error
 
-        super().__init__(1, k_states, k_posdef, filter_type=filter_type, verbose=verbose)
+        super().__init__(
+            1,
+            k_states,
+            k_posdef,
+            filter_type=filter_type,
+            verbose=verbose,
+            measurement_error=measurement_error,
+        )
 
         # Initialize the matrices
         self.ssm["initial_state", :] = x0
