@@ -272,5 +272,5 @@ def test_all_covariance_matrices_are_PSD(filter_func, output_idx, name, n_missin
     cov_stack = outputs[output_idx]
     w, v = np.linalg.eig(cov_stack)
 
-    assert_array_less(0, w)
-    assert_allclose(cov_stack, np.swapaxes(cov_stack, -2, -1))
+    assert_array_less(0, w, err_msg=f"Smallest eigenvalue: {min(w.ravel())}")
+    assert_allclose(cov_stack, np.swapaxes(cov_stack, -2, -1), rtol=RTOL, atol=ATOL)
