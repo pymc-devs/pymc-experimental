@@ -217,7 +217,7 @@ class PyMCStateSpace:
         k_posdef: int,
         filter_type: str = "standard",
         verbose: bool = True,
-        measurement_error: bool = True,
+        measurement_error: bool = False,
     ):
         self._fit_mode = None
         self._fit_coords = None
