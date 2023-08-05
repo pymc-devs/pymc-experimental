@@ -828,6 +828,7 @@ class UnivariateFilter(BaseFilter):
         a_filtered = a + K * v
         P_filtered = P - pt.outer(K, K) * F
         P_filtered = 0.5 * (P_filtered + P_filtered.T)
+        P_filtered = stabilize(P_filtered)
 
         ll_inner = pt.switch(F_zero_flag, 0.0, pt.log(F) + v**2 / F)
 
