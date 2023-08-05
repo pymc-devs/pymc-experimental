@@ -1,3 +1,5 @@
+import pytensor
+
 ALL_STATE_DIM = "state"
 ALL_STATE_AUX_DIM = "state_aux"
 OBS_STATE_DIM = "observed_state"
@@ -9,7 +11,7 @@ AR_PARAM_DIM = "ar_lag"
 MA_PARAM_DIM = "ma_lag"
 
 MISSING_FILL = -9999.0
-JITTER_DEFAULT = 1e-8
+JITTER_DEFAULT = 1e-8 if pytensor.config.floatX.endswith("64") else 1e-6
 
 FILTER_OUTPUT_TYPES = ["filtered", "predicted", "smoothed"]
 
