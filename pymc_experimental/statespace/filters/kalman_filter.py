@@ -862,7 +862,6 @@ class UnivariateFilter(BaseFilter):
 
         a_filtered = a + K * v
         P_filtered = P - pt.outer(K, K) * F
-        P_filtered = stabilize(0.5 * (P_filtered + P_filtered.T))
 
         ll_inner = pt.switch(F_zero_flag, 0.0, pt.log(F) + v**2 / F)
 
@@ -892,7 +891,7 @@ class UnivariateFilter(BaseFilter):
             obs_cov[-1],
         )
 
-        P_filtered = stabilize(P_filtered, self.cov_jitter)
+        P_filtered = stabilize(0.5 * (P_filtered + P_filtered.T), self.cov_jitter)
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         ll = -0.5 * ((pt.neq(ll_inner, 0).sum()) * MVN_CONST + ll_inner.sum())
