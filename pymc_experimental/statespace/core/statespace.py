@@ -583,6 +583,7 @@ class PyMCStateSpace:
         register_data: bool = True,
         mode: Optional[str] = None,
         missing_fill_value: Optional[float] = None,
+        cov_jitter: Optional[float] = None,
         return_updates: bool = False,
         include_smoother: bool = True,
     ) -> None:
@@ -614,6 +615,19 @@ class PyMCStateSpace:
             In general this never needs to be set. But if by a wild coincidence your data includes the value -9999.0,
             you will need to change the missing_fill_value to something else, to avoid incorrectly mark in
             data as missing.
+
+        cov_jitter: float, default 1e-8 or 1e-6 if pytensor.config.floatX is float32
+            The Kalman filter is known to be numerically unstable, especially at half precision. This value is added to
+            the diagonal of every covariance matrix -- predicted, filtered, and smoothed -- at every step, to ensure
+            all matrices are strictly positive semi-definite.
+
+            Obviously, if this can be zero, that's best. In general:
+                - Having measurement error makes Kalman Filters more robust. A large source of numerical errors come
+                  from the Filtered and Smoothed covariance matrices having a zero in the (0, 0) position, which always
+                  occurs when there is no measurement error. You can lower this value in the presence of measurement
+                  error.
+
+                - The Univariate Filter is more robust than other filters, and can tolerate a lower jitter value
 
         return_updates : bool, optional, default=False
             If True, the method will return the update dictionary used by pytensor.Scan to update random variables.

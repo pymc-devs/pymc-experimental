@@ -31,7 +31,7 @@ assert_time_varying_dim_correct = Assert(
 
 
 class BaseFilter(ABC):
-    def __init__(self, mode=None, missing_fill_value=None):
+    def __init__(self, mode=None):
         """
         Kalman Filter.
 
@@ -76,6 +76,7 @@ class BaseFilter(ABC):
         self.eye_posdef: Optional[TensorVariable] = None
         self.eye_endog: Optional[TensorVariable] = None
         self.missing_fill_value: Optional[float] = None
+        self.cov_jitter = None
 
     def initialize_eyes(self, R: TensorVariable, Z: TensorVariable) -> None:
         """
@@ -198,9 +199,37 @@ class BaseFilter(ABC):
         mode=None,
         return_updates=False,
         missing_fill_value=None,
+        cov_jitter=None,
     ) -> List[TensorVariable]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
+
+        Parameters
+        ----------
+        data : TensorVariable
+            Data to be filtered
+
+        mode : optional, str
+            Pytensor compile mode, passed to pytensor.scan
+
+        return_updates: bool, default False
+            Whether to return updates associated with the pytensor scan. Should only be requried to debug pruposes.
+
+        missing_fill_value: float, default -9999
+            Fill value used to mark missing values. Used to avoid PyMC's automatic interpolation, which conflict's with
+            the Kalman filter's hidden state inference. Change if your data happens to have legitimate values of -9999
+
+        cov_jitter: float, default 1e-8 or 1e-6 if pytensor.config.floatX is float32
+            The Kalman filter is known to be numerically unstable, especially at half precision. This value is added to
+            the diagonal of every covariance matrix -- predicted, filtered, and smoothed -- at every step, to ensure
+            all matrices are strictly positive semi-definite.
+
+            Obviously, if this can be zero, that's best. In general:
+                - Having measurement error makes Kalman Filters more robust. A large source of numerical errors come
+                  from the Filtered and Smoothed matrices having a zero in the (0, 0) position, which always occurs
+                  when there is no measurement error.
+
+                - The Univariate Filter is more robust than other filters, and can tolerate a lower jitter value
 
         References
         ----------
@@ -208,11 +237,15 @@ class BaseFilter(ABC):
            Statistical Algorithms for Models in State Space Using SsfPack 2.2.
            Econometrics Journal 2 (1): 107-60. doi:10.1111/1368-423X.00023.
         """
-        self.mode = mode
         if missing_fill_value is None:
             missing_fill_value = MISSING_FILL
+        if cov_jitter is None:
+            cov_jitter = JITTER_DEFAULT
+
+        self.mode = mode
         self.missing_fill_value = missing_fill_value
         self.initialize_eyes(R, Z)
+        self.cov_jitter = cov_jitter
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
         sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
@@ -510,7 +543,7 @@ class BaseFilter(ABC):
             y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
         )
 
-        P_filtered = stabilize(P_filtered)
+        P_filtered = stabilize(P_filtered, self.cov_jitter)
 
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
         outputs = (a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll)
@@ -576,7 +609,7 @@ class StandardFilter(BaseFilter):
         v = y - y_hat
 
         PZT = P.dot(Z.T)
-        F = Z.dot(PZT) + stabilize(H)
+        F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
 
         F_inv = pt.linalg.solve(F, self.eye_endog, assume_a="pos", check_finite=False)
 
@@ -584,7 +617,6 @@ class StandardFilter(BaseFilter):
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        # P_filtered = matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T)
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         inner_term = matrix_dot(v.T, F_inv, v)
@@ -618,7 +650,7 @@ class CholeskyFilter(BaseFilter):
         PZT = P.dot(Z.T)
 
         # If everything is missing, F will be [[0]] and F_chol will raise an error, so add identity to avoid the error
-        F = Z.dot(PZT) + stabilize(H)
+        F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
         F_chol = pt.linalg.cholesky(F)
 
         # If everything is missing, K = 0, IKZ = I
@@ -626,7 +658,6 @@ class CholeskyFilter(BaseFilter):
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        # P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         inner_term = solve_lower_triangular(F_chol.T, solve_lower_triangular(F_chol, v))
@@ -667,13 +698,13 @@ class SingleTimeseriesFilter(BaseFilter):
         PZT = P.dot(Z.T)
 
         # F is scalar, K is a column vector
-        F = stabilize(Z.dot(PZT) + H).ravel()
+        F = stabilize(Z.dot(PZT) + H, self.cov_jitter).ravel()
 
         K = PZT / F
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + (K * v).ravel()
-        # P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
+
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
@@ -708,15 +739,19 @@ class SteadyStateFilter(BaseFilter):
         mode=None,
         return_updates=False,
         missing_fill_value=None,
+        cov_jitter=None,
     ) -> List[TensorVariable]:
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """
-        self.mode = mode
         if missing_fill_value is None:
             missing_fill_value = MISSING_FILL
+        if cov_jitter is None:
+            cov_jitter = JITTER_DEFAULT
 
+        self.mode = mode
         self.missing_fill_value = missing_fill_value
+        self.cov_jitter = cov_jitter
         self.initialize_eyes(R, Z)
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
@@ -753,13 +788,12 @@ class SteadyStateFilter(BaseFilter):
 
         PZT = P.dot(Z.T)
 
-        F = Z.dot(PZT) + stabilize(H)
+        F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
         K = PZT.dot(F_inv)
 
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
-        # P_filtered = stabilize(matrix_dot(I_KZ, P, I_KZ.T) + matrix_dot(K, H, K.T))
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
         inner_term = matrix_dot(v.T, F_inv, v)
@@ -789,7 +823,7 @@ class SteadyStateFilter(BaseFilter):
             all_nan_flag=all_nan_flag,
         )
 
-        P_filtered = stabilize(P_filtered)
+        P_filtered = stabilize(P_filtered, self.cov_jitter)
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         return a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll
@@ -811,24 +845,24 @@ class UnivariateFilter(BaseFilter):
 
     """
 
-    @staticmethod
-    def _univariate_inner_filter_step(y, Z_row, d_row, sigma_H, nan_flag, a, P):
+    def _univariate_inner_filter_step(self, y, Z_row, d_row, sigma_H, nan_flag, a, P):
         y_hat = Z_row.dot(a) + d_row
         v = y - y_hat
 
         PZT = P.dot(Z_row.T)
         F = Z_row.dot(PZT) + sigma_H
 
+        # Set the zero flag for F first, then jitter it to avoid a divide-by-zero NaN later
         F_zero_flag = pt.or_(pt.eq(F, 0), nan_flag)
+        F = F + self.cov_jitter
 
         # If F is zero (implies y is NAN or another degenerate case), then we want:
         # K = 0, a = a, P = P, ll = 0
-        K = PZT / (F + JITTER_DEFAULT) * (1 - F_zero_flag)
+        K = PZT / F * (1 - F_zero_flag)
 
         a_filtered = a + K * v
         P_filtered = P - pt.outer(K, K) * F
-        P_filtered = 0.5 * (P_filtered + P_filtered.T)
-        P_filtered = stabilize(P_filtered)
+        P_filtered = stabilize(0.5 * (P_filtered + P_filtered.T))
 
         ll_inner = pt.switch(F_zero_flag, 0.0, pt.log(F) + v**2 / F)
 
@@ -858,7 +892,7 @@ class UnivariateFilter(BaseFilter):
             obs_cov[-1],
         )
 
-        P_filtered = stabilize(P_filtered)
+        P_filtered = stabilize(P_filtered, self.cov_jitter)
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         ll = -0.5 * ((pt.neq(ll_inner, 0).sum()) * MVN_CONST + ll_inner.sum())

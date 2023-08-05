@@ -11,7 +11,7 @@ AR_PARAM_DIM = "ar_lag"
 MA_PARAM_DIM = "ma_lag"
 
 MISSING_FILL = -9999.0
-JITTER_DEFAULT = 1e-8 if pytensor.config.floatX.endswith("64") else 1e-5
+JITTER_DEFAULT = 1e-8 if pytensor.config.floatX.endswith("64") else 1e-6
 
 FILTER_OUTPUT_TYPES = ["filtered", "predicted", "smoothed"]
 
