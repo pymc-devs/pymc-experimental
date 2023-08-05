@@ -510,9 +510,10 @@ class BaseFilter(ABC):
             y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
         )
 
+        P_filtered = stabilize(P_filtered)
+
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
         outputs = (a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll)
-        # updates = collect_default_updates(inputs=args, outputs=outputs)
 
         return outputs
 
@@ -788,6 +789,7 @@ class SteadyStateFilter(BaseFilter):
             all_nan_flag=all_nan_flag,
         )
 
+        P_filtered = stabilize(P_filtered)
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         return a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll
@@ -855,6 +857,7 @@ class UnivariateFilter(BaseFilter):
             obs_cov[-1],
         )
 
+        P_filtered = stabilize(P_filtered)
         a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
 
         ll = -0.5 * ((pt.neq(ll_inner, 0).sum()) * MVN_CONST + ll_inner.sum())

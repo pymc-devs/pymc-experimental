@@ -6,7 +6,9 @@ from pytensor.compile import get_mode
 from pytensor.tensor.nlinalg import matrix_dot
 
 from pymc_experimental.statespace.filters.utilities import (
+    quad_form_sym,
     split_vars_into_seq_and_nonseq,
+    stabilize,
 )
 
 
@@ -101,13 +103,15 @@ class KalmanSmoother:
         smoother_gain = matrix_dot(pt.linalg.pinv(P_hat), T, P).T
         a_smooth_next = a + smoother_gain @ (a_smooth - a_hat)
 
-        P_smooth_next = P + matrix_dot(smoother_gain, P_smooth - P_hat, smoother_gain.T)
+        P_smooth_next = P + quad_form_sym(smoother_gain, P_smooth - P_hat)
+        P_smooth_next = stabilize(P_smooth_next)
 
         return a_smooth_next, P_smooth_next
 
     @staticmethod
     def predict(a, P, T, R, Q):
         a_hat = T.dot(a)
-        P_hat = matrix_dot(T, P, T.T) + matrix_dot(R, Q, R.T)
+        P_hat = quad_form_sym(T, P) + quad_form_sym(R, Q)
+        P_hat = stabilize(P_hat)
 
         return a_hat, P_hat

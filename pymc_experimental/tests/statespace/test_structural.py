@@ -80,7 +80,6 @@ def test_model_addition():
 
 @pytest.mark.parametrize("order", [1, 2, [1, 0, 1]], ids=["AR1", "AR2", "AR(1,0,1)"])
 def test_autoregressive_model(order, rng):
-    # TODO: Lame test, improve
     ar = st.AutoregressiveComponent(order=order)
     ar.T[ar.param_indices["ar_params"][1:]] = 0.9
     x, y = simulate_from_numpy_model(ar, rng)

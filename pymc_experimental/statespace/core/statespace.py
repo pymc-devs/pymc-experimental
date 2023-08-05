@@ -823,9 +823,10 @@ class PyMCStateSpace:
 
         _verify_group(group)
         group_idata = getattr(idata, group)
+        filters_to_use = ["filtered", "predicted", "smoothed"]
 
         with pm.Model(coords=self._fit_coords):
-            for filter_output in ["filtered", "predicted", "smoothed"]:
+            for filter_output in filters_to_use:
                 mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
                     group_idata, filter_output
                 )
@@ -842,7 +843,7 @@ class PyMCStateSpace:
                 )
             idata_conditional = pm.sample_posterior_predictive(
                 group_idata,
-                var_names=[f"filtered_{group}", f"predicted_{group}", f"smoothed_{group}"],
+                var_names=[f"{name}_{group}" for name in filters_to_use],
                 compile_kwargs={"mode": get_mode(self._fit_mode)},
                 random_seed=random_seed,
                 **kwargs,
@@ -922,14 +923,19 @@ class PyMCStateSpace:
             dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
 
         with pm.Model(coords=temp_coords if dims is not None else None):
-            matrices = self._build_dummy_graph()
+            matrices = [x0, P0, c, d, T, Z, R, H, Q] = self._build_dummy_graph()
+            if not self.measurement_error:
+                H_jittered = pm.Deterministic(
+                    "H_jittered", pt.specify_shape(stabilize(H), (self.k_endog, self.k_endog))
+                )
+                matrices = [x0, P0, c, d, T, Z, R, H_jittered, Q]
+
             _ = LinearGaussianStateSpace(
                 group,
                 *matrices,
                 steps=steps,
                 dims=dims,
                 mode=self._fit_mode,
-                measurement_error=self.measurement_error,
             )
 
             idata_unconditional = pm.sample_posterior_predictive(
@@ -1222,6 +1228,11 @@ class PyMCStateSpace:
 
         with pm.Model(coords=temp_coords):
             c, d, T, Z, R, H, Q = self._build_dummy_graph(skip_matrices=["x0", "P0"])
+            if not self.measurement_error:
+                H = pm.Deterministic(
+                    "H_jittered", pt.specify_shape(stabilize(H), (self.k_endog, self.k_endog))
+                )
+
             mu = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
             cov = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
 

@@ -6,7 +6,7 @@ import pytensor
 import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianARIMA
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
@@ -32,9 +32,7 @@ def data():
 
 @pytest.fixture(scope="session")
 def arima_mod():
-    return BayesianARIMA(
-        order=(2, 0, 1), stationary_initialization=True, verbose=False, filter_type="univariate"
-    )
+    return BayesianARIMA(order=(2, 0, 1), stationary_initialization=True, verbose=False)
 
 
 @pytest.fixture(scope="session")
@@ -104,4 +102,4 @@ def test_all_prior_covariances_are_PSD(filter_output, pymc_mod, rng):
     rv = pymc_mod[f"{filter_output}_covariance"]
     cov_mats = pm.draw(rv, 100, random_seed=rng)
     w, v = np.linalg.eig(cov_mats)
-    assert not np.any(w < 0)
+    assert_array_less(0, w, err_msg=f"Smallest eigenvalue: {min(w.ravel())}")

@@ -51,13 +51,9 @@ def split_vars_into_seq_and_nonseq(params, param_names):
     return sequences, non_sequences, seq_names, non_seq_names
 
 
-def stabilize(cov, jitter=JITTER_DEFAULT, enforce_symmetry=False):
+def stabilize(cov, jitter=JITTER_DEFAULT):
     # Ensure diagonal is non-zero
-    cov += pt.identity_like(cov) * jitter
-
-    # Ensure matrix is symmetric
-    if enforce_symmetry:
-        cov = 0.5 * (cov + cov.T)
+    cov = cov + pt.identity_like(cov) * jitter
 
     return cov
 

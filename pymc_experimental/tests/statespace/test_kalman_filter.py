@@ -2,7 +2,7 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 import pytest
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace.filters import (
     CholeskyFilter,
@@ -26,8 +26,10 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 
 floatX = pytensor.config.floatX
 
-ATOL = 1e-7 if floatX.endswith("64") else 1e-4
-RTOL = 1e-7 if floatX.endswith("64") else 1e-4
+# TODO: These are pretty loose because of all the stabilizing of covariance matrices that is done inside the kalman
+#  filters. When that is improved, this should be tightened.
+ATOL = 1e-6 if floatX.endswith("64") else 1e-3
+RTOL = 1e-6 if floatX.endswith("64") else 1e-3
 
 standard_inout = initialize_filter(StandardFilter())
 cholesky_inout = initialize_filter(CholeskyFilter())
@@ -269,5 +271,6 @@ def test_all_covariance_matrices_are_PSD(filter_func, output_idx, name, n_missin
 
     cov_stack = outputs[output_idx]
     w, v = np.linalg.eig(cov_stack)
-    assert np.all(w >= 0)
+
+    assert_array_less(0, w)
     assert_allclose(cov_stack, np.swapaxes(cov_stack, -2, -1))
