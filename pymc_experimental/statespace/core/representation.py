@@ -338,12 +338,22 @@ class PytensorRepresentation:
             if (self.shapes[key][-1] == 1) and (key not in NEVER_TIME_VARYING):
                 X = matrix[(slice(None),) * (matrix.ndim - 1) + (0,)]
                 X = pt.specify_shape(X, self.shapes[key][:-1])
+
                 X.name = key
                 return X
 
-            # If it's time varying, return everything
+            # If it's never time varying, return everything
+            elif key in NEVER_TIME_VARYING:
+                X = pt.specify_shape(matrix, self.shapes[key])
+                X.name = key
+
+                return X
+
+            # Last possibility is that it's time varying -- also return everything (for now, might need some processing)
             else:
-                return matrix
+                X = pt.specify_shape(matrix, self.shapes[key])
+                X.name = key
+                return X
 
         # Case 2: user asked for a particular matrix and some slices of it
         elif _type is tuple:

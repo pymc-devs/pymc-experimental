@@ -1,13 +1,11 @@
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 import numpy as np
+import pytensor
 import pytensor.tensor as pt
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
-from pymc_experimental.statespace.models.utilities import (
-    get_slice_and_move_cursor,
-    make_default_coords,
-)
+from pymc_experimental.statespace.models.utilities import make_default_coords
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
@@ -19,6 +17,8 @@ from pymc_experimental.statespace.utils.constants import (
     SHOCK_DIM,
 )
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lyapunov
+
+floatX = pytensor.config.floatX
 
 
 class BayesianVARMAX(PyMCStateSpace):
@@ -178,58 +178,22 @@ class BayesianVARMAX(PyMCStateSpace):
 
         # Save counts of the number of parameters in each category
         self.param_counts = {
-            "x0": k_states,
+            "x0": k_states * (1 - self.stationary_initialization),
             "P0": k_states**2 * (1 - self.stationary_initialization),
             "AR": k_endog**2 * self.p,
             "MA": k_endog**2 * self.q,
             "state_cov": k_posdef**2,
-            "obs_cov": k_endog * self.measurement_error,
+            "sigma_obs": k_endog * self.measurement_error,
         }
-
-        # Initialize the matrices
-        # Design matrix is a truncated identity (first k_obs states observed)
-        self.ssm[("design",) + np.diag_indices(k_endog)] = 1
-
-        # Transition matrix has 4 blocks:
-        self.ssm["transition"] = np.zeros((k_states, k_states))
-
-        # UL: AR coefs (k_obs, k_obs * min(p, 1))
-        # UR: MA coefs (k_obs, k_obs * q)
-        # LL: Truncated identity (k_obs * min(p, 1), k_obs * min(p, 1))
-        # LR: Shifted identity (k_obs * p, k_obs * q)
-        if self.p > 1:
-            idx = (slice(k_endog, k_endog * self.p), slice(0, k_endog * (self.p - 1)))
-            self.ssm[("transition",) + idx] = np.eye(k_endog * (self.p - 1))
-
-        if self.q > 1:
-            idx = (slice(-k_endog * (self.q - 1), None), slice(-k_endog * self.q, -k_endog))
-            self.ssm[("transition",) + idx] = np.eye(k_endog * (self.q - 1))
-
-        # The selection matrix is (k_states, k_obs), with two (k_obs, k_obs) identity
-        # matrix blocks inside. One is always on top, the other starts after (k_obs * p) rows
-        self.ssm["selection"] = np.zeros((k_states, k_endog))
-        self.ssm["selection", slice(0, k_endog), :] = np.eye(k_endog)
-        if self.q > 0:
-            end = -k_endog * (self.q - 1) if self.q > 1 else None
-            self.ssm["selection", slice(k_endog * -self.q, end), :] = np.eye(k_endog)
-
-        # Cache some indices
-        self._ar_param_idx = ("transition", slice(0, k_endog), slice(0, k_endog * self.p))
-        self._ma_param_idx = (
-            "transition",
-            slice(0, k_endog),
-            slice(k_endog * max(1, self.p), None),
-        )
-        self._obs_cov_idx = ("obs_cov",) + np.diag_indices(k_endog)
 
     @property
     def param_names(self):
-        names = ["x0", "P0", "ar_params", "ma_params", "state_cov", "obs_cov"]
+        names = ["x0", "P0", "ar_params", "ma_params", "state_cov", "sigma_obs"]
         if self.stationary_initialization:
             names.remove("P0")
             names.remove("x0")
         if not self.measurement_error:
-            names.remove("obs_cov")
+            names.remove("sigma_obs")
         if self.p == 0:
             names.remove("ar_params")
         if self.q == 0:
@@ -247,7 +211,7 @@ class BayesianVARMAX(PyMCStateSpace):
                 "shape": (self.k_states, self.k_states),
                 "constraints": "Positive Semi-definite",
             },
-            "obs_cov": {
+            "sigma_obs": {
                 "shape": (self.k_endog, self.k_endog),
                 "constraints": "Positive Semi-definite",
             },
@@ -309,14 +273,14 @@ class BayesianVARMAX(PyMCStateSpace):
         coord_map = {
             "x0": (ALL_STATE_DIM,),
             "P0": (ALL_STATE_DIM, ALL_STATE_AUX_DIM),
-            "obs_cov": (OBS_STATE_DIM, OBS_STATE_AUX_DIM),
+            "sigma_obs": (OBS_STATE_DIM,),
             "state_cov": (SHOCK_DIM, SHOCK_AUX_DIM),
             "ar_params": (OBS_STATE_DIM, AR_PARAM_DIM, OBS_STATE_AUX_DIM),
             "ma_params": (OBS_STATE_DIM, MA_PARAM_DIM, OBS_STATE_AUX_DIM),
         }
 
         if not self.measurement_error:
-            del coord_map["obs_cov"]
+            del coord_map["sigma_obs"]
         if self.p == 0:
             del coord_map["ar_params"]
         if self.q == 0:
@@ -330,56 +294,87 @@ class BayesianVARMAX(PyMCStateSpace):
     def add_default_priors(self):
         raise NotImplementedError
 
-    def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
-        """
-        Put parameter values from vector theta into the correct positions in the state space matrices.
-
-        Parameters
-        ----------
-        theta: TensorVariable
-            Vector of all variables in the state space model
-
-        mode: optional, str
-            Compile mode used by pytensor
-        """
-        cursor = 0
-
+    def make_symbolic_graph(self) -> None:
+        # Initialize the matrices
         if not self.stationary_initialization:
             # initial states
-            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["x0"])
-            self.ssm["initial_state", :] = theta[param_slice]
+            x0 = self.make_and_register_variable("x0", shape=(self.k_states,), dtype=floatX)
+            self.ssm["initial_state", :] = x0
 
             # initial covariance
-            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["P0"])
-            self.ssm["initial_state_cov", :, :] = theta[param_slice].reshape(
-                (self.k_states, self.k_states)
+            P0 = self.make_and_register_variable(
+                "P0", shape=(self.k_states, self.k_states), dtype=floatX
             )
+            self.ssm["initial_state_cov", :, :] = P0
 
-        # AR parameters
+        # Design matrix is a truncated identity (first k_obs states observed)
+        self.ssm[("design",) + np.diag_indices(self.k_endog)] = 1
+
+        # Transition matrix has 4 blocks:
+        # Upper left: AR coefs (k_obs, k_obs * min(p, 1))
+        # Upper right: MA coefs (k_obs, k_obs * q)
+        # Lower left: Truncated identity (k_obs * min(p, 1), k_obs * min(p, 1))
+        # Lower right: Shifted identity (k_obs * p, k_obs * q)
+        self.ssm["transition"] = np.zeros((self.k_states, self.k_states))
+        if self.p > 1:
+            idx = (
+                slice(self.k_endog, self.k_endog * self.p),
+                slice(0, self.k_endog * (self.p - 1)),
+            )
+            self.ssm[("transition",) + idx] = np.eye(self.k_endog * (self.p - 1))
+
+        if self.q > 1:
+            idx = (
+                slice(-self.k_endog * (self.q - 1), None),
+                slice(-self.k_endog * self.q, -self.k_endog),
+            )
+            self.ssm[("transition",) + idx] = np.eye(self.k_endog * (self.q - 1))
+
         if self.p > 0:
-            ar_shape = (self.k_endog, self.k_endog * self.p)
-            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["AR"])
-            self.ssm[self._ar_param_idx] = theta[param_slice].reshape(ar_shape)
+            ar_param_idx = ("transition", slice(0, self.k_endog), slice(0, self.k_endog * self.p))
 
-        # MA parameters
-        if self.q > 0:
-            ma_shape = (self.k_endog, self.k_endog * self.q)
-            param_slice, cursor = get_slice_and_move_cursor(cursor, self.param_counts["MA"])
-            self.ssm[self._ma_param_idx] = theta[param_slice].reshape(ma_shape)
-
-        # State covariance
-        param_slice, cursor = get_slice_and_move_cursor(
-            cursor, self.param_counts["state_cov"], last_slice=not self.measurement_error
-        )
-
-        self.ssm["state_cov", :, :] = theta[param_slice].reshape((self.k_posdef, self.k_posdef))
-
-        # Measurement error
-        if self.measurement_error:
-            param_slice, cursor = get_slice_and_move_cursor(
-                cursor, self.param_counts["obs_cov"], last_slice=True
+            # Register the AR parameter matrix as a (k, p, k), then reshape it and allocate it in the transition matrix
+            # This way the user can use 3 dimensions in the prior (clearer?)
+            ar_params = self.make_and_register_variable(
+                "ar_params", shape=(self.k_endog, self.p, self.k_endog), dtype=floatX
             )
-            self.ssm[self._obs_cov_idx] = theta[param_slice]
+
+            ar_params = ar_params.reshape((self.k_endog, self.k_endog * self.p))
+            self.ssm[ar_param_idx] = ar_params
+
+        # The selection matrix is (k_states, k_obs), with two (k_obs, k_obs) identity
+        # matrix blocks inside. One is always on top, the other starts after (k_obs * p) rows
+        self.ssm["selection"] = np.zeros((self.k_states, self.k_endog))
+        self.ssm["selection", slice(0, self.k_endog), :] = np.eye(self.k_endog)
+        if self.q > 0:
+            ma_param_idx = (
+                "transition",
+                slice(0, self.k_endog),
+                slice(self.k_endog * max(1, self.p), None),
+            )
+
+            # Same as above, register with 3 dimensions then reshape
+            ma_params = self.make_and_register_variable(
+                "ma_params", shape=(self.k_endog, self.q, self.k_endog), dtype=floatX
+            )
+
+            ma_params = ma_params.reshape((self.k_endog, self.k_endog * self.q))
+            self.ssm[ma_param_idx] = ma_params
+
+            end = -self.k_endog * (self.q - 1) if self.q > 1 else None
+            self.ssm["selection", slice(self.k_endog * -self.q, end), :] = np.eye(self.k_endog)
+
+        if self.measurement_error:
+            obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
+            sigma_obs = self.make_and_register_variable(
+                "sigma_obs", shape=(self.k_endog,), dtype=floatX
+            )
+            self.ssm[obs_cov_idx] = sigma_obs
+
+        state_cov = self.make_and_register_variable(
+            "state_cov", shape=(self.k_posdef, self.k_posdef), dtype=floatX
+        )
+        self.ssm["state_cov", :, :] = state_cov
 
         if self.stationary_initialization:
             # Solve for matrix quadratic for P0

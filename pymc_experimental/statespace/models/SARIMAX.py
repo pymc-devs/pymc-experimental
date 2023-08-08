@@ -3,7 +3,7 @@ from typing import Any, Dict, Sequence, Tuple
 import numpy as np
 import pytensor.tensor as pt
 
-from pymc_experimental.statespace.core.statespace import PyMCStateSpace
+from pymc_experimental.statespace.core.statespace import PyMCStateSpace, floatX
 from pymc_experimental.statespace.models.utilities import make_default_coords
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
@@ -158,16 +158,16 @@ class BayesianARIMA(PyMCStateSpace):
             )
         self.state_structure = state_structure
 
-        p_max = max(1, self.p)
-        q_max = max(1, self.q)
+        self._p_max = max(1, self.p)
+        self._q_max = max(1, self.q)
 
         k_states = None
-        k_diffs = self._k_diffs = self.d
+        self._k_diffs = self.d
 
         if self.state_structure == "fast":
             k_states = max(self.p, self.q + 1) + self.d
         elif self.state_structure == "interpretable":
-            k_states = p_max + q_max + self.d
+            k_states = self._p_max + self._q_max + self.d
 
         k_posdef = 1
         k_endog = 1
@@ -180,49 +180,6 @@ class BayesianARIMA(PyMCStateSpace):
             verbose=verbose,
             measurement_error=measurement_error,
         )
-
-        # Initialize the matrices
-        self.ssm["design"] = np.r_[[1.0] * (k_diffs + 1), np.zeros(k_states - k_diffs - 1)][None]
-
-        transition = None
-        selection = None
-
-        if self.state_structure == "fast":
-            idx = np.triu_indices(self.d)
-            transition = np.eye(k_states, k=1)
-            transition[idx] = 1
-            transition[: self.d, k_diffs] = 1
-
-            selection = np.r_[[0] * k_diffs, [1.0], np.zeros(k_states - k_diffs - 1)][:, None]
-
-        elif self.state_structure == "interpretable":
-            transition = np.eye(k_states, k=-1)
-            transition[-q_max, p_max - 1] = 0
-
-            selection = np.r_[[0] * k_diffs, [1.0], np.zeros(k_states - k_diffs - 1)][:, None]
-            selection[-q_max, 0] = 1
-
-        self.ssm["selection"] = selection
-        self.ssm["transition"] = transition
-
-        self.ssm["initial_state"] = np.zeros((k_states,))
-        self.ssm["initial_state_cov"] = np.eye(k_states)
-
-        # Cache some indices
-        self._state_cov_idx = ("state_cov",) + np.diag_indices(k_posdef)
-
-        if self.state_structure == "fast":
-            self._ar_param_idx = np.s_["transition", k_diffs : k_diffs + self.p, k_diffs]
-            self._ma_param_idx = np.s_["selection", 1 + k_diffs : 1 + k_diffs + self.q, 0]
-
-        elif self.state_structure == "interpretable":
-            self._ar_param_idx = np.s_["transition", k_diffs, k_diffs : k_diffs + p_max]
-            self._ma_param_idx = np.s_[
-                "transition", k_diffs, k_diffs + p_max : k_diffs + p_max + self.q
-            ]
-
-        if self.measurement_error:
-            self._obs_cov_idx = ("obs_cov",) + np.diag_indices(k_endog)
 
     @property
     def param_names(self):
@@ -330,67 +287,116 @@ class BayesianARIMA(PyMCStateSpace):
 
         return coords
 
-    def update(self, theta: pt.TensorVariable, mode: str = None) -> None:
-        """
-        Put parameter values from vector theta into the correct positions in the state space matrices.
+    def _stationary_initialization(self, mode=None):
+        # Solve for matrix quadratic for P0
+        T = self.ssm["transition"]
+        R = self.ssm["selection"]
+        Q = self.ssm["state_cov"]
+        c = self.ssm["state_intercept"]
 
-        Parameters
-        ----------
-        theta: TensorVariable
-            Vector of all variables in the state space model
+        x0 = pt.linalg.solve(pt.identity_like(T) - T, c, assume_a="gen", check_finite=True)
 
-        mode: str, default None
-            Compile mode being used by pytensor.
-        """
-        cursor = 0
+        method = "direct" if (self.k_states < 5) or (mode == "JAX") else "bilinear"
+        P0 = solve_discrete_lyapunov(T, pt.linalg.matrix_dot(R, Q, R.T), method=method)
 
+        return x0, P0
+
+    def make_symbolic_graph(self) -> None:
+        # Initial state and covariance can be handled first if we're not doing a stationary initialization
         if not self.stationary_initialization:
-            # initial states
-            param_slice = slice(cursor, cursor + self.k_states)
-            cursor += self.k_states
-            self.ssm["initial_state", :] = theta[param_slice]
-
-            # initial covariance
-            param_slice = slice(cursor, cursor + self.k_states**2)
-            cursor += self.k_states**2
-            self.ssm["initial_state_cov"] = theta[param_slice].reshape(
-                (self.k_states, self.k_states)
+            x0 = self.make_and_register_variable("x0", shape=(self.k_states,), dtype=floatX)
+            P0 = self.make_and_register_variable(
+                "P0", shape=(self.k_states, self.k_states), dtype=floatX
             )
 
-        if self.p > 0:
-            # AR parameteres
-            param_slice = slice(cursor, cursor + self.p)
-            cursor += self.p
-            self.ssm[self._ar_param_idx] = theta[param_slice]
+            self.ssm["initial_state", :] = x0
+            self.ssm["initial_state_cov"] = P0
 
-        if self.q > 0:
-            # MA parameters
-            param_slice = slice(cursor, cursor + self.q)
-            cursor += self.q
-            self.ssm[self._ma_param_idx] = theta[param_slice]
+        # Design matrix has no RVs
+        self.ssm["design"] = np.r_[
+            [1.0] * (self._k_diffs + 1), np.zeros(self.k_states - self._k_diffs - 1)
+        ][None]
 
-        # State covariance
-        param_slice = slice(cursor, cursor + 1)
-        cursor += 1
-        self.ssm[self._state_cov_idx] = theta[param_slice]
+        # Set up the transition and selection matrices, depending on the requested representation
+        if self.state_structure == "fast":
+            ar_param_idx = np.s_[
+                "transition", self._k_diffs : self._k_diffs + self.p, self._k_diffs
+            ]
+            ma_param_idx = np.s_["selection", 1 + self._k_diffs : 1 + self._k_diffs + self.q, 0]
+
+            idx = np.triu_indices(self.d)
+            transition = np.eye(self.k_states, k=1)
+            transition[idx] = 1
+            transition[: self.d, self._k_diffs] = 1
+            selection = np.r_[
+                [0] * self._k_diffs, [1.0], np.zeros(self.k_states - self._k_diffs - 1)
+            ][:, None]
+
+            self.ssm["transition"] = transition
+            self.ssm["selection"] = selection
+
+            if self.p > 0:
+                ar_params = self.make_and_register_variable(
+                    "ar_params", shape=(self.p,), dtype=floatX
+                )
+                self.ssm[ar_param_idx] = ar_params
+
+            if self.q > 0:
+                ma_params = self.make_and_register_variable(
+                    "ma_params", shape=(self.q,), dtype=floatX
+                )
+                self.ssm[ma_param_idx] = ma_params
+
+        elif self.state_structure == "interpretable":
+            ar_param_idx = np.s_[
+                "transition", self._k_diffs, self._k_diffs : self._k_diffs + self._p_max
+            ]
+            ma_param_idx = np.s_[
+                "transition",
+                self._k_diffs,
+                self._k_diffs + self._p_max : self._k_diffs + self._p_max + self.q,
+            ]
+
+            transition = np.eye(self.k_states, k=-1)
+            transition[-self._q_max, self._p_max - 1] = 0
+
+            selection = np.r_[
+                [0] * self._k_diffs, [1.0], np.zeros(self.k_states - self._k_diffs - 1)
+            ][:, None]
+            selection[-self._q_max, 0] = 1
+
+            self.ssm["transition"] = transition
+            self.ssm["selection"] = selection
+
+            if self.p > 0:
+                ar_params = self.make_and_register_variable(
+                    "ar_params", shape=(self.p,), dtype=floatX
+                )
+                self.ssm[ar_param_idx] = ar_params
+
+            if self.q > 0:
+                ma_params = self.make_and_register_variable(
+                    "ma_params", shape=(self.q,), dtype=floatX
+                )
+                self.ssm[ma_param_idx] = ma_params
+
+        # Set up the state covariance matrix
+        state_cov_idx = ("state_cov",) + np.diag_indices(self.k_posdef)
+        state_cov = self.make_and_register_variable(
+            "sigma_state", shape=(self.k_posdef,), dtype=floatX
+        )
+        self.ssm[state_cov_idx] = state_cov
 
         if self.measurement_error:
-            # Measurement error
-            param_slice = slice(cursor, cursor + 1)
-            cursor += 1
-            self.ssm[self._obs_cov_idx] = theta[param_slice]
+            obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
+            obs_cov = self.make_and_register_variable(
+                "sigma_obs", shape=(self.k_endog,), dtype=floatX
+            )
+            self.ssm[obs_cov_idx] = obs_cov
 
+        # The initial conditions have to be done last in the case of stationary initialization, because it will depend
+        # on c, T, R and Q
         if self.stationary_initialization:
-            # Solve for matrix quadratic for P0
-            T = self.ssm["transition"]
-            R = self.ssm["selection"]
-            Q = self.ssm["state_cov"]
-            c = self.ssm["state_intercept"]
-
-            x0 = pt.linalg.solve(pt.identity_like(T) - T, c, assume_a="gen", check_finite=True)
-
-            method = "direct" if (self.k_states < 5) or (mode == "JAX") else "bilinear"
-            P0 = solve_discrete_lyapunov(T, pt.linalg.matrix_dot(R, Q, R.T), method=method)
-
+            x0, P0 = self._stationary_initialization()
             self.ssm["initial_state", :] = x0
             self.ssm["initial_state_cov", :, :] = P0

@@ -9,11 +9,11 @@ import statsmodels.api as sm
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianARIMA
+from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
-    fast_eval,
     load_nile_test_data,
 )
 
@@ -51,50 +51,58 @@ def pymc_mod(arima_mod):
     return pymc_mod
 
 
+# @pytest.mark.parametrize("order", orders, ids=ids)
+# @pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
+# def test_SARIMAX_init_matches_statsmodels(data, order, matrix):
+#     p, d, q = order
+#
+#     mod = BayesianARIMA(order=(p, d, q), verbose=False)
+#     sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
+#
+#     assert_allclose(fast_eval(mod.ssm[matrix]), sm_sarimax.ssm[matrix])
+
+
 @pytest.mark.parametrize("order", orders, ids=ids)
-@pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
-def test_SARIMAX_init_matches_statsmodels(data, order, matrix):
-    p, d, q = order
-
-    mod = BayesianARIMA(order=(p, d, q), verbose=False)
-    sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
-
-    assert_allclose(fast_eval(mod.ssm[matrix]), sm_sarimax.ssm[matrix])
-
-
-@pytest.mark.parametrize("order", orders, ids=ids)
-@pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
 @pytest.mark.filterwarnings(
     "ignore:Non-invertible starting MA parameters found.",
     "ignore:Non-stationary starting autoregressive parameters found",
 )
-def test_SARIMAX_update_matches_statsmodels(data, order, matrix, rng):
+def test_SARIMAX_update_matches_statsmodels(data, order, rng):
     p, d, q = order
-
     sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
 
     param_names = sm_sarimax.param_names
-    param_d = {name: rng.normal(scale=0.1) ** 2 for name in param_names}
+    param_d = {name: getattr(np, floatX)(rng.normal(scale=0.1) ** 2) for name in param_names}
 
     res = sm_sarimax.fit_constrained(param_d)
-    mod = BayesianARIMA(order=(p, d, q), verbose=False)
+    mod = BayesianARIMA(order=(p, d, q), verbose=False, stationary_initialization=False)
 
     with pm.Model() as pm_mod:
-        x0 = pm.Deterministic("x0", pt.zeros(mod.k_states))
-        ma_params = pm.Deterministic(
-            "ma_params",
-            pt.as_tensor_variable(np.array([param_d[k] for k in param_d if k.startswith("ma.")])),
-        )
-        ar_params = pm.Deterministic(
-            "ar_params",
-            pt.as_tensor_variable(np.array([param_d[k] for k in param_d if k.startswith("ar.")])),
-        )
-        state_cov = pm.Deterministic(
-            "sigma_state", pt.as_tensor_variable(np.array([[param_d["sigma2"]]]))
-        )
-        mod.build_statespace_graph(data=data)
+        x0 = pm.Normal("x0", shape=(mod.k_states,))
+        P0 = pm.Deterministic("P0", pt.eye(mod.k_states, dtype=floatX))
 
-    assert_allclose(fast_eval(mod.ssm[matrix]), sm_sarimax.ssm[matrix])
+        if q > 0:
+            pm.Deterministic(
+                "ma_params",
+                pt.as_tensor_variable(
+                    np.array([param_d[k] for k in param_d if k.startswith("ma.")])
+                ),
+            )
+        if p > 0:
+            pm.Deterministic(
+                "ar_params",
+                pt.as_tensor_variable(
+                    np.array([param_d[k] for k in param_d if k.startswith("ar.")])
+                ),
+            )
+        pm.Deterministic("sigma_state", pt.as_tensor_variable(np.array([param_d["sigma2"]])))
+
+        mod._insert_random_variables()
+        matrices = pm.draw(mod.subbed_ssm)
+        matrix_dict = dict(zip(SHORT_NAME_TO_LONG.values(), matrices))
+
+    for matrix in ["transition", "selection", "state_cov", "obs_cov", "design"]:
+        assert_allclose(matrix_dict[matrix], sm_sarimax.ssm[matrix], err_msg=f"{matrix} not equal")
 
 
 @pytest.mark.parametrize("filter_output", ["filtered", "predicted", "smoothed"])

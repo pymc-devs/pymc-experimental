@@ -72,6 +72,10 @@ class BaseFilter(ABC):
         self.seq_names: List[str] = []
         self.non_seq_names: List[str] = []
 
+        self.n_states = None
+        self.n_posdef = None
+        self.n_endog = None
+
         self.eye_states: Optional[TensorVariable] = None
         self.eye_posdef: Optional[TensorVariable] = None
         self.eye_endog: Optional[TensorVariable] = None
@@ -105,10 +109,10 @@ class BaseFilter(ABC):
                2nd ed, Oxford University Press, 2012.
         """
 
-        n_states, n_posdef, n_endog = R.shape[-2], R.shape[-1], Z.shape[-2]
-        self.eye_states = pt.eye(n_states)
-        self.eye_posdef = pt.eye(n_posdef)
-        self.eye_endog = pt.eye(n_endog)
+        self.n_states, self.n_posdef, self.n_endog = R.shape[-2], R.shape[-1], Z.shape[-2]
+        self.eye_states = pt.eye(self.n_states)
+        self.eye_posdef = pt.eye(self.n_posdef)
+        self.eye_endog = pt.eye(self.n_endog)
 
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
         """
@@ -248,6 +252,7 @@ class BaseFilter(ABC):
         self.cov_jitter = cov_jitter
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
+
         sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
             params, PARAM_NAMES
         )
@@ -268,14 +273,13 @@ class BaseFilter(ABC):
             strict=True,
         )
 
-        filter_results = self._postprocess_scan_results(results, a0, P0)
+        filter_results = self._postprocess_scan_results(results, a0, P0, n=data.type.shape[0])
 
         if return_updates:
             return filter_results, updates
         return filter_results
 
-    @staticmethod
-    def _postprocess_scan_results(results, a0, P0) -> List[TensorVariable]:
+    def _postprocess_scan_results(self, results, a0, P0, n) -> List[TensorVariable]:
         """
         Transform the values returned by the Kalman Filter scan into a form expected by users. In particular:
         1. Append the initial state and covariance matrix to their respective Kalman predictions. This matches the
@@ -305,6 +309,33 @@ class BaseFilter(ABC):
         predicted_covariances = pt.concatenate(
             [pt.expand_dims(P0, axis=(0,)), predicted_covariances[:-1]], axis=0
         )
+
+        filtered_states = pt.specify_shape(filtered_states, (n, self.n_states))
+        filtered_states.name = "filtered_states"
+
+        predicted_states = pt.specify_shape(predicted_states, (n, self.n_states))
+        predicted_states.name = "predicted_states"
+
+        observed_states = pt.specify_shape(observed_states, (n, self.n_endog))
+        observed_states.name = "observed_states"
+
+        filtered_covariances = pt.specify_shape(
+            predicted_covariances, (n, self.n_states, self.n_states)
+        )
+        filtered_covariances.name = "filtered_covariances"
+
+        predicted_covariances = pt.specify_shape(
+            predicted_covariances, (n, self.n_states, self.n_states)
+        )
+        predicted_covariances.name = "predicted_covariances"
+
+        observed_covariances = pt.specify_shape(
+            observed_covariances, (n, self.n_endog, self.n_endog)
+        )
+        observed_covariances.name = "observed_covariances"
+
+        loglike_obs = pt.specify_shape(loglike_obs.squeeze(), (n,))
+        loglike_obs.name = "loglike_obs"
 
         filter_results = [
             filtered_states,
@@ -604,7 +635,6 @@ class StandardFilter(BaseFilter):
         .. [1] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
                2nd ed, Oxford University Press, 2012.
         """
-
         y_hat = d + Z.dot(a)
         v = y - y_hat
 
@@ -780,7 +810,7 @@ class SteadyStateFilter(BaseFilter):
             mode=get_mode(mode),
         )
 
-        return self._postprocess_scan_results(results, a0, P0)
+        return self._postprocess_scan_results(results, a0, P0, n=data.shape[0])
 
     def update(self, a, P, c, d, F_inv, y, Z, H, all_nan_flag):
         y_hat = Z.dot(a) + d

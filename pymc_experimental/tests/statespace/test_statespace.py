@@ -28,6 +28,20 @@ nile = load_nile_test_data()
 ALL_SAMPLE_OUTPUTS = MATRIX_NAMES + FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES
 
 
+def make_statespace_mod(k_endog, k_states, k_posdef, filter_type, verbose=False):
+    class StateSpace(PyMCStateSpace):
+        def make_symbolic_graph(self):
+            pass
+
+    return StateSpace(
+        k_states=k_states,
+        k_endog=k_endog,
+        k_posdef=k_posdef,
+        filter_type=filter_type,
+        verbose=verbose,
+    )
+
+
 @pytest.fixture(scope="session")
 def ss_mod():
     class StateSpace(PyMCStateSpace):
@@ -47,7 +61,8 @@ def ss_mod():
         def shock_names(self):
             return ["a"]
 
-        def update(self, theta, mode=None):
+        def make_symbolic_graph(self):
+            theta = pt.vector("theta", shape=(self.k_states,), dtype=floatX)
             self.ssm["transition", 0, :] = theta
 
     T = np.zeros((2, 2)).astype(floatX)
@@ -93,19 +108,36 @@ def idata(pymc_mod, rng):
 def test_invalid_filter_name_raises():
     msg = "The following are valid filter types: " + ", ".join(list(FILTER_FACTORY.keys()))
     with pytest.raises(NotImplementedError, match=msg):
-        mod = PyMCStateSpace(k_endog=1, k_states=5, k_posdef=1, filter_type="invalid_filter")
+        mod = make_statespace_mod(k_endog=1, k_states=5, k_posdef=1, filter_type="invalid_filter")
 
 
 def test_singleseriesfilter_raises_if_k_endog_gt_one():
     msg = 'Cannot use filter_type = "single" with multiple observed time series'
     with pytest.raises(ValueError, match=msg):
-        mod = PyMCStateSpace(k_endog=10, k_states=5, k_posdef=1, filter_type="single")
+        mod = make_statespace_mod(k_endog=10, k_states=5, k_posdef=1, filter_type="single")
+
+
+def test_unpack_before_insert_raises(rng):
+    p, m, r, n = 2, 5, 1, 10
+    data, *inputs = make_test_inputs(p, m, r, n, rng, missing_data=0)
+    mod = make_statespace_mod(
+        k_endog=p, k_states=m, k_posdef=r, filter_type="standard", verbose=False
+    )
+
+    msg = "Cannot unpack the complete statespace system until PyMC model variables have been inserted."
+    with pytest.raises(ValueError, match=msg):
+        outputs = mod.unpack_statespace()
 
 
 def test_unpack_matrices(rng):
     p, m, r, n = 2, 5, 1, 10
     data, *inputs = make_test_inputs(p, m, r, n, rng, missing_data=0)
-    mod = PyMCStateSpace(k_endog=p, k_states=m, k_posdef=r, filter_type="standard", verbose=False)
+    mod = make_statespace_mod(
+        k_endog=p, k_states=m, k_posdef=r, filter_type="standard", verbose=False
+    )
+
+    # mod is a dummy statespace, so there are no placeholders to worry about. Monkey patch subbed_ssm with the defaults
+    mod.subbed_ssm = mod._unpack_statespace_with_placeholders()
 
     outputs = mod.unpack_statespace()
     for x, y in zip(inputs, outputs):
@@ -113,33 +145,26 @@ def test_unpack_matrices(rng):
 
 
 def test_param_names_raises_on_base_class():
-    mod = PyMCStateSpace(k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False)
+    mod = make_statespace_mod(
+        k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False
+    )
     with pytest.raises(NotImplementedError):
         x = mod.param_names
 
 
-def test_update_raises_on_base_class():
-    mod = PyMCStateSpace(k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False)
-    theta = np.zeros(4)
+def test_base_class_raises():
     with pytest.raises(NotImplementedError):
-        mod.update(theta)
+        mod = PyMCStateSpace(
+            k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False
+        )
 
 
-def test_gather_pymc_variables(ss_mod):
-    with pm.Model() as mod:
-        rho = pm.Normal("rho")
-        zeta = pm.Deterministic("zeta", 1 - rho)
-        theta = ss_mod._gather_required_random_variables()
-
-    assert_allclose(fast_eval(pm.math.stack([rho, zeta])), fast_eval(theta))
-
-
-def test_gather_raises_if_variable_missing(ss_mod):
+def test_update_raises_if_missing_variables(ss_mod):
     with pm.Model() as mod:
         rho = pm.Normal("rho")
         msg = "The following required model parameters were not found in the PyMC model: zeta"
         with pytest.raises(ValueError, match=msg):
-            theta = ss_mod._gather_required_random_variables()
+            ss_mod._insert_random_variables()
 
 
 def test_build_statespace_graph_warns_if_data_has_nans():

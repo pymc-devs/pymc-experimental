@@ -60,3 +60,5 @@ FILTER_OUTPUT_DIMS = {
     "predicted_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
     "obs": (TIME_DIM, OBS_STATE_DIM),
 }
+
+POSITION_DERIVATIVE_NAMES = ["level", "trend", "acceleration", "jerk", "snap", "crackle", "pop"]

@@ -84,7 +84,7 @@ def create_model(load_dataset):
             )
             P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=("state", "state_aux"))
             initial_trend = pm.Normal("initial_trend", dims="trend_states")
-            trend_sigmas = pm.Exponential("trend_sigmas", 1, dims="trend_shocks")
+            sigma_trend = pm.Exponential("sigma_trend", 1, dims="trend_shocks")
             ss_mod.build_statespace_graph(data)
         return mod
 
@@ -116,7 +116,7 @@ def test_model_build_without_coords(load_dataset):
         P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
         P0 = pm.Deterministic("P0", pt.diag(P0_diag))
         initial_trend = pm.Normal("initial_trend", shape=(2,))
-        trend_sigmas = pm.Exponential("trend_sigmas", 1, shape=(2,))
+        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
         ss_mod.build_statespace_graph(data, register_data=False)
 
     assert mod.coords == {}

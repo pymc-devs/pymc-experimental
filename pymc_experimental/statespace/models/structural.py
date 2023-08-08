@@ -1,20 +1,24 @@
 import logging
 from abc import ABC
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
+import pytensor
 import pytensor.tensor as pt
 import xarray as xr
-from scipy import linalg
+from pymc.math import block_diagonal
+from pytensor import Variable
 
+from pymc_experimental.statespace.core import PytensorRepresentation
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
-from pymc_experimental.statespace.models.utilities import get_slice_and_move_cursor
+from pymc_experimental.statespace.models.utilities import variable_by_shape
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
     MATRIX_NAMES,
     OBS_STATE_AUX_DIM,
     OBS_STATE_DIM,
+    POSITION_DERIVATIVE_NAMES,
     SHOCK_AUX_DIM,
     SHOCK_DIM,
     SHORT_NAME_TO_LONG,
@@ -23,6 +27,7 @@ from pymc_experimental.statespace.utils.constants import (
 _log = logging.getLogger("pymc.experimental.statespace")
 
 MATRIX_NAMES_LONG = [SHORT_NAME_TO_LONG[x] for x in MATRIX_NAMES if x != "P0"]
+floatX = pytensor.config.floatX
 
 
 def order_to_mask(order):
@@ -30,25 +35,6 @@ def order_to_mask(order):
         return np.ones(order).astype(bool)
     else:
         return np.array(order).astype(bool)
-
-
-def _shift_slice(idx_slice, i):
-    return slice(idx_slice.start + i, idx_slice.stop + i)
-
-
-def _shift_idx(idx, i):
-    if isinstance(idx, slice):
-        return _shift_slice(idx, i)
-    return idx + i
-
-
-def _shift_indices(idx, k, j=None) -> Tuple[int]:
-    if j:
-        new_idx = (_shift_idx(idx[0], k), _shift_idx(idx[1], j))
-    else:
-        new_idx = (_shift_idx(idx[0], k),)
-
-    return new_idx
 
 
 class StructuralTimeSeries(PyMCStateSpace):
@@ -69,24 +55,16 @@ class StructuralTimeSeries(PyMCStateSpace):
 
     def __init__(
         self,
-        x0,
-        c,
-        d,
-        T,
-        Z,
-        R,
-        H,
-        Q,
+        ssm: PytensorRepresentation,
         state_names,
         shock_names,
         param_names,
         param_dims,
         coords,
         param_info,
-        param_counts,
-        param_indices,
         component_info,
         measurement_error,
+        name_to_variable,
         name=None,
         verbose=True,
         filter_type: str = "standard",
@@ -96,15 +74,11 @@ class StructuralTimeSeries(PyMCStateSpace):
             name = "data"
         self._name = name
 
-        k_states = T.shape[0]
-        k_posdef = Q.shape[0]
-
-        outputs = self._add_inital_state_cov_to_properties(
-            param_names, param_dims, param_info, param_indices, param_counts, k_states
-        )
-        param_names, param_dims, param_info, param_indices, param_counts = outputs
+        k_states, k_posdef, k_endog = ssm.k_states, ssm.k_posdef, ssm.k_endog
         coords = self._add_default_coords(coords, state_names, shock_names)
-
+        param_names, param_dims, param_info = self._add_inital_state_cov_to_properties(
+            param_names, param_dims, param_info, k_states
+        )
         self._state_names = state_names
         self._shock_names = shock_names
         self._param_names = param_names
@@ -114,7 +88,7 @@ class StructuralTimeSeries(PyMCStateSpace):
         self.measurement_error = measurement_error
 
         super().__init__(
-            1,
+            k_endog,
             k_states,
             k_posdef,
             filter_type=filter_type,
@@ -122,26 +96,15 @@ class StructuralTimeSeries(PyMCStateSpace):
             measurement_error=measurement_error,
         )
 
-        # Initialize the matrices
-        self.ssm["initial_state", :] = x0
-        self.ssm["initial_state_cov", :, :] = np.eye(k_states)
-
-        self.ssm["state_intercept", :] = c
-        self.ssm["obs_intercept", :] = d
-        self.ssm["transition", :, :] = T
-        self.ssm["design", :, :] = Z
-        self.ssm["selection", :, :] = R
-        self.ssm["obs_cov", :, :] = H
-        self.ssm["state_cov", :, :] = Q
-
-        self.param_indices = param_indices
-        self.param_counts = param_counts
+        self.ssm = ssm
         self._component_info = component_info
+        self._name_to_variable = name_to_variable
+
+        P0 = self.make_and_register_variable("P0", shape=(self.k_states, self.k_states))
+        self.ssm["initial_state_cov"] = P0
 
     @staticmethod
-    def _add_inital_state_cov_to_properties(
-        param_names, param_dims, param_info, param_indices, param_counts, k_states
-    ):
+    def _add_inital_state_cov_to_properties(param_names, param_dims, param_info, k_states):
         param_names += ["P0"]
         param_dims["P0"] = (ALL_STATE_DIM, ALL_STATE_AUX_DIM)
         param_info["P0"] = {
@@ -149,10 +112,8 @@ class StructuralTimeSeries(PyMCStateSpace):
             "constraints": "Positive semi-definite",
             "dims": param_dims["P0"],
         }
-        param_indices["P0"] = "initial_state_cov"
-        param_counts["P0"] = k_states**2
 
-        return param_names, param_dims, param_info, param_indices, param_counts
+        return param_names, param_dims, param_info
 
     def _add_default_coords(self, coords, state_names, shock_names):
         coords[ALL_STATE_DIM] = state_names
@@ -192,32 +153,17 @@ class StructuralTimeSeries(PyMCStateSpace):
     def param_info(self) -> Dict[str, Dict[str, Any]]:
         return self._param_info
 
-    def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
+    def make_symbolic_graph(self) -> None:
         """
-        Assign parameter values from vector theta into the correct positions in the state space matrices.
+        Assign placeholder pytensor variables among statespace matrices in positions where PyMC variables will go.
 
-        Parameters
-        ----------
-        theta: TensorVariable
-            Vector of all variables in the state space model
-
-        mode: str, optional
-            Compile mode used by pytensor
+        Notes
+        -----
+        This assignment is handled by the components, so this function is implemented only to avoid the
+        NotImplementedError raised by the base class.
         """
 
-        cursor = 0
-        last_param = self.param_names[-1]
-        for param in self.param_names:
-            ssm_index = self.param_indices[param]
-
-            param_slice, cursor = get_slice_and_move_cursor(
-                cursor, self.param_counts[param], last_slice=param == last_param
-            )
-
-            if param == "P0":
-                self.ssm[ssm_index] = theta[param_slice].reshape((self.k_states, self.k_states))
-            else:
-                self.ssm[ssm_index] = theta[param_slice]
+        pass
 
     def _state_slices_from_info(self):
         info = self._component_info.copy()
@@ -367,26 +313,21 @@ class Component(ABC):
     """
 
     def __init__(
-        self, name, k_endog, k_states, k_posdef, measurement_error=False, combine_hidden_states=True
+        self,
+        name,
+        k_endog,
+        k_states,
+        k_posdef,
+        representation: Optional[PytensorRepresentation] = None,
+        measurement_error=False,
+        combine_hidden_states=True,
+        component_from_sum=False,
     ):
         self.name = name
         self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
         self.measurement_error = measurement_error
-
-        self.x0 = np.zeros(k_states)
-        self.P0 = np.zeros((k_states, k_states))
-        self.c = np.zeros(k_states)
-        self.d = np.zeros(k_endog)
-
-        self.T = np.zeros((k_states, k_states))
-        self.Z = np.zeros((k_endog, k_states))
-        self.R = np.zeros((k_states, k_posdef))
-        self.H = np.zeros((k_endog, k_endog))
-        self.Q = np.zeros((k_posdef, k_posdef))
-
-        self.param_indices = {}
 
         self.state_names = []
         self.shock_names = []
@@ -397,17 +338,16 @@ class Component(ABC):
         self.param_info = {}
         self.param_counts = {}
 
-        self._matrix_shift_factors = {
-            "initial_state": (self.k_states, None),
-            "initial_state_cov": (self.k_states, self.k_states),
-            "state_intercept": (self.k_states, None),
-            "obs_intercept": (self.k_endog, None),
-            "transition": (self.k_states, self.k_states),
-            "design": (self.k_states, None),
-            "selection": (self.k_states, self.k_posdef),
-            "obs_cov": (0, None),
-            "state_cov": (self.k_posdef, self.k_posdef),
-        }
+        if representation is None:
+            self.ssm = PytensorRepresentation(k_endog=k_endog, k_states=k_states, k_posdef=k_posdef)
+        else:
+            self.ssm = representation
+
+        self._name_to_variable = {}
+
+        if not component_from_sum:
+            self.populate_component_properties()
+            self.make_symbolic_graph()
 
         self._component_info = {
             self.name: {
@@ -418,27 +358,101 @@ class Component(ABC):
             }
         }
 
-    def _combine_matrices(self, other):
-        x0 = np.concatenate([self.x0, other.x0])
-        P0 = np.zeros((x0.shape[0], x0.shape[0]))
-        c = np.concatenate([self.c, other.c])
-        d = self.d + other.d
+    def make_and_register_variable(self, name, shape, dtype=floatX) -> Variable:
+        """
+        Helper function to create a pytensor symbolic variable and register it in the _name_to_variable dictionary
 
-        T = linalg.block_diag(self.T, other.T)
-        Z = np.concatenate([self.Z, other.Z], axis=-1)
-        R = linalg.block_diag(self.R, other.R)
-        H = self.H + other.H
-        Q = linalg.block_diag(self.Q, other.Q)
+        Parameters
+        ----------
+        name : str
+            The name of the placeholder variable. Must be the name of a model parameter.
+        shape : int or tuple of int
+            Shape of the parameter
+        dtype : str, default pytensor.config.floatX
+            dtype of the parameter
 
-        return [x0, P0, c, d, T, Z, R, H, Q]
+        Notes
+        -----
+        Symbolic pytensor variables are used in the ``make_symbolic_graph`` method as placeholders for PyMC random
+        variables. The change is made in the ``_insert_random_variables`` method via ``pytensor.graph_replace``. To
+        make the change, a dictionary mapping pytensor variables to PyMC random variables needs to be constructed.
 
-    @staticmethod
-    def _get_new_shapes(matrices):
-        _, _, _, _, T, _, _, _, Q = matrices
-        k_states = T.shape[0]
-        k_posdef = Q.shape[0]
+        The purpose of this method is to:
+            1.  Create the placeholder symbolic variables
+            2.  Register the placeholder variable in the ``_name_to_variable`` dictionary
 
-        return k_states, k_posdef
+        The shape provided here will define the shape of the prior that will need to be provided by the user.
+
+        An error is raised if the provided name has already been registered, or if the name is not present in the
+        ``param_names`` property.
+        """
+        if name not in self.param_names:
+            raise ValueError(
+                f"{name} is not a model parameter. All placeholder variables should correspond to model "
+                f"parameters."
+            )
+
+        if name in self._name_to_variable.keys():
+            raise ValueError(
+                f"{name} is already a registered placeholder variable with shape "
+                f"{self._name_to_variable[name].type.shape}"
+            )
+
+        placeholder = variable_by_shape(name, shape=shape, dtype=dtype)
+        self._name_to_variable[name] = placeholder
+        return placeholder
+
+    def make_symbolic_graph(self) -> None:
+        raise NotImplementedError
+
+    def populate_component_properties(self):
+        raise NotImplementedError
+
+    def _get_combined_shapes(self, other):
+        k_states = self.k_states + other.k_states
+        k_posdef = self.k_posdef + other.k_posdef
+        if self.k_endog != other.k_endog:
+            raise NotImplementedError(
+                "Merging elements with different numbers of observed states is not supported.>"
+            )
+        k_endog = self.k_endog
+
+        return k_states, k_posdef, k_endog
+
+    def _combine_statespace_representations(self, other):
+        k_states, k_posdef, k_endog = self._get_combined_shapes(other)
+
+        initial_state = pt.concatenate([self.ssm["initial_state"], other.ssm["initial_state"]])
+        initial_state_cov = block_diagonal(
+            [self.ssm["initial_state_cov"], other.ssm["initial_state_cov"]]
+        )
+        state_intercept = pt.concatenate(
+            [self.ssm["state_intercept"], other.ssm["state_intercept"]]
+        )
+        obs_intercept = self.ssm["obs_intercept"] + other.ssm["obs_intercept"]
+
+        transition = block_diagonal([self.ssm["transition"], other.ssm["transition"]])
+        design = pt.concatenate([self.ssm["design"], other.ssm["design"]], axis=-1)
+        selection = block_diagonal([self.ssm["selection"], other.ssm["selection"]])
+        obs_cov = self.ssm["obs_cov"] + other.ssm["obs_cov"]
+        state_cov = block_diagonal([self.ssm["state_cov"], other.ssm["state_cov"]])
+
+        new_ssm = PytensorRepresentation(
+            k_endog=k_endog,
+            k_states=k_states,
+            k_posdef=k_posdef,
+            initial_state=initial_state,
+            initial_state_cov=initial_state_cov,
+            state_intercept=state_intercept,
+            obs_intercept=obs_intercept,
+            transition=transition,
+            design=design,
+            selection=selection,
+            obs_cov=obs_cov,
+            state_cov=state_cov,
+        )
+
+        return new_ssm
 
     def _combine_property(self, other, name):
         self_prop = getattr(self, name)
@@ -448,21 +462,6 @@ class Component(ABC):
             new_prop = self_prop.copy()
             new_prop.update(getattr(other, name))
             return new_prop
-
-    def _combine_param_indices(self, other):
-        new_indices = self.param_indices.copy()
-        other_indices = other.param_indices.copy()
-        for param_name, index_tuple in other_indices.items():
-            matrix_name, *loc = index_tuple
-            if matrix_name == "obs_cov":
-                new_loc = tuple(loc)
-            else:
-                i, j = self._matrix_shift_factors[matrix_name]
-                new_loc = _shift_indices(loc, i, j)
-
-            new_indices[param_name] = (matrix_name,) + new_loc
-
-        return new_indices
 
     def _combine_component_info(self, other):
         combined_info = {}
@@ -486,25 +485,26 @@ class Component(ABC):
         return name
 
     def __add__(self, other):
-        matrices = self._combine_matrices(other)
-        k_states, k_posdef = self._get_new_shapes(matrices)
-
         state_names = self._combine_property(other, "state_names")
         param_names = self._combine_property(other, "param_names")
         shock_names = self._combine_property(other, "shock_names")
         param_info = self._combine_property(other, "param_info")
         param_dims = self._combine_property(other, "param_dims")
-        param_counts = self._combine_property(other, "param_counts")
         coords = self._combine_property(other, "coords")
-
-        param_indices = self._combine_param_indices(other)
+        _name_to_variable = self._combine_property(other, "_name_to_variable")
         measurement_error = any([self.measurement_error, other.measurement_error])
+
+        k_states, k_posdef, k_endog = self._get_combined_shapes(other)
+        ssm = self._combine_statespace_representations(other)
+
         new_comp = Component(
             name="",
             k_endog=1,
             k_states=k_states,
             k_posdef=k_posdef,
             measurement_error=measurement_error,
+            representation=ssm,
+            component_from_sum=True,
         )
         new_comp._component_info = self._combine_component_info(other)
         new_comp.name = new_comp._make_combined_name()
@@ -516,9 +516,8 @@ class Component(ABC):
             "state_dims",
             "coords",
             "param_dims",
-            "param_indices",
             "param_info",
-            "param_counts",
+            "_name_to_variable",
         ]
         property_values = [
             state_names,
@@ -527,12 +526,11 @@ class Component(ABC):
             param_dims,
             coords,
             param_dims,
-            param_indices,
             param_info,
-            param_counts,
+            _name_to_variable,
         ]
 
-        for prop, value in zip(MATRIX_NAMES + property_names, matrices + property_values):
+        for prop, value in zip(property_names, property_values):
             setattr(new_comp, prop, value)
 
         return new_comp
@@ -560,16 +558,8 @@ class Component(ABC):
             components.
         """
 
-        x0, c, d, T, Z, R, H, Q = self.x0, self.c, self.d, self.T, self.Z, self.R, self.H, self.Q
         return StructuralTimeSeries(
-            x0,
-            c,
-            d,
-            T,
-            Z,
-            R,
-            H,
-            Q,
+            self.ssm,
             name=name,
             state_names=self.state_names,
             shock_names=self.shock_names,
@@ -577,10 +567,9 @@ class Component(ABC):
             param_dims=self.param_dims,
             coords=self.coords,
             param_info=self.param_info,
-            param_counts=self.param_counts,
-            param_indices=self.param_indices,
             component_info=self._component_info,
             measurement_error=self.measurement_error,
+            name_to_variable=self._name_to_variable,
             filter_type=filter_type,
             verbose=verbose,
         )
@@ -707,47 +696,47 @@ class LevelTrendComponent(Component):
         else:
             innovations_order = order_to_mask(innovations_order)
 
+        self.innovations_order = innovations_order
         k_posdef = int(sum(innovations_order))
 
         super().__init__(
             name, 1, k_states, k_posdef, measurement_error=False, combine_hidden_states=False
         )
 
-        self.x0 = np.zeros(k_states)
-
-        self.T = np.zeros((k_states, k_states))
-        self.T[np.triu_indices_from(self.T)] = 1
-
-        self.R = np.eye(k_states)
-        self.R = self.R[:, innovations_order]
-
-        self.Z = np.array([1.0] + [0.0] * (self.k_states - 1))[None]
-        self.Q = np.zeros((k_posdef, k_posdef))
-
-        state_names = ["level", "trend", "acceleration", "jerk", "snap", "crackle", "pop"]
-
+    def populate_component_properties(self):
         self.param_names = ["initial_trend"]
-        self.state_names = state_names[:k_states]
-        self.param_indices = {
-            "initial_trend": ("initial_state", np.arange(k_states, dtype="int")),
-        }
+        self.state_names = POSITION_DERIVATIVE_NAMES[: self.k_states]
         self.param_dims = {"initial_trend": ("trend_states",)}
-        self.param_counts = {"initial_trend": k_states}
         self.coords = {"trend_states": self.state_names}
-        self.param_info = {"initial_trend": {"shape": (k_states,), "constraints": "None"}}
+        self.param_info = {"initial_trend": {"shape": (self.k_states,), "constraints": "None"}}
 
-        if k_posdef > 0:
-            self.param_names += ["trend_sigmas"]
-            self.shock_names = list(np.array(self.state_names)[innovations_order])
-
-            self.param_indices["trend_sigmas"] = ("state_cov", *np.diag_indices(k_posdef))
-            self.param_dims["trend_sigmas"] = ("trend_shocks",)
-            self.param_counts["trend_sigmas"] = k_posdef
+        if self.k_posdef > 0:
+            self.param_names += ["sigma_trend"]
+            self.shock_names = list(np.array(self.state_names)[self.innovations_order])
+            self.param_dims["sigma_trend"] = ("trend_shocks",)
             self.coords["trend_shocks"] = self.shock_names
-            self.param_info["trend_sigmas"] = {"shape": (k_posdef,), "constraints": "Positive"}
+            self.param_info["sigma_trend"] = {"shape": (self.k_posdef,), "constraints": "Positive"}
 
         for name in self.param_names:
             self.param_info[name]["dims"] = self.param_dims[name]
+
+    def make_symbolic_graph(self) -> None:
+        initial_trend = self.make_and_register_variable("initial_trend", shape=(self.k_states,))
+        self.ssm["initial_state", :] = initial_trend
+        triu_idx = np.triu_indices(self.k_states)
+        self.ssm[np.s_["transition", triu_idx[0], triu_idx[1]]] = 1
+
+        R = np.eye(self.k_states)
+        R = R[:, self.innovations_order]
+        self.ssm["selection", :, :] = R
+
+        self.ssm["design", 0, :] = np.array([1.0] + [0.0] * (self.k_states - 1))
+
+        if self.k_posdef > 0:
+            sigma_trend = self.make_and_register_variable("sigma_trend", shape=(self.k_posdef,))
+            diag_idx = np.diag_indices(self.k_posdef)
+            idx = np.s_["state_cov", diag_idx[0], diag_idx[1]]
+            self.ssm[idx] = sigma_trend
 
 
 class MeasurementError(Component):
@@ -798,13 +787,18 @@ class MeasurementError(Component):
             name, k_endog, k_states, k_posdef, measurement_error=True, combine_hidden_states=False
         )
 
-        self.param_names = [f"sigma_{name}"]
-        self.param_indices = {f"sigma_{name}": ("obs_cov", *np.diag_indices(1))}
-        self.param_dims = {f"sigma_{name}": (OBS_STATE_DIM,)}
+    def populate_component_properties(self):
+        self.param_names = [f"sigma_{self.name}"]
+        self.param_dims = {f"sigma_{self.name}": (OBS_STATE_DIM,)}
         self.param_info = {
-            f"sigma_{name}": {"shape": (1,), "constraints": "Positive", "dims": "None"}
+            f"sigma_{self.name}": {"shape": (1,), "constraints": "Positive", "dims": "None"}
         }
-        self.param_counts = {f"sigma_{name}": 1}
+
+    def make_symbolic_graph(self) -> None:
+        error_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(self.k_endog,))
+        diag_idx = np.diag_indices(self.k_endog)
+        idx = np.s_["obs_cov", diag_idx[0], diag_idx[1]]
+        self.ssm[idx] = error_sigma
 
 
 class AutoregressiveComponent(Component):
@@ -866,7 +860,11 @@ class AutoregressiveComponent(Component):
     def __init__(self, order: int = 1, name: str = "AutoRegressive"):
         order = order_to_mask(order)
         ar_lags = np.flatnonzero(order).ravel().astype(int) + 1
-        k_states = int(sum(order))
+        k_states = len(order)
+
+        self.order = order
+        self.ar_lags = ar_lags
+
         super().__init__(
             name=name,
             k_endog=1,
@@ -876,25 +874,33 @@ class AutoregressiveComponent(Component):
             combine_hidden_states=True,
         )
 
-        self.T = np.eye(k_states, k=-1)
-        self.R[0] = 1
-        self.Z[0, 0] = 1
-
-        self.state_names = [f"L{i + 1}.data" for i in range(k_states)]
-        self.shock_names = [f"{name}_innovation"]
-
+    def populate_component_properties(self):
+        self.state_names = [f"L{i + 1}.data" for i in range(self.k_states)]
+        self.shock_names = [f"{self.name}_innovation"]
         self.param_names = ["ar_params", "sigma_ar"]
-        self.param_indices = {
-            "ar_params": ("transition", 0, slice(0, k_states)),
-            "sigma_ar": ("state_cov", *np.diag_indices(1)),
-        }
         self.param_dims = {"ar_params": ("ar_lags",)}
-        self.coords = {"ar_lags": ar_lags}
+        self.coords = {"ar_lags": self.ar_lags}
+
         self.param_info = {
-            "ar_params": {"shape": (k_states,), "constraints": "None", "dims": "(ar_lags, )"},
+            "ar_params": {"shape": (self.k_states,), "constraints": "None", "dims": "(ar_lags, )"},
             "sigma_ar": {"shape": (1,), "constraints": "Positive", "dims": None},
         }
-        self.param_counts = {"ar_params": k_states, "sigma_ar": 1}
+
+    def make_symbolic_graph(self) -> None:
+        k_nonzero = int(sum(self.order))
+        ar_params = self.make_and_register_variable("ar_params", shape=(k_nonzero,))
+        sigma_ar = self.make_and_register_variable("sigma_ar", shape=(1,))
+
+        T = np.eye(self.k_states, k=-1)
+        self.ssm["transition", :, :] = T
+        self.ssm["selection", 0, 0] = 1
+        self.ssm["design", 0, 0] = 1
+
+        ar_idx = ("transition", np.zeros(k_nonzero, dtype="int"), np.nonzero(self.order)[0])
+        self.ssm[ar_idx] = ar_params
+
+        cov_idx = ("state_cov", *np.diag_indices(1))
+        self.ssm[cov_idx] = sigma_ar
 
 
 class TimeSeasonality(Component):
@@ -1022,6 +1028,7 @@ class TimeSeasonality(Component):
                     f"state_names must be a list of length season_length, got {len(state_names)}"
                 )
             state_names = state_names.copy()
+        self.state_names = state_names
 
         # The first state doesn't get a coefficient, it is defined as -sum(state_coefs)
         # TODO: Can I stash that information in the model somewhere so users don't have to know that?
@@ -1032,41 +1039,49 @@ class TimeSeasonality(Component):
             name=name,
             k_endog=1,
             k_states=k_states,
-            k_posdef=1,
+            k_posdef=int(innovations),
             measurement_error=False,
             combine_hidden_states=True,
         )
 
-        self.state_names = state_names
-        self.T = np.eye(k_states, k=-1)
-        self.T[0, :] = -1
-        self.Z[0, 0] = 1
-
-        self.param_names = [f"{name}_coefs"]
-        self.param_indices = {f"{name}_coefs": ("initial_state", np.arange(k_states, dtype=int))}
+    def populate_component_properties(self):
+        self.param_names = [f"{self.name}_coefs"]
         self.param_info = {
-            f"{name}_coefs": {
-                "shape": (k_states,),
+            f"{self.name}_coefs": {
+                "shape": (self.k_states,),
                 "constraints": "None",
-                "dims": f"({name}_state, )",
+                "dims": f"({self.name}_state, )",
             }
         }
-        self.param_dims = {f"{name}_coefs": (f"{name}_periods",)}
-        self.param_counts[f"{name}_coefs"] = k_states
-        self.coords = {f"{name}_periods": self.state_names}
+        self.param_dims = {f"{self.name}_coefs": (f"{self.name}_periods",)}
+        self.coords = {f"{self.name}_periods": self.state_names}
 
-        if innovations:
-            self.R[0] = 1
-
-            self.param_names += [f"sigma_{name}"]
-            self.param_indices[f"sigma_{name}"] = ("state_cov", *np.diag_indices(1))
-            self.param_info[f"sigma_{name}"] = {
+        if self.k_posdef > 0:
+            self.param_names += [f"sigma_{self.name}"]
+            self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
                 "constraints": "Positive",
                 "dims": "None",
             }
-            self.param_counts[f"sigma_{name}"] = 1
-            self.shock_names = [f"{name}"]
+            self.shock_names = [f"{self.name}"]
+
+    def make_symbolic_graph(self) -> None:
+        T = np.eye(self.k_states, k=-1)
+        T[0, :] = -1
+
+        self.ssm["transition", :, :] = T
+        self.ssm["design", 0, 0] = 1
+
+        initial_states = self.make_and_register_variable(
+            f"{self.name}_coefs", shape=(self.k_states,)
+        )
+        self.ssm["initial_state", np.arange(self.k_states, dtype=int)] = initial_states
+
+        if self.k_posdef > 0:
+            season_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+            self.ssm["selection", 0, 0] = 1
+            cov_idx = ("state_cov", *np.diag_indices(1))
+            self.ssm[cov_idx] = season_sigma
 
 
 class FrequencySeasonality(Component):
@@ -1124,7 +1139,7 @@ class FrequencySeasonality(Component):
     def _compute_transition_block(s, j):
         lam = 2 * np.pi * j / s
 
-        return np.array([[np.cos(lam), np.sin(lam)], [-np.sin(lam), np.cos(lam)]])
+        return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]])
 
     def __init__(self, season_length, n=None, name=None, innovations=True):
         if n is None:
@@ -1133,6 +1148,11 @@ class FrequencySeasonality(Component):
             name = f"Frequency[s={season_length}, n={n}]"
 
         k_states = n * 2
+        self.n = n
+        self.season_length = season_length
+        self.innovations = innovations
+        self.last_state_not_identified = False
+
         super().__init__(
             name=name,
             k_endog=1,
@@ -1142,43 +1162,53 @@ class FrequencySeasonality(Component):
             combine_hidden_states=True,
         )
 
-        T_mats = [self._compute_transition_block(season_length, j + 1) for j in range(n)]
-
-        self.T = linalg.block_diag(*T_mats)
-        self.Z[0, slice(0, self.k_states, 2)] = 1
-        self.R = np.eye(self.k_states)
-
-        self.state_names = [f"{name}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
-        self.param_names = [f"{name}"]
+    def make_symbolic_graph(self) -> None:
+        self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
+        self.ssm["selection", :, :] = np.eye(self.k_states)
 
         # If the model is completely saturated (n = s // 2), the last state will not be identified, so it shouldn't
         # get a parameter assigned to it and should just be fixed to zero.
         # Test this way (rather than n == s // 2) to catch cases when n is non-integer.
-        last_state_not_identified = season_length / n == 2.0
-
-        init_state_idx = np.arange(k_states, dtype=int)
-        if last_state_not_identified:
+        self.last_state_not_identified = self.season_length / self.n == 2.0
+        init_state_idx = np.arange(self.k_states, dtype=int)
+        if self.last_state_not_identified:
             init_state_idx = init_state_idx[:-1]
+        init_state = self.make_and_register_variable(
+            f"{self.name}", shape=(self.k_states - int(self.last_state_not_identified),)
+        )
+        self.ssm["initial_state", init_state_idx] = init_state
 
-        self.param_indices = {f"{name}": ("initial_state", init_state_idx)}
-        self.param_dims = {name: (f"{name}_initial_state",)}
+        T_mats = [self._compute_transition_block(self.season_length, j + 1) for j in range(self.n)]
+        T = block_diagonal(T_mats)
+        self.ssm["transition", :, :] = T
+
+        if self.innovations:
+            sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+            self.ssm["state_cov", 0, 0] = sigma_season
+
+    def populate_component_properties(self):
+        self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
+        self.param_names = [f"{self.name}"]
+
+        self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
-            f"{name}": {
-                "shape": (k_states - int(last_state_not_identified),),
+            f"{self.name}": {
+                "shape": (self.k_states - int(self.last_state_not_identified),),
                 "constraints": "None",
-                "dims": f"({name}_initial_state, )",
+                "dims": f"({self.name}_initial_state, )",
             }
         }
-        self.param_counts[f"{name}"] = k_states - int(last_state_not_identified)
-        self.coords = {f"{name}_initial_state": [self.state_names[i] for i in init_state_idx]}
 
-        if innovations:
-            self.param_names += [f"sigma_{name}"]
-            self.param_indices[f"sigma_{name}"] = ("state_cov", *np.diag_indices(k_states))
-            self.param_info[f"sigma_{name}"] = {
+        init_state_idx = np.arange(self.k_states, dtype=int)
+        if self.last_state_not_identified:
+            init_state_idx = init_state_idx[:-1]
+        self.coords = {f"{self.name}_initial_state": [self.state_names[i] for i in init_state_idx]}
+
+        if self.innovations:
+            self.param_names += [f"sigma_{self.name}"]
+            self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
                 "constraints": "Positive",
                 "dims": "None",
             }
-            self.param_counts[f"sigma_{name}"] = 1
-            self.shock_names = [f"{name}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
+            self.shock_names = [f"{self.name}"]

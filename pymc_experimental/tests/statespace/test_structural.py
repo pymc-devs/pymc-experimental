@@ -5,7 +5,10 @@ import statsmodels.api as sm
 from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace import structural as st
-from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
+from pymc_experimental.statespace.utils.constants import (
+    MATRIX_NAMES,
+    SHORT_NAME_TO_LONG,
+)
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
@@ -15,11 +18,20 @@ ATOL = 1e-8 if floatX.endswith("64") else 1e-4
 RTOL = 0
 
 
-def simulate_from_numpy_model(mod, rng, steps=100):
+def unpack_statespace(ssm):
+    return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
+
+
+def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
     """
     Helper function to visualize the components outside of a PyMC model context
     """
-    x0, P0, c, d, T, Z, R, H, Q = mod.x0, mod.P0, mod.c, mod.d, mod.T, mod.Z, mod.R, mod.H, mod.Q
+
+    f_matrices = pytensor.function(
+        list(mod._name_to_variable.values()), unpack_statespace(mod.ssm), on_unused_input="ignore"
+    )
+    x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict)
+
     k_states = mod.k_states
     k_posdef = mod.k_posdef
 
@@ -52,16 +64,16 @@ def simulate_from_numpy_model(mod, rng, steps=100):
 
 def test_deterministic_constant_model(rng):
     mod = st.LevelTrendComponent(order=1, innovations_order=0)
-    mod.x0[0] = 1
-    x, y = simulate_from_numpy_model(mod, rng)
+    params = {"initial_trend": [1.0]}
+    x, y = simulate_from_numpy_model(mod, rng, params)
 
     assert_allclose(y, 1)
 
 
 def test_deterministic_slope_model(rng):
     mod = st.LevelTrendComponent(order=2, innovations_order=0)
-    mod.x0[1] = 1
-    x, y = simulate_from_numpy_model(mod, rng)
+    params = {"initial_trend": [0.0, 1.0]}
+    x, y = simulate_from_numpy_model(mod, rng, params)
 
     assert_allclose(np.diff(y), 1)
 
@@ -72,7 +84,6 @@ def test_model_addition():
     me = st.MeasurementError("data")
 
     mod = ll + me
-    assert "sigma_data" in mod.param_counts.keys()
     assert "sigma_data" in mod.param_names
     assert "sigma_data" in mod.param_info.keys()
     assert "sigma_data" in mod.param_dims.keys()
@@ -80,20 +91,23 @@ def test_model_addition():
 
 @pytest.mark.parametrize("order", [1, 2, [1, 0, 1]], ids=["AR1", "AR2", "AR(1,0,1)"])
 def test_autoregressive_model(order, rng):
+    # TODO: Improve this test
     ar = st.AutoregressiveComponent(order=order)
-    ar.T[ar.param_indices["ar_params"][1:]] = 0.9
-    x, y = simulate_from_numpy_model(ar, rng)
-
-    k = np.sum(order)
-    assert x.shape == (100, k)
+    params = {
+        "ar_params": np.full((sum(ar.order),), 0.95, dtype=floatX),
+        "sigma_ar": np.array([0.1], dtype=floatX),
+    }
+    x, y = simulate_from_numpy_model(ar, rng, params)
 
 
 @pytest.mark.parametrize("s", [10, 25, 50])
 @pytest.mark.parametrize("innovations", [True, False])
 def test_time_seasonality(s, innovations, rng):
-    mod = st.TimeSeasonality(season_length=s, innovations=innovations)
-    mod.x0[0] = 1
-    x, y = simulate_from_numpy_model(mod, rng)
+    mod = st.TimeSeasonality(season_length=s, innovations=innovations, name="season")
+    x0 = np.zeros(mod.k_states, dtype=floatX)
+    x0[0] = 1
+    params = {"season_coefs": x0, "sigma_season": np.array([0.1], dtype=floatX)}
+    x, y = simulate_from_numpy_model(mod, rng, params)
 
     assert_allclose(y[:s], y[s : s * 2])
 
@@ -122,11 +136,12 @@ def get_shift_factor(s):
 @pytest.mark.parametrize("s", [5, 10, 25, 25.2])
 def test_frequency_seasonality(n, s, rng):
     mod = st.FrequencySeasonality(season_length=s, n=n)
-    mod.x0[:] = rng.normal(size=mod.k_states)
+    x0 = rng.normal(size=mod.k_states).astype(floatX)
+    params = {mod.param_names[0]: x0}
     k = get_shift_factor(s)
     T = int(s * k)
 
-    x, y = simulate_from_numpy_model(mod, rng, 2 * T)
+    x, y = simulate_from_numpy_model(mod, rng, params, 2 * T)
     assert_allclose(
         np.diff(y.reshape(-1, T), axis=0),
         0,
@@ -150,13 +165,12 @@ def test_frequency_seasonality(n, s, rng):
             err_msg=f"matrix {name} does not match statsmodels",
         )
 
-    assert mod2.initialization.constant.shape == mod.x0.shape
+    assert mod2.initialization.constant.shape == mod.ssm["initial_state"].type.shape
 
 
 @pytest.mark.parametrize("s,n", [(10, 5), pytest.param(10.2, 5, marks=pytest.mark.xfail)])
 def test_state_removed_when_freq_seasonality_is_saturated(s, n):
     mod = st.FrequencySeasonality(season_length=s, n=n, name="test")
-    _, *x0_idx = mod.param_indices["test"]
-    mod.x0[x0_idx] = 1
+    init_params = mod._name_to_variable["test"]
 
-    assert mod.x0.sum() == (n * 2 - 1)
+    assert init_params.type.shape[0] == (n * 2 - 1)

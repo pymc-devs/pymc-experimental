@@ -9,6 +9,7 @@ import pytensor.tensor as pt
 from arviz import InferenceData
 from pymc.model import modelcontext
 from pymc.util import RandomState
+from pytensor import Variable, graph_replace
 from pytensor.compile import get_mode
 
 from pymc_experimental.statespace.core.representation import PytensorRepresentation
@@ -25,6 +26,7 @@ from pymc_experimental.statespace.filters.distributions import (
     SequenceMvNormal,
 )
 from pymc_experimental.statespace.filters.utilities import stabilize
+from pymc_experimental.statespace.models.utilities import variable_by_shape
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
@@ -227,9 +229,13 @@ class PyMCStateSpace:
         self.k_states = k_states
         self.k_posdef = k_posdef
         self.measurement_error = measurement_error
+        self._name_to_variable = {}
 
         # All models contain a state space representation and a Kalman filter
         self.ssm = PytensorRepresentation(k_endog, k_states, k_posdef)
+
+        # This will be populated with PyMC random matrices after calling _insert_random_variables
+        self.subbed_ssm: List[Variable] = None
 
         if filter_type.lower() not in FILTER_FACTORY.keys():
             raise NotImplementedError(
@@ -241,6 +247,7 @@ class PyMCStateSpace:
 
         self.kalman_filter = FILTER_FACTORY[filter_type.lower()]()
         self.kalman_smoother = KalmanSmoother()
+        self.make_symbolic_graph()
 
         if verbose:
             try:
@@ -264,9 +271,10 @@ class PyMCStateSpace:
             f"{out}"
         )
 
-    def unpack_statespace(self) -> Tuple:
+    def _unpack_statespace_with_placeholders(self) -> Tuple:
         """
-        Helper function to quickly obtain all statespace matrices in the standard order.
+        Helper function to quickly obtain all statespace matrices in the standard order. Matrices returned by this
+        method will include pytensor placeholders.
         """
 
         a0 = self.ssm["initial_state"]
@@ -280,6 +288,20 @@ class PyMCStateSpace:
         Q = self.ssm["state_cov"]
 
         return a0, P0, c, d, T, Z, R, H, Q
+
+    def unpack_statespace(self) -> Tuple:
+        """
+        Helper function to quickly obtain all statespace matrices in the standard order.
+        """
+
+        if self.subbed_ssm is None:
+            raise ValueError(
+                "Cannot unpack the complete statespace system until PyMC model variables have been "
+                "inserted. To build the random statespace matrices, call build_statespace_graph() inside"
+                "a PyMC model context. "
+            )
+
+        return self.subbed_ssm
 
     @property
     def param_names(self) -> List[str]:
@@ -369,6 +391,107 @@ class PyMCStateSpace:
         """
         raise NotImplementedError
 
+    def make_and_register_variable(self, name, shape, dtype=floatX) -> Variable:
+        """
+        Helper function to create a pytensor symbolic variable and register it in the _name_to_variable dictionary
+
+        Parameters
+        ----------
+        name : str
+            The name of the placeholder variable. Must be the name of a model parameter.
+        shape : int or tuple of int
+            Shape of the parameter
+        dtype : str, default pytensor.config.floatX
+            dtype of the parameter
+
+        Notes
+        -----
+        Symbolic pytensor variables are used in the ``make_symbolic_graph`` method as placeholders for PyMC random
+        variables. The change is made in the ``_insert_random_variables`` method via ``pytensor.graph_replace``. To
+        make the change, a dictionary mapping pytensor variables to PyMC random variables needs to be constructed.
+
+        The purpose of this method is to:
+            1.  Create the placeholder symbolic variables
+            2.  Register the placeholder variable in the ``_name_to_variable`` dictionary
+
+        The shape provided here will define the shape of the prior that will need to be provided by the user.
+
+        An error is raised if the provided name has already been registered, or if the name is not present in the
+        ``param_names`` property.
+        """
+        if name not in self.param_names:
+            raise ValueError(
+                f"{name} is not a model parameter. All placeholder variables should correspond to model "
+                f"parameters."
+            )
+
+        if name in self._name_to_variable.keys():
+            raise ValueError(
+                f"{name} is already a registered placeholder variable with shape "
+                f"{self._name_to_variable[name].type.shape}"
+            )
+
+        placeholder = variable_by_shape(name, shape=shape, dtype=dtype)
+        self._name_to_variable[name] = placeholder
+        return placeholder
+
+    def make_symbolic_graph(self) -> None:
+        """
+        The purpose of the make_symbolic_graph function is to hide tedious parameter allocations from the user.
+        In statespace models, it is extremely rare for an entire matrix to be defined by a single prior distribution.
+        Instead, users expect to place priors over single entries of the matrix. The purpose of this function is to
+        meet that expectation.
+
+        Every statespace model needs to implement this function.
+
+        Examples
+        ----------
+        As an example, consider an ARMA(2,2) model, which has five parameters (excluding the initial state distribution):
+        2 AR parameters (:math:`\rho_1` and :math:`\rho_2`), 2 MA parameters (:math:`\theta_1` and :math:`theta_2`),
+        and a single innovation covariance (:math:`\\sigma`). A common way of writing this statespace is:
+
+        ..math::
+
+            \begin{align}
+                T &= \begin{bmatrix} \rho_1 & 1 & 0 \\
+                                     \rho_2 & 0 & 1 \\
+                                     0      & 0 & 0
+                      \\end{bmatrix} \\
+                R & = \begin{bmatrix} 1 \\ \theta_1 \\ \theta_2 \\end{bmatrix} \\
+                Q &= \begin{bmatrix} \\sigma \\end{bmatrix}
+            \\end{align}
+
+        To implement this model, we begin by creating the required matrices, and fill in the "fixed" values -- the ones
+        at position (0, 1) and (0, 2) in the T matrix, and at position (0, 0) in the R matrix. These are then saved
+        to the class's PytensorRepresentation -- called ``ssm``.
+
+        .. code:: python
+
+            T = np.eye(2, k=1)
+            R = np.concatenate([np.ones(1,1), np.zeros((2, 1))], axis=0)
+
+            self.ssm['transition'] = T
+            self.ssm['selection'] = R
+
+        Next, placeholders need to be inserted for the random variables rho_1, rho_2, theta_1, theta_2, and sigma.
+        This can be done many ways: we could define two vectors, rho and theta, and a scalar for sigma, or five
+        scalars. Whatever is chosen, the choice needs to be consistent with the ``param_names`` property.
+
+        Suppose the ``param_names`` are ``[rho, theta, sigma]``, then we make one placeholder for each, and insert it
+        into the correct ``ssm`` matrix, at the correct location. To create placeholders, use the
+        ``make_and_register_variable`` helper method, which will maintain an internal registry of variables.
+
+        .. code:: python
+            rho_parmas = self.make_and_register_variable(name='rho', shape=(2,))
+            theta_params = self.make_and_register_variable(name='theta', shape=(2,))
+            sigma = self.make_and_register_variable(name='sigma', shape=(1,))
+
+            self.ssm['transition', :, 0] = rho_params
+            self.ssm['selection', 1:, 0] = theta_params
+            self.ssm['state_cov', 0, 0] = sigma
+        """
+        raise NotImplementedError
+
     def _get_matrix_shape_and_dims(self, name: str) -> Tuple[Tuple, Tuple]:
         """
         Get the shape and dimensions of a matrix associated with the specified name.
@@ -452,71 +575,13 @@ class PyMCStateSpace:
 
         return mu_shape, cov_shape, mu_dims, cov_dims
 
-    def update(self, theta: pt.TensorVariable, mode: Optional[str] = None) -> None:
+    def _insert_random_variables(self) -> List[Variable]:
         """
-        Map PyMC random variables to statespace matrices in a PytensorRepresentation
-
-        Parameters
-        ----------
-        theta: TensorVariable
-            Vector of all variables in the state space model
-
-        mode: str, default None
-            Compile mode being using by pytensor
-
-        Returns
-        ----------
-        None
-
-        Notes
-        ----------
-        The purpose of the update function is to hide tedious parameter allocations from the user. In statespace models,
-        it is extremely rare for an entire matrix to be defined by a single prior distribution. Instead, users expect
-        to place priors over single entries of the matrix. The purpose of this function is to meet that expectation.
-
-        The tensor `theta` should **only** be that returned by `PyMCStateSpace._gather_required_random_variables`.
-        This ensures the parameters are provided in the expected order. Passing parameters in an arbitrary order will
-        result in incorrect results.
+        Replace pytensor symbolic variables with PyMC random variables.
 
         Examples
-        ----------
-        As an example, consider an ARMA(2,2) model, which has five parameters (excluding the initial state distribution):
-        2 AR parameters (:math:`\rho_1` and :math:`\rho_2`), 2 MA parameters (:math:`\theta_1` and :math:`theta_2`),
-        and a single innovation covariance (:math:`\\sigma`). A common way of writing this statespace is:
-
-        ..math::
-
-            \begin{align}
-                T &= \begin{bmatrix} \rho_1 & 1 & 0 \\
-                                     \rho_2 & 0 & 1 \\
-                                     0      & 0 & 0
-                      \\end{bmatrix} \\
-                R & = \begin{bmatrix} 1 \\ \theta_1 \\ \theta_2 \\end{bmatrix} \\
-                Q &= \begin{bmatrix} \\sigma \\end{bmatrix}
-            \\end{align}
-
-        Define `theta` as a flat array of these five parameters, arranged in an arbitrarily fixed order
-        :math:`\\left [\rho_1 \rho_2 \theta_1 \theta_2 \\sigma \right ]. `update(theta)` is equivalent to:
+        --------
         .. code:: python
-
-            import pytensor.tensor as pt
-            T = pt.eye(2, k=1)
-            R = pt.concatenate([pt.ones(1,1), pt.zeros((2, 1))], axis=0)
-            Q = pt.zeros((1, 1))
-            T = pt.set_subtensor(T[:2, 0], theta[:2])
-            R = pt.set_subtensor(R[1:, 0], theta[2:4])
-            Q = pt.set_subtensor(Q[0, 0], theta[4])
-
-        In general,``theta`` should never be manually constructed by a user. It is be automatically constructed by
-        ``PyMCStateSpace._gather_required_random_variables`` inside a PyMC model context, which is in turn perfomed
-        when the ``PyMCStateSpace.build_statespace_graph`` method is invoked. If one were to manually call ``update``,
-        it would look like this:
-
-        .. code:: python
-            import pymc as pm
-            import pymc_experimental.statespace as pmss
-
-            RANDOM_SEED = sum(map(ord, 'statespace'))
 
             ss_mod = pmss.BayesianARIMA(order=(2, 0, 2), verbose=False, stationary_initialization=True)
             with pm.Model():
@@ -524,42 +589,24 @@ class PyMCStateSpace:
                  ar_params = pm.Normal('ar_params', size=ss_mod.p)
                  ma_parama = pm.Normal('ma_params', size=ss_mod.q)
                  sigma_state = pm.Normal('sigma_state')
-                 theta = ss_mod._gather_required_random_variables()
-                 ss_mod.update(theta)
 
-            pm.draw(ss_mod.ssm['transition'], random_seed=RANDOM_SEED)
+                 ss_mod._insert_random_variables()
+                 matrics = ss_mod.unpack_statespace()
+
+            pm.draw(matrices['transition'], random_seed=RANDOM_SEED)
             >>> array([[-0.90590386,  1.        ,  0.        ],
             >>>        [ 1.25190143,  0.        ,  1.        ],
             >>>        [ 0.        ,  0.        ,  0.        ]])
 
-            pm.draw(ss_mod.ssm['selection'], random_seed=RANDOM_SEED)
+            pm.draw(matrices['selection'], random_seed=RANDOM_SEED)
             >>> array([[ 1.        ],
             >>>        [-2.46741039],
             >>>        [-0.28947689]])
 
-            pm.draw(ss_mod.ssm['state_cov'], random_seed=RANDOM_SEED)
+            pm.draw(matrices['state_cov'], random_seed=RANDOM_SEED)
             >>> array([[-1.69353533]])
-
         """
 
-        raise NotImplementedError
-
-    def _gather_required_random_variables(self) -> pt.TensorVariable:
-        """
-        Iterates through random variables in the model on the context stack, matches their names with the statespace
-        model's named parameters, and returns a single vector of parameters to pass to the update method.
-
-        Important point is that the *order of the variables matters*. Update will expect that the theta vector will be
-        organized as variables are listed in param_names.
-
-        Returns
-        ----------
-        theta: TensorVariable
-            A size (p,) tensor containing all parameters to be estimated among all state space matrices in the
-            system.
-        """
-
-        theta = []
         pymc_model = modelcontext(None)
         found_params = []
         with pymc_model:
@@ -567,7 +614,6 @@ class PyMCStateSpace:
                 param = getattr(pymc_model, param_name, None)
                 if param:
                     found_params.append(param.name)
-                    theta.append(param.ravel())
 
         missing_params = set(self.param_names) - set(found_params)
         if len(missing_params) > 0:
@@ -575,7 +621,12 @@ class PyMCStateSpace:
                 "The following required model parameters were not found in the PyMC model: "
                 + ", ".join(param for param in list(missing_params))
             )
-        return pt.concatenate(theta)
+
+        matrices = list(self._unpack_statespace_with_placeholders())
+        replacement_dict = {
+            var: pt.atleast_1d(pymc_model[name]) for name, var in self._name_to_variable.items()
+        }
+        self.subbed_ssm = graph_replace(matrices, replace=replacement_dict, strict=True)
 
     def build_statespace_graph(
         self,
@@ -583,7 +634,7 @@ class PyMCStateSpace:
         register_data: bool = True,
         mode: Optional[str] = None,
         missing_fill_value: Optional[float] = None,
-        cov_jitter: Optional[float] = None,
+        cov_jitter: Optional[float] = JITTER_DEFAULT,
         return_updates: bool = False,
         include_smoother: bool = True,
     ) -> None:
@@ -645,10 +696,9 @@ class PyMCStateSpace:
         """
         pm_mod = modelcontext(None)
 
-        theta = self._gather_required_random_variables()
-        self.update(theta, mode=mode)
-
+        self._insert_random_variables()
         matrices = self.unpack_statespace()
+
         n_obs = self.ssm.shapes["obs_intercept"][0]
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
 
@@ -675,6 +725,7 @@ class PyMCStateSpace:
             mode=mode,
             missing_fill_value=missing_fill_value,
             return_updates=return_updates,
+            cov_jitter=cov_jitter,
         )
 
         if return_updates:
@@ -697,7 +748,11 @@ class PyMCStateSpace:
 
         if include_smoother:
             smoothed_states, smoothed_covariances = self._build_smoother_graph(
-                filtered_states, filtered_covariances, mode=mode
+                filtered_states,
+                filtered_covariances,
+                registered_matrices,
+                mode=mode,
+                cov_jitter=cov_jitter,
             )
             outputs_to_use += [smoothed_states, smoothed_covariances]
             names_to_use += SMOOTHER_OUTPUT_NAMES.copy()
@@ -728,7 +783,9 @@ class PyMCStateSpace:
         self,
         filtered_states: pt.TensorVariable,
         filtered_covariances: pt.TensorVariable,
+        matrices,
         mode: Optional[str] = None,
+        cov_jitter=JITTER_DEFAULT,
     ):
         """
         Build the computation graph for the Kalman smoother.
@@ -762,10 +819,10 @@ class PyMCStateSpace:
 
         pymc_model = modelcontext(None)
         with pymc_model:
-            *_, T, Z, R, H, Q = self.unpack_statespace()
+            *_, T, Z, R, H, Q = matrices
 
             smooth_states, smooth_covariances = self.kalman_smoother.build_graph(
-                T, R, Q, filtered_states, filtered_covariances, mode=mode
+                T, R, Q, filtered_states, filtered_covariances, mode=mode, cov_jitter=cov_jitter
             )
 
             return smooth_states, smooth_covariances

@@ -47,7 +47,7 @@ def pymc_model(data):
         P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
         P0 = pm.Deterministic("P0", pt.diag(P0_diag))
         initial_trend = pm.Normal("initial_trend", shape=(2,))
-        trend_sigmas = pm.Exponential("trend_sigmas", 1, shape=(2,))
+        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
 
     return mod
 
@@ -64,7 +64,7 @@ def pymc_model_2(data):
         P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
         P0 = pm.Deterministic("P0", pt.diag(P0_diag))
         initial_trend = pm.Normal("initial_trend", shape=(2,))
-        trend_sigmas = pm.Exponential("trend_sigmas", 1, shape=(2,))
+        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
         sigma_me = pm.Exponential("sigma_error", 1)
 
     return mod
@@ -93,8 +93,7 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
         "data", verbose=False, filter_type=kfilter
     )
     with pymc_model:
-        theta = ss_mod._gather_required_random_variables()
-        ss_mod.update(theta)
+        ss_mod._insert_random_variables()
         matrices = ss_mod.unpack_statespace()
 
         filter_outputs = ss_mod.kalman_filter.build_graph(pymc_model["data"], *matrices)
@@ -116,8 +115,7 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
 @pytest.mark.parametrize("output_name", ["states_latent", "states_observed"])
 def test_lgss_distribution_from_steps(output_name, ss_mod_me, pymc_model_2):
     with pymc_model_2:
-        theta = ss_mod_me._gather_required_random_variables()
-        ss_mod_me.update(theta)
+        ss_mod_me._insert_random_variables()
         matrices = ss_mod_me.unpack_statespace()
 
         # pylint: disable=unpacking-non-sequence
@@ -134,8 +132,7 @@ def test_lgss_distribution_from_steps(output_name, ss_mod_me, pymc_model_2):
 @pytest.mark.parametrize("output_name", ["states_latent", "states_observed"])
 def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
     with pymc_model_2:
-        theta = ss_mod_me._gather_required_random_variables()
-        ss_mod_me.update(theta)
+        ss_mod_me._insert_random_variables()
         matrices = ss_mod_me.unpack_statespace()
 
         # pylint: disable=unpacking-non-sequence

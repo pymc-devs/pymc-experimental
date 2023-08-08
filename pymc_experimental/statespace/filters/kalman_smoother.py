@@ -10,6 +10,7 @@ from pymc_experimental.statespace.filters.utilities import (
     split_vars_into_seq_and_nonseq,
     stabilize,
 )
+from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT
 
 
 class KalmanSmoother:
@@ -20,6 +21,7 @@ class KalmanSmoother:
 
     def __init__(self, mode: Optional[str] = None):
         self.mode = mode
+        self.cov_jitter = JITTER_DEFAULT
         self.seq_names = []
         self.non_seq_names = []
 
@@ -62,11 +64,16 @@ class KalmanSmoother:
 
         return a, P, a_smooth, P_smooth, T, R, Q
 
-    def build_graph(self, T, R, Q, filtered_states, filtered_covariances, mode=None):
+    def build_graph(
+        self, T, R, Q, filtered_states, filtered_covariances, mode=None, cov_jitter=JITTER_DEFAULT
+    ):
         self.mode = mode
+        self.cov_jitter = cov_jitter
 
-        a_last = filtered_states[-1]
-        P_last = filtered_covariances[-1]
+        n, k = filtered_states.type.shape
+
+        a_last = pt.specify_shape(filtered_states[-1], (k,))
+        P_last = pt.specify_shape(filtered_covariances[-1], (k, k))
 
         sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
             [T, R, Q], ["T", "R", "Q"]
@@ -104,14 +111,14 @@ class KalmanSmoother:
         a_smooth_next = a + smoother_gain @ (a_smooth - a_hat)
 
         P_smooth_next = P + quad_form_sym(smoother_gain, P_smooth - P_hat)
-        P_smooth_next = stabilize(P_smooth_next)
+        P_smooth_next = stabilize(P_smooth_next, self.cov_jitter)
+        P_smooth_next = pt.specify_shape(stabilize(P_smooth_next), P_smooth.type.shape)
 
         return a_smooth_next, P_smooth_next
 
-    @staticmethod
-    def predict(a, P, T, R, Q):
+    def predict(self, a, P, T, R, Q):
         a_hat = T.dot(a)
         P_hat = quad_form_sym(T, P) + quad_form_sym(R, Q)
-        P_hat = stabilize(P_hat)
+        P_hat = stabilize(P_hat, self.cov_jitter)
 
         return a_hat, P_hat
