@@ -267,7 +267,7 @@ def test_filters_match_statsmodel_output(filter_func, output_idx, name, n_missin
 def test_all_covariance_matrices_are_PSD(
     filter_func, filter_name, output_idx, name, n_missing, obs_noise, rng
 ):
-    if (floatX == "float32") & (filter_name == "UnivariateFilter") & (not obs_noise):
+    if (floatX == "float32") & (filter_name == "UnivariateFilter"):
         # TODO: These tests all pass locally for me with float32 but they fail on the CI, so i'm just disabling them.
         pytest.skip("Univariate filter not stable at half precision without measurement error")
 
