@@ -15,8 +15,8 @@ from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # py
 )
 
 floatX = pytensor.config.floatX
-ATOL = 1e-8 if floatX.endswith("64") else 1e-4
-RTOL = 0
+ATOL = 1e-8 if floatX.endswith("64") else 1e-6
+RTOL = 0 if floatX.endswith("64") else 1e-6
 
 
 def unpack_statespace(ssm):
@@ -71,7 +71,7 @@ def test_deterministic_constant_model(rng):
     params = {"initial_trend": [1.0]}
     x, y = simulate_from_numpy_model(mod, rng, params)
 
-    assert_allclose(y, 1)
+    assert_allclose(y, 1, atol=ATOL, rtol=RTOL)
 
 
 def test_deterministic_slope_model(rng):
@@ -79,7 +79,7 @@ def test_deterministic_slope_model(rng):
     params = {"initial_trend": [0.0, 1.0]}
     x, y = simulate_from_numpy_model(mod, rng, params)
 
-    assert_allclose(np.diff(y), 1)
+    assert_allclose(np.diff(y), 1, atol=ATOL, rtol=RTOL)
 
 
 def test_model_addition():
@@ -118,7 +118,9 @@ def test_time_seasonality(s, innovations, rng):
     x, y = simulate_from_numpy_model(mod, rng, params)
     y = y.ravel()
     if not innovations:
-        assert_allclose(y[:s], y[s : s * 2], err_msg="seasonal pattern does not repeat")
+        assert_allclose(
+            y[:s], y[s : s * 2], err_msg="seasonal pattern does not repeat", atol=ATOL, rtol=RTOL
+        )
 
     mod2 = sm.tsa.UnobservedComponents(
         endog=rng.normal(size=100),
@@ -132,7 +134,11 @@ def test_time_seasonality(s, innovations, rng):
     for name, matrix in zip(["T", "R", "Z", "Q"], [T, R, Z, Q]):
         long_name = SHORT_NAME_TO_LONG[name]
         assert_allclose(
-            mod2.ssm[long_name], matrix, err_msg=f"matrix {name} does not match statsmodels"
+            mod2.ssm[long_name],
+            matrix,
+            err_msg=f"matrix {name} does not match statsmodels",
+            atol=ATOL,
+            rtol=RTOL,
         )
 
 
@@ -229,7 +235,7 @@ def test_add_components():
     all_mats = [T, R, Q]
 
     for (ll_mat, se_mat, all_mat) in zip(ll_mats, se_mats, all_mats):
-        assert_allclose(all_mat, linalg.block_diag(ll_mat, se_mat))
+        assert_allclose(all_mat, linalg.block_diag(ll_mat, se_mat), atol=ATOL, rtol=RTOL)
 
     ll_mats = [ll_x0, ll_c, ll_Z]
     se_mats = [se_x0, se_c, se_Z]
@@ -237,4 +243,4 @@ def test_add_components():
     axes = [0, 0, 1]
 
     for (ll_mat, se_mat, all_mat, axis) in zip(ll_mats, se_mats, all_mats, axes):
-        assert_allclose(all_mat, np.concatenate([ll_mat, se_mat], axis=axis))
+        assert_allclose(all_mat, np.concatenate([ll_mat, se_mat], axis=axis), atol=ATOL, rtol=RTOL)
