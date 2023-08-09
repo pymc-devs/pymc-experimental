@@ -26,7 +26,6 @@ from pymc_experimental.statespace.filters.distributions import (
     SequenceMvNormal,
 )
 from pymc_experimental.statespace.filters.utilities import stabilize
-from pymc_experimental.statespace.models.utilities import variable_by_shape
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
@@ -431,7 +430,7 @@ class PyMCStateSpace:
                 f"{self._name_to_variable[name].type.shape}"
             )
 
-        placeholder = variable_by_shape(name, shape=shape, dtype=dtype)
+        placeholder = pt.tensor(name, shape=shape, dtype=dtype)
         self._name_to_variable[name] = placeholder
         return placeholder
 

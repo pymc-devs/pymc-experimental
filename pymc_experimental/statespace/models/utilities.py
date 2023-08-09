@@ -88,12 +88,3 @@ def make_default_coords(ss_mod):
     }
 
     return coords
-
-
-def variable_by_shape(name, shape, dtype):
-    if len(shape) <= 1:
-        return pt.vector(name, shape=shape, dtype=dtype)
-    elif len(shape) == 2:
-        return pt.matrix(name, shape=shape, dtype=dtype)
-    else:
-        return pt.tensor(name, shape=shape, dtype=dtype)
