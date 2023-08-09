@@ -3,6 +3,7 @@ import pytensor
 import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose
+from scipy import linalg
 
 from pymc_experimental.statespace import structural as st
 from pymc_experimental.statespace.utils.constants import (
@@ -22,16 +23,19 @@ def unpack_statespace(ssm):
     return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
 
 
-def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
-    """
-    Helper function to visualize the components outside of a PyMC model context
-    """
-
+def unpack_symbolic_matrices_with_params(mod, param_dict):
     f_matrices = pytensor.function(
         list(mod._name_to_variable.values()), unpack_statespace(mod.ssm), on_unused_input="ignore"
     )
     x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict)
+    return x0, P0, c, d, T, Z, R, H, Q
 
+
+def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
+    """
+    Helper function to visualize the components outside of a PyMC model context
+    """
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, param_dict)
     k_states = mod.k_states
     k_posdef = mod.k_posdef
 
@@ -106,10 +110,15 @@ def test_time_seasonality(s, innovations, rng):
     mod = st.TimeSeasonality(season_length=s, innovations=innovations, name="season")
     x0 = np.zeros(mod.k_states, dtype=floatX)
     x0[0] = 1
-    params = {"season_coefs": x0, "sigma_season": np.array([0.1], dtype=floatX)}
-    x, y = simulate_from_numpy_model(mod, rng, params)
 
-    assert_allclose(y[:s], y[s : s * 2])
+    params = {"season_coefs": x0}
+    if mod.innovations:
+        params["sigma_season"] = np.array([0.0], dtype=floatX)
+
+    x, y = simulate_from_numpy_model(mod, rng, params)
+    y = y.ravel()
+    if not innovations:
+        assert_allclose(y[:s], y[s : s * 2], err_msg="seasonal pattern does not repeat")
 
     mod2 = sm.tsa.UnobservedComponents(
         endog=rng.normal(size=100),
@@ -118,10 +127,13 @@ def test_time_seasonality(s, innovations, rng):
         # Silence a warning about no innovations when innovations = False
         irregular=True,
     )
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
 
-    for matrix in ["T", "R", "Z", "Q"]:
-        name = SHORT_NAME_TO_LONG[matrix]
-        assert_allclose(mod2.ssm[name], getattr(mod, matrix), err_msg=name)
+    for name, matrix in zip(["T", "R", "Z", "Q"], [T, R, Z, Q]):
+        long_name = SHORT_NAME_TO_LONG[name]
+        assert_allclose(
+            mod2.ssm[long_name], matrix, err_msg=f"matrix {name} does not match statsmodels"
+        )
 
 
 def get_shift_factor(s):
@@ -135,9 +147,9 @@ def get_shift_factor(s):
 @pytest.mark.parametrize("n", np.arange(1, 6, dtype="int").tolist() + [None])
 @pytest.mark.parametrize("s", [5, 10, 25, 25.2])
 def test_frequency_seasonality(n, s, rng):
-    mod = st.FrequencySeasonality(season_length=s, n=n)
-    x0 = rng.normal(size=mod.k_states).astype(floatX)
-    params = {mod.param_names[0]: x0}
+    mod = st.FrequencySeasonality(season_length=s, n=n, name="season")
+    x0 = rng.normal(size=mod.n_coefs).astype(floatX)
+    params = {"season": x0, "sigma_season": np.array([0.0], dtype=floatX)}
     k = get_shift_factor(s)
     T = int(s * k)
 
@@ -156,12 +168,13 @@ def test_frequency_seasonality(n, s, rng):
 
     mod2 = sm.tsa.UnobservedComponents(endog=rng.normal(size=100), freq_seasonal=[init_dict])
     mod2.initialize_default()
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
 
-    for matrix in ["T", "Z", "R", "Q"]:
-        name = SHORT_NAME_TO_LONG[matrix]
+    for name, matrix in zip(["T", "Z", "R", "Q"], [T, Z, R, Q]):
+        name = SHORT_NAME_TO_LONG[name]
         assert_allclose(
             mod2.ssm[name],
-            getattr(mod, matrix),
+            matrix,
             err_msg=f"matrix {name} does not match statsmodels",
         )
 
@@ -174,3 +187,54 @@ def test_state_removed_when_freq_seasonality_is_saturated(s, n):
     init_params = mod._name_to_variable["test"]
 
     assert init_params.type.shape[0] == (n * 2 - 1)
+
+
+def test_add_components():
+    ll = st.LevelTrendComponent(order=2)
+    se = st.TimeSeasonality(name="seasonal", season_length=12)
+    mod = ll + se
+
+    ll_params = {
+        "initial_trend": np.zeros(
+            2,
+        ),
+        "sigma_trend": np.ones(
+            2,
+        ),
+    }
+    se_params = {
+        "seasonal_coefs": np.ones(
+            11,
+        ),
+        "sigma_seasonal": np.ones(
+            1,
+        ),
+    }
+    all_params = ll_params.copy() | se_params.copy()
+
+    (ll_x0, ll_P0, ll_c, ll_d, ll_T, ll_Z, ll_R, ll_H, ll_Q) = unpack_symbolic_matrices_with_params(
+        ll, ll_params
+    )
+    (se_x0, se_P0, se_c, se_d, se_T, se_Z, se_R, se_H, se_Q) = unpack_symbolic_matrices_with_params(
+        se, se_params
+    )
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, all_params)
+
+    for property in ["param_names", "shock_names", "param_info", "coords", "param_dims"]:
+        assert [x in getattr(mod, property) for x in getattr(ll, property)]
+        assert [x in getattr(mod, property) for x in getattr(se, property)]
+
+    ll_mats = [ll_T, ll_R, ll_Q]
+    se_mats = [se_T, se_R, se_Q]
+    all_mats = [T, R, Q]
+
+    for (ll_mat, se_mat, all_mat) in zip(ll_mats, se_mats, all_mats):
+        assert_allclose(all_mat, linalg.block_diag(ll_mat, se_mat))
+
+    ll_mats = [ll_x0, ll_c, ll_Z]
+    se_mats = [se_x0, se_c, se_Z]
+    all_mats = [x0, c, Z]
+    axes = [0, 0, 1]
+
+    for (ll_mat, se_mat, all_mat, axis) in zip(ll_mats, se_mats, all_mats, axes):
+        assert_allclose(all_mat, np.concatenate([ll_mat, se_mat], axis=axis))

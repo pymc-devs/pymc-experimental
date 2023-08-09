@@ -1,5 +1,5 @@
 import pytensor
-import pytensor.tensor as at
+import pytensor.tensor as pt
 import scipy
 from pytensor.tensor import TensorVariable, as_tensor_variable
 from pytensor.tensor.nlinalg import matrix_dot
@@ -8,7 +8,7 @@ from pytensor.tensor.slinalg import solve_discrete_lyapunov
 floatX = pytensor.config.floatX
 
 
-class SolveDiscreteARE(at.Op):
+class SolveDiscreteARE(pt.Op):
     __props__ = ("enforce_Q_symmetric",)
 
     def __init__(self, enforce_Q_symmetric=False):
@@ -43,8 +43,8 @@ class SolveDiscreteARE(at.Op):
         (dX,) = output_grads
         X = self(A, B, Q, R)
 
-        K_inner = R + at.linalg.matrix_dot(B.T, X, B)
-        K_inner_inv = at.linalg.solve(K_inner, at.eye(R.shape[0]))
+        K_inner = R + pt.linalg.matrix_dot(B.T, X, B)
+        K_inner_inv = pt.linalg.solve(K_inner, pt.eye(R.shape[0]))
         K = matrix_dot(K_inner_inv, B.T, X, A)
 
         A_tilde = A - B.dot(K)
@@ -78,7 +78,7 @@ def solve_discrete_are(A, B, Q, R, enforce_Q_symmetric=False) -> TensorVariable:
 
     Returns
     -------
-    X: at.matrix
+    X: pt.matrix
         Square matrix of shape M x M, representing the solution to the DARE
     """
 

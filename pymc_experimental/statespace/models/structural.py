@@ -1,12 +1,11 @@
 import logging
 from abc import ABC
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
 import xarray as xr
-from pymc.math import block_diagonal
 from pytensor import Variable
 
 from pymc_experimental.statespace.core import PytensorRepresentation
@@ -35,6 +34,29 @@ def order_to_mask(order):
         return np.ones(order).astype(bool)
     else:
         return np.array(order).astype(bool)
+
+
+def _frequency_transition_block(s, j):
+    lam = 2 * np.pi * j / s
+
+    return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]])
+
+
+def block_diagonal(matrices: List[pt.matrix]):
+    rows = [x.shape[0] for x in matrices]
+    cols = [x.shape[1] for x in matrices]
+    out = pt.zeros((sum(rows), sum(cols)))
+    row_cursor = 0
+    col_cursor = 0
+
+    for row, col, mat in zip(rows, cols, matrices):
+        row_slice = slice(row_cursor, row_cursor + row)
+        col_slice = slice(col_cursor, col_cursor + col)
+        row_cursor += row
+        col_cursor += col
+
+        out = pt.set_subtensor(out[row_slice, col_slice], mat)
+    return out
 
 
 class StructuralTimeSeries(PyMCStateSpace):
@@ -1029,6 +1051,7 @@ class TimeSeasonality(Component):
                 )
             state_names = state_names.copy()
         self.state_names = state_names
+        self.innovations = innovations
 
         # The first state doesn't get a coefficient, it is defined as -sum(state_coefs)
         # TODO: Can I stash that information in the model somewhere so users don't have to know that?
@@ -1039,7 +1062,7 @@ class TimeSeasonality(Component):
             name=name,
             k_endog=1,
             k_states=k_states,
-            k_posdef=int(innovations),
+            k_posdef=1,  # TODO: Why not int(self.innovation)?
             measurement_error=False,
             combine_hidden_states=True,
         )
@@ -1056,7 +1079,7 @@ class TimeSeasonality(Component):
         self.param_dims = {f"{self.name}_coefs": (f"{self.name}_periods",)}
         self.coords = {f"{self.name}_periods": self.state_names}
 
-        if self.k_posdef > 0:
+        if self.innovations:
             self.param_names += [f"sigma_{self.name}"]
             self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
@@ -1077,9 +1100,9 @@ class TimeSeasonality(Component):
         )
         self.ssm["initial_state", np.arange(self.k_states, dtype=int)] = initial_states
 
-        if self.k_posdef > 0:
-            season_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+        if self.innovations:
             self.ssm["selection", 0, 0] = 1
+            season_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
             cov_idx = ("state_cov", *np.diag_indices(1))
             self.ssm[cov_idx] = season_sigma
 
@@ -1135,12 +1158,6 @@ class FrequencySeasonality(Component):
     to isolate and identify a "Monday" effect, for instance.
     """
 
-    @staticmethod
-    def _compute_transition_block(s, j):
-        lam = 2 * np.pi * j / s
-
-        return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]])
-
     def __init__(self, season_length, n=None, name=None, innovations=True):
         if n is None:
             n = int(season_length // 2)
@@ -1151,7 +1168,12 @@ class FrequencySeasonality(Component):
         self.n = n
         self.season_length = season_length
         self.innovations = innovations
-        self.last_state_not_identified = False
+
+        # If the model is completely saturated (n = s // 2), the last state will not be identified, so it shouldn't
+        # get a parameter assigned to it and should just be fixed to zero.
+        # Test this way (rather than n == s // 2) to catch cases when n is non-integer.
+        self.last_state_not_identified = self.season_length / self.n == 2.0
+        self.n_coefs = k_states - int(self.last_state_not_identified)
 
         super().__init__(
             name=name,
@@ -1166,25 +1188,18 @@ class FrequencySeasonality(Component):
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
         self.ssm["selection", :, :] = np.eye(self.k_states)
 
-        # If the model is completely saturated (n = s // 2), the last state will not be identified, so it shouldn't
-        # get a parameter assigned to it and should just be fixed to zero.
-        # Test this way (rather than n == s // 2) to catch cases when n is non-integer.
-        self.last_state_not_identified = self.season_length / self.n == 2.0
-        init_state_idx = np.arange(self.k_states, dtype=int)
-        if self.last_state_not_identified:
-            init_state_idx = init_state_idx[:-1]
-        init_state = self.make_and_register_variable(
-            f"{self.name}", shape=(self.k_states - int(self.last_state_not_identified),)
-        )
+        init_state = self.make_and_register_variable(f"{self.name}", shape=(self.n_coefs,))
+
+        init_state_idx = np.arange(self.n_coefs, dtype=int)
         self.ssm["initial_state", init_state_idx] = init_state
 
-        T_mats = [self._compute_transition_block(self.season_length, j + 1) for j in range(self.n)]
+        T_mats = [_frequency_transition_block(self.season_length, j + 1) for j in range(self.n)]
         T = block_diagonal(T_mats)
         self.ssm["transition", :, :] = T
 
         if self.innovations:
             sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
-            self.ssm["state_cov", 0, 0] = sigma_season
+            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
 
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
@@ -1203,6 +1218,111 @@ class FrequencySeasonality(Component):
         if self.last_state_not_identified:
             init_state_idx = init_state_idx[:-1]
         self.coords = {f"{self.name}_initial_state": [self.state_names[i] for i in init_state_idx]}
+
+        if self.innovations:
+            self.param_names += [f"sigma_{self.name}"]
+            self.param_info[f"sigma_{self.name}"] = {
+                "shape": (1,),
+                "constraints": "Positive",
+                "dims": "None",
+            }
+            self.shock_names = self.state_names.copy()
+
+
+class CycleComponent(Component):
+    r"""
+    # TODO: WRITEME
+    """
+
+    def __init__(
+        self,
+        name=None,
+        cycle_length=None,
+        estimate_cycle_length=False,
+        dampen=False,
+        innovations=True,
+    ):
+        if cycle_length is None and not estimate_cycle_length:
+            raise ValueError("Must specify cycle_length if estimate_cycle_length is False")
+        if cycle_length is not None and estimate_cycle_length:
+            raise ValueError("Cannot specify cycle_length if estimate_cycle_length is True")
+        if name is None:
+            cycle = cycle_length if cycle_length is not None else "Estimate"
+            name = f"Cycle[s={cycle}, dampen={dampen}, innovations={innovations}]"
+
+        self.estimate_cycle_length = estimate_cycle_length
+        self.cycle_length = cycle_length
+        self.innovations = innovations
+        self.dampen = dampen
+        self.n_coefs = 1
+
+        k_states = 2
+        k_endog = 1
+        k_posdef = 2
+
+        super().__init__(
+            name=name,
+            k_endog=k_endog,
+            k_states=k_states,
+            k_posdef=k_posdef,
+            measurement_error=False,
+            combine_hidden_states=True,
+        )
+
+    def make_symbolic_graph(self) -> None:
+        self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
+        self.ssm["selection", :, :] = np.eye(self.k_states)
+
+        init_state = self.make_and_register_variable(f"{self.name}", shape=(1,))
+
+        self.ssm["initial_state", 0] = init_state
+
+        if self.estimate_cycle_length:
+            lamb = self.make_and_register_variable(f"{self.name}_cycle_length", shape=(1,))
+        else:
+            lamb = self.cycle_length
+
+        if self.dampen:
+            rho = self.make_and_register_variable(f"{self.name}_dampening_factor", shape=(1,))
+        else:
+            rho = 1
+
+        T = rho * _frequency_transition_block(s=lamb, j=1)
+        self.ssm["transition", :, :] = T
+
+        if self.innovations:
+            sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
+
+    def populate_component_properties(self):
+        self.state_names = [f"{self.name}_{f}" for f in ["Cos", "Sin"]]
+        self.param_names = [f"{self.name}"]
+
+        self.param_dims = {self.name: (f"{self.name}_initial_state",)}
+        self.param_info = {
+            f"{self.name}": {
+                "shape": (1,),
+                "constraints": "None",
+                "dims": f"({self.name}_initial_state, )",
+            }
+        }
+        self.coords = {f"{self.name}_initial_state": self.state_names}
+
+        if self.estimate_cycle_length:
+            self.param_names += [f"{self.name}_cycle_length"]
+            self.param_info[f"{self.name}_cycle_length"] = {
+                "shape": (1,),
+                "constraints": "Positive, non-zero",
+                "dims": None,
+            }
+
+        if self.dampen:
+            self.param_names += [f"{self.name}_dampening_factor"]
+            self.param_info[f"{self.name}_dampening_factor"] = {
+                "shape": (1,),
+                "constraints": "0 < x ≤ 1",
+                "dims": None,
+            }
 
         if self.innovations:
             self.param_names += [f"sigma_{self.name}"]

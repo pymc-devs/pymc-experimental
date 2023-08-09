@@ -320,7 +320,7 @@ class BaseFilter(ABC):
         observed_states.name = "observed_states"
 
         filtered_covariances = pt.specify_shape(
-            predicted_covariances, (n, self.n_states, self.n_states)
+            filtered_covariances, (n, self.n_states, self.n_states)
         )
         filtered_covariances.name = "filtered_covariances"
 
