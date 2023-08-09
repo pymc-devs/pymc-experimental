@@ -311,7 +311,7 @@ class PyMCStateSpace:
         A list of all parameters expected by the model. Each parameter will be sought inside the active PyMC model
         context when ``build_statespace_graph`` is invoked.
         """
-        raise NotImplementedError
+        raise NotImplementedError("The param_names property has not been implemented!")
 
     @property
     def param_info(self) -> Dict[str, Dict[str, Any]]:
@@ -326,7 +326,7 @@ class PyMCStateSpace:
               positive semi-definite, etc)
             * key: "dims", value: tuple of strings
         """
-        raise NotImplementedError
+        raise NotImplementedError("The params_info property has not been implemented!")
 
     @property
     def state_names(self) -> List[str]:
@@ -335,14 +335,14 @@ class PyMCStateSpace:
 
         """
 
-        raise NotImplementedError
+        raise NotImplementedError("The state_names property has not been implemented!")
 
     @property
     def observed_states(self) -> List[str]:
         """
         A k_endog length list of strings, associated with the model's observed states
         """
-        raise NotImplementedError
+        raise NotImplementedError("The observed_states property has not been implemented!")
 
     @property
     def shock_names(self) -> List[str]:
@@ -350,7 +350,7 @@ class PyMCStateSpace:
         A k_posdef length list of strings, associated with the model's shock processes
 
         """
-        raise NotImplementedError
+        raise NotImplementedError("The shock_names property has not been implemented!")
 
     @property
     def default_priors(self) -> Dict[str, Callable]:
@@ -360,7 +360,7 @@ class PyMCStateSpace:
         Returns a dictionary with param_name: Callable key-value pairs. Used by the ``add_default_priors()`` method
         to automatically add priors to the PyMC model.
         """
-        raise NotImplementedError
+        raise NotImplementedError("The default_priors property has not been implemented!")
 
     @property
     def coords(self) -> Dict[str, Sequence[str]]:
@@ -371,7 +371,7 @@ class PyMCStateSpace:
         should come from the default names defined in ``statespace.utils.constants`` for them to be detected by
         sampling methods.
         """
-        raise NotImplementedError
+        raise NotImplementedError("The coords property has not been implemented!")
 
     @property
     def param_dims(self) -> Dict[str, Sequence[str]]:
@@ -383,13 +383,13 @@ class PyMCStateSpace:
         for them to be detected by sampling methods.
 
         """
-        raise NotImplementedError
+        raise NotImplementedError("The param_dims property has not been implemented!")
 
     def add_default_priors(self) -> None:
         """
         Add default priors to the active PyMC model context
         """
-        raise NotImplementedError
+        raise NotImplementedError("The add_default_priors property has not been implemented!")
 
     def make_and_register_variable(self, name, shape, dtype=floatX) -> Variable:
         """
@@ -490,7 +490,7 @@ class PyMCStateSpace:
             self.ssm['selection', 1:, 0] = theta_params
             self.ssm['state_cov', 0, 0] = sigma
         """
-        raise NotImplementedError
+        raise NotImplementedError("The make_symbolic_statespace method has not been implemented!")
 
     def _get_matrix_shape_and_dims(self, name: str) -> Tuple[Tuple, Tuple]:
         """
