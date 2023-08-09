@@ -201,20 +201,12 @@ def test_add_components():
     mod = ll + se
 
     ll_params = {
-        "initial_trend": np.zeros(
-            2,
-        ),
-        "sigma_trend": np.ones(
-            2,
-        ),
+        "initial_trend": np.zeros(2, dtype=floatX),
+        "sigma_trend": np.ones(2, dtype=floatX),
     }
     se_params = {
-        "seasonal_coefs": np.ones(
-            11,
-        ),
-        "sigma_seasonal": np.ones(
-            1,
-        ),
+        "seasonal_coefs": np.ones(11, dtype=floatX),
+        "sigma_seasonal": np.ones(1, dtype=floatX),
     }
     all_params = ll_params.copy() | se_params.copy()
 
