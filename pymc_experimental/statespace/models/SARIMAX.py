@@ -156,6 +156,13 @@ class BayesianARIMA(PyMCStateSpace):
                 f"Got invalid argument {state_structure} for state structure, expected one of "
                 f'{", ".join(STATE_STRUCTURES)}'
             )
+
+        if state_structure == "interpretable" and self.d > 0:
+            raise ValueError(
+                "Cannot use interpretable state structure with statespace differencing. Difference the "
+                'data by hand (leaving NaN values to be interpolated), or use state_structure="fast"'
+            )
+
         self.state_structure = state_structure
 
         self._p_max = max(1, self.p)

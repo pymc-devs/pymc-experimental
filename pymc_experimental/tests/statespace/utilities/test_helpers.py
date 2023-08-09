@@ -4,9 +4,14 @@ import numpy as np
 import pandas as pd
 import pytensor
 import pytensor.tensor as pt
+from numpy.testing import assert_allclose
 from pymc import modelcontext
 
 from pymc_experimental.statespace.filters.kalman_smoother import KalmanSmoother
+from pymc_experimental.statespace.utils.constants import (
+    MATRIX_NAMES,
+    SHORT_NAME_TO_LONG,
+)
 from pymc_experimental.tests.statespace.utilities.statsmodel_local_level import (
     LocalLinearTrend,
 )
@@ -195,3 +200,66 @@ def delete_rvs_from_model(rv_names: List[str]) -> None:
             mod.rvs_to_initial_values.pop(rv)
         else:
             mod.observed_RVs.remove(rv)
+
+
+def unpack_statespace(ssm):
+    return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
+
+
+def unpack_symbolic_matrices_with_params(mod, param_dict):
+    f_matrices = pytensor.function(
+        list(mod._name_to_variable.values()), unpack_statespace(mod.ssm), on_unused_input="ignore"
+    )
+    x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict)
+    return x0, P0, c, d, T, Z, R, H, Q
+
+
+def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
+    """
+    Helper function to visualize the components outside of a PyMC model context
+    """
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, param_dict)
+    k_states = mod.k_states
+    k_posdef = mod.k_posdef
+
+    x = np.zeros((steps, k_states))
+    y = np.zeros(steps)
+
+    x[0] = x0
+    y[0] = Z @ x0
+
+    if not np.allclose(H, 0):
+        y[0] += rng.multivariate_normal(mean=np.zeros(1), cov=H)
+
+    for t in range(1, steps):
+        if k_posdef > 0:
+            shock = rng.multivariate_normal(mean=np.zeros(k_posdef), cov=Q)
+            innov = R @ shock
+        else:
+            innov = 0
+
+        if not np.allclose(H, 0):
+            error = rng.multivariate_normal(mean=np.zeros(1), cov=H)
+        else:
+            error = 0
+
+        x[t] = c + T @ x[t - 1] + innov
+        y[t] = d + Z @ x[t] + error
+
+    return x, y
+
+
+def assert_pattern_repeats(y, T, atol, rtol):
+    val = np.diff(y.reshape(-1, T), axis=0)
+    if floatX.endswith("64"):
+        # Round this before going into the test, otherwise it behaves poorly (atol = inf)
+        n_digits = len(str(1 / atol))
+        val = np.round(val, n_digits)
+
+    assert_allclose(
+        val,
+        0,
+        err_msg="seasonal pattern does not repeat",
+        atol=atol,
+        rtol=rtol,
+    )

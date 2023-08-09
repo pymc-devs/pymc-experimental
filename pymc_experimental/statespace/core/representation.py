@@ -1,31 +1,14 @@
 from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
-import pandas.core.tools.datetimes
 import pytensor
 import pytensor.tensor as pt
-from pandas import DataFrame
 
 floatX = pytensor.config.floatX
 KeyLike = Union[Tuple[Union[str, int]], str]
 
 NEVER_TIME_VARYING = ["initial_state", "initial_state_cov", "a0", "P0"]
 VECTOR_VALUED = ["initial_state", "state_intercept", "obs_intercept", "a0", "c", "d"]
-
-
-def _preprocess_data(data: Union[DataFrame, np.ndarray], expected_dims=3):
-    if isinstance(data, pandas.DataFrame):
-        data = data.values
-    elif not isinstance(data, np.ndarray):
-        raise ValueError("Expected pandas Dataframe or numpy array as data")
-
-    if data.ndim < expected_dims:
-        n_dims = data.ndim
-        n_to_add = expected_dims - n_dims
-        expand_idx = tuple(n_dims + np.arange(n_to_add, dtype="int"))
-        data = np.expand_dims(data, axis=expand_idx)
-
-    return data
 
 
 class PytensorRepresentation:

@@ -68,6 +68,16 @@ def pymc_mod(varma_mod, data):
     return pymc_mod
 
 
+@pytest.fixture(scope="session")
+def idata(pymc_mod, rng):
+    with pymc_mod:
+        # idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
+        idata = pm.sample_prior_predictive(samples=10, random_seed=rng)
+
+    # idata.extend(idata_prior)
+    return idata
+
+
 @pytest.mark.parametrize("order", orders, ids=ids)
 @pytest.mark.parametrize("var", ["AR", "MA", "state_cov"])
 @pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.EstimationWarning")
@@ -144,3 +154,30 @@ def test_all_prior_covariances_are_PSD(filter_output, pymc_mod, rng):
     cov_mats = pm.draw(rv, 100, random_seed=rng)
     w, v = np.linalg.eig(cov_mats)
     assert_array_less(0, w, err_msg=f"Smallest eigenvalue: {min(w.ravel())}")
+
+
+parameters = [
+    {"steps": 10, "shock_size": None},
+    {"steps": 10, "shock_size": 1.0},
+    {"steps": 10, "shock_size": np.array([1.0, 0.0, 0.0])},
+    {
+        "steps": 10,
+        "shock_cov": np.array([[1.38, 0.58, -1.84], [0.58, 0.99, -0.82], [-1.84, -0.82, 2.51]]),
+    },
+    {
+        "shock_trajectory": np.r_[
+            np.zeros((3, 3), dtype=floatX),
+            np.array([[1.0, 0.0, 0.0]]).astype(floatX),
+            np.zeros((6, 3), dtype=floatX),
+        ]
+    },
+]
+
+ids = ["from-posterior-cov", "scalar_shock_size", "array_shock_size", "user-cov", "trajectory"]
+
+
+@pytest.mark.parametrize("parameters", parameters, ids=ids)
+def test_impulse_response(parameters, varma_mod, idata, rng):
+    irf = varma_mod.impulse_response_function(idata.prior, random_seed=rng, **parameters)
+
+    assert not np.any(np.isnan(irf.irf.values))

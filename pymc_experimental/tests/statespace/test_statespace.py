@@ -7,11 +7,10 @@ from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
 from pymc_experimental.statespace.models import structural as st
+from pymc_experimental.statespace.models.utilities import make_default_coords
 from pymc_experimental.statespace.utils.constants import (
-    ALL_STATE_DIM,
     FILTER_OUTPUT_NAMES,
     MATRIX_NAMES,
-    OBS_STATE_DIM,
     SMOOTHER_OUTPUT_NAMES,
 )
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
@@ -61,6 +60,10 @@ def ss_mod():
         def shock_names(self):
             return ["a"]
 
+        @property
+        def coords(self):
+            return make_default_coords(self)
+
         def make_symbolic_graph(self):
             theta = pt.vector("theta", shape=(self.k_states,), dtype=floatX)
             self.ssm["transition", 0, :] = theta
@@ -87,7 +90,7 @@ def ss_mod():
 
 @pytest.fixture(scope="session")
 def pymc_mod(ss_mod):
-    with pm.Model(coords={ALL_STATE_DIM: ["a", "b"], OBS_STATE_DIM: ["a"]}) as pymc_mod:
+    with pm.Model(coords=ss_mod.coords) as pymc_mod:
         rho = pm.Beta("rho", 1, 1)
         zeta = pm.Deterministic("zeta", 1 - rho)
         ss_mod.build_statespace_graph(data=nile, include_smoother=True)
@@ -229,3 +232,18 @@ def test_sampling_methods(group, kind, ss_mod, idata, rng):
         for output in ["latent", "observed"]:
             assert f"{group}_{output}" in test_idata
             assert not np.any(np.isnan(test_idata[f"{group}_{output}"].values))
+
+
+@pytest.mark.parametrize("filter_output", ["predicted", "filtered", "smoothed"])
+def test_forecast(filter_output, ss_mod, idata, rng):
+    time_idx = idata.posterior.coords["time"].values
+    forecast_idata = ss_mod.forecast(
+        idata, start=time_idx[-1], periods=10, filter_output=filter_output, random_seed=rng
+    )
+
+    assert forecast_idata.coords["time"].values.shape == (10,)
+    assert forecast_idata.forecast_latent.dims == ("chain", "draw", "time", "state")
+    assert forecast_idata.forecast_observed.dims == ("chain", "draw", "time", "observed_state")
+
+    assert not np.any(np.isnan(forecast_idata.forecast_latent.values))
+    assert not np.any(np.isnan(forecast_idata.forecast_observed.values))

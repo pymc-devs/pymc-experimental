@@ -614,11 +614,11 @@ class PyMCStateSpace:
                 if param:
                     found_params.append(param.name)
 
-        missing_params = set(self.param_names) - set(found_params)
+        missing_params = list(set(self.param_names) - set(found_params))
         if len(missing_params) > 0:
             raise ValueError(
                 "The following required model parameters were not found in the PyMC model: "
-                + ", ".join(param for param in list(missing_params))
+                + ", ".join(missing_params)
             )
 
         matrices = list(self._unpack_statespace_with_placeholders())
@@ -1403,6 +1403,7 @@ class PyMCStateSpace:
             raise ValueError("Specify exactly 0 or 1 of shock_size, shock_cov, or shock_trajectory")
         if shock_trajectory is not None:
             n, k = shock_trajectory.shape
+            steps = n
             if k != self.k_posdef:
                 raise ValueError(
                     "If shock_trajectory is provided, there must be a trajectory provided for each shock. "
@@ -1413,8 +1414,7 @@ class PyMCStateSpace:
                     "Both steps and shock_trajectory were provided but do not agree. Length of "
                     "shock_trajectory will take priority, and steps will be ignored."
                 )
-                steps = n
-
+            steps = n
             shock_trajectory = pt.as_tensor_variable(shock_trajectory)
 
         if steps is None:

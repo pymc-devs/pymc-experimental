@@ -10,15 +10,13 @@ from pytensor import Variable
 
 from pymc_experimental.statespace.core import PytensorRepresentation
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
+from pymc_experimental.statespace.models.utilities import make_default_coords
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
     MATRIX_NAMES,
-    OBS_STATE_AUX_DIM,
     OBS_STATE_DIM,
     POSITION_DERIVATIVE_NAMES,
-    SHOCK_AUX_DIM,
-    SHOCK_DIM,
     SHORT_NAME_TO_LONG,
 )
 
@@ -38,7 +36,8 @@ def order_to_mask(order):
 def _frequency_transition_block(s, j):
     lam = 2 * np.pi * j / s
 
-    return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]])
+    # Squeeze because otherwise if lamb has shape (1,), T will have shape (2, 2, 1)
+    return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]]).squeeze()
 
 
 def block_diagonal(matrices: List[pt.matrix]):
@@ -96,7 +95,6 @@ class StructuralTimeSeries(PyMCStateSpace):
         self._name = name
 
         k_states, k_posdef, k_endog = ssm.k_states, ssm.k_posdef, ssm.k_endog
-        coords = self._add_default_coords(coords, state_names, shock_names)
         param_names, param_dims, param_info = self._add_inital_state_cov_to_properties(
             param_names, param_dims, param_info, k_states
         )
@@ -104,6 +102,10 @@ class StructuralTimeSeries(PyMCStateSpace):
         self._shock_names = shock_names
         self._param_names = param_names
         self._param_dims = param_dims
+
+        default_coords = make_default_coords(self)
+        coords.update(default_coords)
+
         self._coords = coords
         self._param_info = param_info
         self.measurement_error = measurement_error
@@ -135,16 +137,6 @@ class StructuralTimeSeries(PyMCStateSpace):
         }
 
         return param_names, param_dims, param_info
-
-    def _add_default_coords(self, coords, state_names, shock_names):
-        coords[ALL_STATE_DIM] = state_names
-        coords[ALL_STATE_AUX_DIM] = state_names
-        coords[SHOCK_DIM] = shock_names
-        coords[SHOCK_AUX_DIM] = shock_names
-        coords[OBS_STATE_DIM] = [self._name]
-        coords[OBS_STATE_AUX_DIM] = [self._name]
-
-        return coords
 
     @property
     def param_names(self):
@@ -380,7 +372,7 @@ class Component(ABC):
         }
 
     def make_and_register_variable(self, name, shape, dtype=floatX) -> Variable:
-        """
+        r"""
         Helper function to create a pytensor symbolic variable and register it in the _name_to_variable dictionary
 
         Parameters

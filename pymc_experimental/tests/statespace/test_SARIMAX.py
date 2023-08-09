@@ -51,15 +51,29 @@ def pymc_mod(arima_mod):
     return pymc_mod
 
 
-# @pytest.mark.parametrize("order", orders, ids=ids)
-# @pytest.mark.parametrize("matrix", ["transition", "selection", "state_cov", "obs_cov", "design"])
-# def test_SARIMAX_init_matches_statsmodels(data, order, matrix):
-#     p, d, q = order
-#
-#     mod = BayesianARIMA(order=(p, d, q), verbose=False)
-#     sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
-#
-#     assert_allclose(fast_eval(mod.ssm[matrix]), sm_sarimax.ssm[matrix])
+@pytest.fixture(scope="session")
+def arima_mod_interp():
+    return BayesianARIMA(
+        order=(3, 0, 3),
+        stationary_initialization=True,
+        verbose=False,
+        state_structure="interpretable",
+        measurement_error=True,
+    )
+
+
+@pytest.fixture(scope="session")
+def pymc_mod_interp(arima_mod_interp):
+    data = load_nile_test_data()
+
+    with pm.Model(coords=arima_mod_interp.coords) as pymc_mod:
+        ar_params = pm.Normal("ar_params", sigma=0.1, dims=["ar_lag"])
+        ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
+        sigma_state = pm.Exponential("sigma_state", 0.5)
+        sigma_obs = pm.Exponential("sigma_obs", 0.1)
+        arima_mod_interp.build_statespace_graph(data=data)
+
+    return pymc_mod
 
 
 @pytest.mark.parametrize("order", orders, ids=ids)
@@ -111,3 +125,41 @@ def test_all_prior_covariances_are_PSD(filter_output, pymc_mod, rng):
     cov_mats = pm.draw(rv, 100, random_seed=rng)
     w, v = np.linalg.eig(cov_mats)
     assert_array_less(0, w, err_msg=f"Smallest eigenvalue: {min(w.ravel())}")
+
+
+def test_interpretable_raises_if_d_nonzero():
+    with pytest.raises(
+        ValueError, match="Cannot use interpretable state structure with statespace differencing"
+    ):
+        BayesianARIMA(
+            order=(2, 1, 1),
+            stationary_initialization=True,
+            verbose=False,
+            state_structure="interpretable",
+        )
+
+
+def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_interp):
+    with pymc_mod_interp:
+        prior = pm.sample_prior_predictive(samples=10)
+
+    prior_outputs = arima_mod_interp.sample_unconditional_prior(prior)
+    ar_lags = prior.prior.coords["ar_lag"].values - 1
+    ma_lags = prior.prior.coords["ma_lag"].values - 1
+
+    # Check the first p states are lags of the previous state
+    for (t, tm1) in zip(ar_lags[1:], ar_lags[:-1]):
+        assert_allclose(
+            prior_outputs.prior_latent.isel(state=t).values[1:],
+            prior_outputs.prior_latent.isel(state=tm1).values[:-1],
+            err_msg=f"State {tm1} is not a lagged version of state {t} (AR lags)",
+        )
+
+    # Check the next p+q states are lags of the innovations
+    n = len(ar_lags)
+    for (t, tm1) in zip(ma_lags[1:], ma_lags[:-1]):
+        assert_allclose(
+            prior_outputs.prior_latent.isel(state=n + t).values[1:],
+            prior_outputs.prior_latent.isel(state=n + tm1).values[:-1],
+            err_msg=f"State {n + tm1} is not a lagged version of state {n+t} (MA lags)",
+        )

@@ -6,64 +6,19 @@ from numpy.testing import assert_allclose
 from scipy import linalg
 
 from pymc_experimental.statespace import structural as st
-from pymc_experimental.statespace.utils.constants import (
-    MATRIX_NAMES,
-    SHORT_NAME_TO_LONG,
-)
+from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
+)
+from pymc_experimental.tests.statespace.utilities.test_helpers import (
+    assert_pattern_repeats,
+    simulate_from_numpy_model,
+    unpack_symbolic_matrices_with_params,
 )
 
 floatX = pytensor.config.floatX
 ATOL = 1e-8 if floatX.endswith("64") else 1e-4
 RTOL = 0 if floatX.endswith("64") else 1e-6
-
-
-def unpack_statespace(ssm):
-    return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
-
-
-def unpack_symbolic_matrices_with_params(mod, param_dict):
-    f_matrices = pytensor.function(
-        list(mod._name_to_variable.values()), unpack_statespace(mod.ssm), on_unused_input="ignore"
-    )
-    x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict)
-    return x0, P0, c, d, T, Z, R, H, Q
-
-
-def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
-    """
-    Helper function to visualize the components outside of a PyMC model context
-    """
-    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, param_dict)
-    k_states = mod.k_states
-    k_posdef = mod.k_posdef
-
-    x = np.zeros((steps, k_states))
-    y = np.zeros(steps)
-
-    x[0] = x0
-    y[0] = Z @ x0
-
-    if not np.allclose(H, 0):
-        y[0] += rng.multivariate_normal(mean=np.zeros(1), cov=H)
-
-    for t in range(1, steps):
-        if k_posdef > 0:
-            shock = rng.multivariate_normal(mean=np.zeros(k_posdef), cov=Q)
-            innov = R @ shock
-        else:
-            innov = 0
-
-        if not np.allclose(H, 0):
-            error = rng.multivariate_normal(mean=np.zeros(1), cov=H)
-        else:
-            error = 0
-
-        x[t] = c + T @ x[t - 1] + innov
-        y[t] = d + Z @ x[t] + error
-
-    return x, y
 
 
 def test_deterministic_constant_model(rng):
@@ -82,20 +37,8 @@ def test_deterministic_slope_model(rng):
     assert_allclose(np.diff(y), 1, atol=ATOL, rtol=RTOL)
 
 
-def test_model_addition():
-    # TODO: Lame test, improve
-    ll = st.LevelTrendComponent(order=1, innovations_order=1)
-    me = st.MeasurementError("data")
-
-    mod = ll + me
-    assert "sigma_data" in mod.param_names
-    assert "sigma_data" in mod.param_info.keys()
-    assert "sigma_data" in mod.param_dims.keys()
-
-
 @pytest.mark.parametrize("order", [1, 2, [1, 0, 1]], ids=["AR1", "AR2", "AR(1,0,1)"])
 def test_autoregressive_model(order, rng):
-    # TODO: Improve this test
     ar = st.AutoregressiveComponent(order=order)
     params = {
         "ar_params": np.full((sum(ar.order),), 0.95, dtype=floatX),
@@ -118,9 +61,7 @@ def test_time_seasonality(s, innovations, rng):
     x, y = simulate_from_numpy_model(mod, rng, params)
     y = y.ravel()
     if not innovations:
-        assert_allclose(
-            y[:s], y[s : s * 2], err_msg="seasonal pattern does not repeat", atol=ATOL, rtol=RTOL
-        )
+        assert_pattern_repeats(y, s, atol=ATOL, rtol=RTOL)
 
     mod2 = sm.tsa.UnobservedComponents(
         endog=rng.normal(size=100),
@@ -160,19 +101,7 @@ def test_frequency_seasonality(n, s, rng):
     T = int(s * k)
 
     x, y = simulate_from_numpy_model(mod, rng, params, 2 * T)
-    val = np.diff(y.reshape(-1, T), axis=0)
-    if floatX.endswith("64"):
-        # Round this before going into the test, otherwise it behaves poorly (atol = inf)
-        n_digits = len(str(1 / ATOL))
-        val = np.round(val, n_digits)
-
-    assert_allclose(
-        val,
-        0,
-        err_msg="seasonal pattern does not repeat",
-        atol=ATOL,
-        rtol=RTOL,
-    )
+    assert_pattern_repeats(y, T, atol=ATOL, rtol=RTOL)
 
     init_dict = {"period": s}
     if n is not None:
@@ -201,6 +130,68 @@ def test_state_removed_when_freq_seasonality_is_saturated(s, n):
     init_params = mod._name_to_variable["test"]
 
     assert init_params.type.shape[0] == (n * 2 - 1)
+
+
+cycle_test_vals = zip([None, None, 3, 5, 10], [False, True, True, False, False])
+
+
+@pytest.mark.parametrize("innovations", [True, False], ids=[f"innov={x}" for x in [True, False]])
+@pytest.mark.parametrize("dampen", [True, False], ids=[f"dampen={x}" for x in [True, False]])
+@pytest.mark.parametrize(
+    "cycle_length, estimate_cycle_length",
+    list(cycle_test_vals),
+    ids=[f"cycle_len={a}-est_cycle_len={b}" for a, b in cycle_test_vals],
+)
+def test_cycle_component(innovations, dampen, cycle_length, estimate_cycle_length, rng):
+    if estimate_cycle_length and (cycle_length is not None):
+        with pytest.raises(ValueError, match="Cannot specify cycle_length"):
+            st.CycleComponent(
+                name="cycle",
+                cycle_length=cycle_length,
+                estimate_cycle_length=estimate_cycle_length,
+                dampen=dampen,
+                innovations=innovations,
+            )
+
+    elif not estimate_cycle_length and (cycle_length is None):
+        with pytest.raises(ValueError, match="Must specify cycle_length"):
+            st.CycleComponent(
+                name="cycle",
+                cycle_length=cycle_length,
+                estimate_cycle_length=estimate_cycle_length,
+                dampen=dampen,
+                innovations=innovations,
+            )
+
+    else:
+        cycle = st.CycleComponent(
+            name="cycle",
+            cycle_length=cycle_length,
+            estimate_cycle_length=estimate_cycle_length,
+            dampen=dampen,
+            innovations=innovations,
+        )
+
+        params = {"cycle": rng.normal(size=(1,)).astype(floatX)}
+
+        if estimate_cycle_length:
+            params["cycle_cycle_length"] = np.array([7], dtype=floatX)
+        cycle_len = params.get("cycle_cycle_length", cycle_length)
+        fit_params = {"frequency.cycle": cycle_len, "sigma2.irregular": 0.0}
+        if dampen:
+            params["cycle_dampening_factor"] = np.array([0.95], dtype=floatX)
+            fit_params["damping.cycle"] = 0.95
+        if innovations:
+            params["sigma_cycle"] = np.ones((1,), dtype=floatX)
+            fit_params["sigma2.cycle"] = 1.0
+
+        x, y = simulate_from_numpy_model(cycle, rng, params)
+
+        if not innovations and not estimate_cycle_length:
+            if dampen:
+                # undo the dampening so it's all constant
+                y = y / 0.95 ** np.arange(y.shape[0])
+            assert_pattern_repeats(y, cycle_length, atol=ATOL, rtol=RTOL)
 
 
 def test_add_components():
