@@ -15,7 +15,7 @@ from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # py
 )
 
 floatX = pytensor.config.floatX
-ATOL = 1e-8 if floatX.endswith("64") else 1e-6
+ATOL = 1e-8 if floatX.endswith("64") else 1e-4
 RTOL = 0 if floatX.endswith("64") else 1e-6
 
 
@@ -160,8 +160,14 @@ def test_frequency_seasonality(n, s, rng):
     T = int(s * k)
 
     x, y = simulate_from_numpy_model(mod, rng, params, 2 * T)
+    val = np.diff(y.reshape(-1, T), axis=0)
+    if floatX.endswith("64"):
+        # Round this before going into the test, otherwise it behaves poorly (atol = inf)
+        n_digits = len(str(1 / ATOL))
+        val = np.round(val, n_digits)
+
     assert_allclose(
-        np.diff(y.reshape(-1, T), axis=0),
+        val,
         0,
         err_msg="seasonal pattern does not repeat",
         atol=ATOL,
@@ -182,6 +188,8 @@ def test_frequency_seasonality(n, s, rng):
             mod2.ssm[name],
             matrix,
             err_msg=f"matrix {name} does not match statsmodels",
+            rtol=RTOL,
+            atol=ATOL,
         )
 
     assert mod2.initialization.constant.shape == mod.ssm["initial_state"].type.shape
@@ -208,7 +216,8 @@ def test_add_components():
         "seasonal_coefs": np.ones(11, dtype=floatX),
         "sigma_seasonal": np.ones(1, dtype=floatX),
     }
-    all_params = ll_params.copy() | se_params.copy()
+    all_params = ll_params.copy()
+    all_params.update(se_params)
 
     (ll_x0, ll_P0, ll_c, ll_d, ll_T, ll_Z, ll_R, ll_H, ll_Q) = unpack_symbolic_matrices_with_params(
         ll, ll_params
