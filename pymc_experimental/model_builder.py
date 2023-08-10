@@ -208,7 +208,7 @@ class ModelBuilder:
         >>>     def generate_and_preprocess_model_data(self, X, y):
                     coords = {
                         'x_dim': X.dim_variable,
-                    }
+                    } #only include if applicable for your model
         >>>         self.X = X
         >>>         self.y = y
 
