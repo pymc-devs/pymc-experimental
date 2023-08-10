@@ -62,3 +62,4 @@ FILTER_OUTPUT_DIMS = {
 }
 
 POSITION_DERIVATIVE_NAMES = ["level", "trend", "acceleration", "jerk", "snap", "crackle", "pop"]
+SARIMAX_STATE_STRUCTURES = ["fast", "interpretable"]

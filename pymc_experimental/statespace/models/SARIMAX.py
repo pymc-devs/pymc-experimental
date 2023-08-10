@@ -11,10 +11,9 @@ from pymc_experimental.statespace.utils.constants import (
     AR_PARAM_DIM,
     MA_PARAM_DIM,
     OBS_STATE_DIM,
+    SARIMAX_STATE_STRUCTURES,
 )
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lyapunov
-
-STATE_STRUCTURES = ["fast", "interpretable"]
 
 
 class BayesianARIMA(PyMCStateSpace):
@@ -45,13 +44,16 @@ class BayesianARIMA(PyMCStateSpace):
         and "cholesky". See the docs for kalman filters for more details.
 
     state_structure: str, default "fast"
-        How to represent the state-space system. When "interpretable", each element of the state vector will have a
-        precise meaning as either lagged data, innovations, or lagged innovations. This comes at the cost of a larger
-        state vector, which may hurt performance.
+        How to represent the state-space system. Currently there are two choices: "fast" or "interpretable"
 
-        When "fast", states are combined to minimize the dimension of the state vector, but lags and innovations are
-        mixed together as a result. Only the first state (the modeled timeseries) will have an obvious interpretation
-        in this case.
+        - "fast" corresponds to the state space used by [2], and is called the "Harvey" representation in statsmodels.
+           This is also the default representation used by statsmodels.tsa.statespace.SARIMAX. The states combine lags
+           and innovations at different lags to compress the dimension of the state vector to max(p, 1+q). As a result,
+           it is very preformat, but only the first state has a clear interpretation.
+
+        - "interpretable" maximally expands the state vector, doing zero state compression. As a result, the state has
+          dimension max(1, p) + max(1, q). What is gained by doing this is that every state has an obvious meaning, as
+          either the data, an innovation, or a lag thereof.
 
     measurement_error: bool, default True
         If true, a measurement error term is added to the model.
@@ -136,6 +138,8 @@ class BayesianARIMA(PyMCStateSpace):
         Time Series Analysis by State Space Methods: Second Edition.
         Oxford University Press.
 
+    .. [2] Harvey, A. C. (1989). Forecasting, Structural Time Series Models and the
+           Kalman Filter. Cambridge: Cambridge University Press.
     """
 
     def __init__(
@@ -151,10 +155,10 @@ class BayesianARIMA(PyMCStateSpace):
         self.p, self.d, self.q = order
         self.stationary_initialization = stationary_initialization
 
-        if state_structure not in STATE_STRUCTURES:
+        if state_structure not in SARIMAX_STATE_STRUCTURES:
             raise ValueError(
                 f"Got invalid argument {state_structure} for state structure, expected one of "
-                f'{", ".join(STATE_STRUCTURES)}'
+                f'{", ".join(SARIMAX_STATE_STRUCTURES)}'
             )
 
         if state_structure == "interpretable" and self.d > 0:

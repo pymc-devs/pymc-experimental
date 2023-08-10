@@ -1,4 +1,4 @@
-from itertools import product
+from itertools import combinations, product
 
 import numpy as np
 import pymc as pm
@@ -9,12 +9,16 @@ import statsmodels.api as sm
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianARIMA
-from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
+from pymc_experimental.statespace.utils.constants import (
+    SARIMAX_STATE_STRUCTURES,
+    SHORT_NAME_TO_LONG,
+)
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
     load_nile_test_data,
+    simulate_from_numpy_model,
 )
 
 floatX = pytensor.config.floatX
@@ -23,6 +27,9 @@ ds = [0, 1, 2]
 qs = [0, 1, 2, 3]
 orders = list(product(ps, ds, qs))[1:]
 ids = [f"p={x[0]}d={x[1]}q={x[2]}" for x in orders]
+
+ATOL = 1e-8 if floatX.endswith("64") else 1e-6
+RTOL = 0 if floatX.endswith("64") else 1e-6
 
 
 @pytest.fixture
@@ -167,4 +174,39 @@ def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_inter
             prior_outputs.prior_latent.isel(state=n + t).values[1:],
             prior_outputs.prior_latent.isel(state=n + tm1).values[:-1],
             err_msg=f"State {n + tm1} is not a lagged version of state {n+t} (MA lags)",
+        )
+
+
+def test_representations_are_equivalent(rng):
+
+    test_values = {}
+    shared_params = {
+        "ar_params": np.array([0.95, 0.5, -0.5], dtype=floatX),
+        "ma_params": np.array([1.1, -0.6, 2.4], dtype=floatX),
+        "sigma_state": np.array([0.8], dtype=floatX),
+    }
+
+    for representation in SARIMAX_STATE_STRUCTURES:
+        rng = np.random.default_rng(sum(map(ord, "representation test")))
+        mod = BayesianARIMA(
+            order=(3, 0, 3),
+            stationary_initialization=False,
+            verbose=False,
+            state_structure=representation,
+        )
+        params = shared_params.copy()
+        params["x0"] = np.zeros(mod.k_states, dtype=floatX)
+        params["initial_state_cov"] = np.eye(mod.k_states, dtype=floatX)
+
+        x, y = simulate_from_numpy_model(mod, rng, params)
+        test_values[representation] = y
+
+    all_pairs = combinations(SARIMAX_STATE_STRUCTURES, r=2)
+    for rep_1, rep_2 in all_pairs:
+        assert_allclose(
+            test_values[rep_1],
+            test_values[rep_2],
+            err_msg=f"{rep_1} and {rep_2} are not the same!",
+            atol=ATOL,
+            rtol=RTOL,
         )
