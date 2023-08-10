@@ -44,7 +44,7 @@ class BayesianARIMA(PyMCStateSpace):
         and "cholesky". See the docs for kalman filters for more details.
 
     state_structure: str, default "fast"
-        How to represent the state-space system. Currently there are two choices: "fast" or "interpretable"
+        How to represent the state-space system. Currently, there are two choices: "fast" or "interpretable"
 
         - "fast" corresponds to the state space used by [2], and is called the "Harvey" representation in statsmodels.
            This is also the default representation used by statsmodels.tsa.statespace.SARIMAX. The states combine lags
