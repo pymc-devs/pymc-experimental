@@ -269,7 +269,7 @@ class BaseFilter(ABC):
             outputs_info=[None, a0, None, None, P0, None, None],
             non_sequences=non_sequences,
             name="forward_kalman_pass",
-            mode=get_mode(mode),
+            mode=get_mode(self.mode),
             strict=True,
         )
 
@@ -807,7 +807,7 @@ class SteadyStateFilter(BaseFilter):
             outputs_info=[None, a0, None, None, P_steady, None, None],
             non_sequences=[c, d, F_inv, T, Z, R, H, Q],
             name="forward_kalman_pass",
-            mode=get_mode(mode),
+            mode=get_mode(self.mode),
         )
 
         return self._postprocess_scan_results(results, a0, P0, n=data.shape[0])
