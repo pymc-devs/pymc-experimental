@@ -55,7 +55,7 @@ def pymc_mod(arima_mod):
 def arima_mod_interp():
     return BayesianARIMA(
         order=(3, 0, 3),
-        stationary_initialization=True,
+        stationary_initialization=False,
         verbose=False,
         state_structure="interpretable",
         measurement_error=True,
@@ -67,6 +67,11 @@ def pymc_mod_interp(arima_mod_interp):
     data = load_nile_test_data()
 
     with pm.Model(coords=arima_mod_interp.coords) as pymc_mod:
+        x0 = pm.Normal("x0", dims=["state"])
+        P0_sigma = pm.Exponential("P0_sigma", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(arima_mod_interp.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
         ar_params = pm.Normal("ar_params", sigma=0.1, dims=["ar_lag"])
         ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
         sigma_state = pm.Exponential("sigma_state", 0.5)

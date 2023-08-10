@@ -177,6 +177,7 @@ ids = ["from-posterior-cov", "scalar_shock_size", "array_shock_size", "user-cov"
 
 
 @pytest.mark.parametrize("parameters", parameters, ids=ids)
+@pytest.mark.skipif(floatX == "float32", reason="Impulse covariance not PSD if float32")
 def test_impulse_response(parameters, varma_mod, idata, rng):
     irf = varma_mod.impulse_response_function(idata.prior, random_seed=rng, **parameters)
 
