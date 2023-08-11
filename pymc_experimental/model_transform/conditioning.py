@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, List, Mapping, Optional, Sequence, Union
 
 from pymc import Model
 from pymc.logprob.transforms import RVTransform
@@ -26,7 +26,9 @@ from pymc_experimental.utils.model_fgraph import (
 from pymc_experimental.utils.pytensorf import rvs_in_graph
 
 
-def observe(model: Model, vars_to_observations: Dict[Union["str", TensorVariable], Any]) -> Model:
+def observe(
+    model: Model, vars_to_observations: Mapping[Union["str", TensorVariable], Any]
+) -> Model:
     """Convert free RVs or Deterministics to observed RVs.
 
     Parameters
@@ -122,7 +124,9 @@ def replace_vars_in_graphs(graphs: Sequence[TensorVariable], replacements) -> Li
 
 
 def do(
-    model: Model, vars_to_interventions: Dict[Union["str", TensorVariable], Any], prune_vars=False
+    model: Model,
+    vars_to_interventions: Mapping[Union["str", TensorVariable], Any],
+    prune_vars=False,
 ) -> Model:
     """Replace model variables by intervention variables.
 
@@ -217,7 +221,7 @@ def do(
 
 def change_value_transforms(
     model: Model,
-    vars_to_transforms: Dict[ModelVariable, Union[RVTransform, None]],
+    vars_to_transforms: Mapping[ModelVariable, Union[RVTransform, None]],
 ) -> Model:
     """Change the value variables transforms in the model
 
