@@ -1,4 +1,4 @@
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 import pytensor.tensor as pt
@@ -145,6 +145,7 @@ class BayesianARIMA(PyMCStateSpace):
     def __init__(
         self,
         order: Tuple[int, int, int],
+        seasonal_order: Optional[Tuple[int, int, int, int]],
         stationary_initialization: bool = True,
         filter_type: str = "standard",
         state_structure: str = "fast",
@@ -153,7 +154,18 @@ class BayesianARIMA(PyMCStateSpace):
     ):
         # Model order
         self.p, self.d, self.q = order
+        if seasonal_order is None:
+            seasonal_order = (0, 0, 0, 0)
+        self.P, self.D, self.Q, self.S = seasonal_order
         self.stationary_initialization = stationary_initialization
+
+        self.state_structure = state_structure
+
+        self._p_max = max(1, self.p)
+        self._q_max = max(1, self.q)
+
+        k_states = None
+        self._k_diffs = self.d
 
         if state_structure not in SARIMAX_STATE_STRUCTURES:
             raise ValueError(
@@ -167,16 +179,10 @@ class BayesianARIMA(PyMCStateSpace):
                 'data by hand (leaving NaN values to be interpolated), or use state_structure="fast"'
             )
 
-        self.state_structure = state_structure
-
-        self._p_max = max(1, self.p)
-        self._q_max = max(1, self.q)
-
-        k_states = None
-        self._k_diffs = self.d
-
         if self.state_structure == "fast":
-            k_states = max(self.p, self.q + 1) + self.d
+            k_states = max(self.p + self.P * self.S, self.q + self.Q * self.S + 1) + (
+                self.S * self.D + self.d
+            )
         elif self.state_structure == "interpretable":
             k_states = self._p_max + self._q_max + self.d
 
@@ -194,14 +200,27 @@ class BayesianARIMA(PyMCStateSpace):
 
     @property
     def param_names(self):
-        names = ["x0", "P0", "ar_params", "ma_params", "sigma_state", "sigma_obs"]
+        names = [
+            "x0",
+            "P0",
+            "ar_params",
+            "ma_params",
+            "seasonal_ar_params",
+            "seasonal_ma_params",
+            "sigma_state",
+            "sigma_obs",
+        ]
         if self.stationary_initialization:
             names.remove("P0")
             names.remove("x0")
         if self.p == 0:
             names.remove("ar_params")
+        if self.P == 0:
+            names.remove("seasonal_ar_params")
         if self.q == 0:
             names.remove("ma_params")
+        if self.Q == 0:
+            names.remove("seasonal_ma_params")
         if not self.measurement_error:
             names.remove("sigma_obs")
 
@@ -234,6 +253,8 @@ class BayesianARIMA(PyMCStateSpace):
                 "shape": (self.q,),
                 "constraints": "None",
             },
+            "seasonal_ar_params": {"shape": (self.P,), "constraints": "None"},
+            "seasonal_ma_params": {"shape": (self.Q,), "constraints": "None"},
         }
 
         for name in self.param_names:

@@ -9,6 +9,10 @@ import statsmodels.api as sm
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianARIMA
+from pymc_experimental.statespace.models.utilities import (
+    make_harvey_state_names,
+    make_seasonal_T,
+)
 from pymc_experimental.statespace.utils.constants import (
     SARIMAX_STATE_STRUCTURES,
     SHORT_NAME_TO_LONG,
@@ -86,6 +90,166 @@ def pymc_mod_interp(arima_mod_interp):
         arima_mod_interp.build_statespace_graph(data=data)
 
     return pymc_mod
+
+
+test_state_names = [
+    ["data", "state_1", "state_2"],
+    ["data", "data_star", "state_star_1", "state_star_2"],
+    ["data", "D1.data", "data_star", "state_star_1", "state_star_2"],
+    ["data", "D1.data", "D1^2.data", "data_star", "state_star_1", "state_star_2"],
+    ["data", "L1.data", "L2.data", "L3.data"],
+    ["data", "L1.data", "L2.data", "L3.data", "L4.state", "L5.state", "L6.state", "L7.state"],
+    [
+        "data",
+        "L1.data",
+        "L2.data",
+        "L3.data",
+        "L4.state",
+        "L5.state",
+        "L6.state",
+        "L7.state",
+        "L8.state",
+        "L9.state",
+        "L10.state",
+    ],
+    [
+        "data",
+        "L1.data",
+        "L2.data",
+        "L3.data",
+        "data_star",
+        "state_star_1",
+        "state_star_2",
+        "state_star_3",
+    ],
+    [
+        "data",
+        "L1.data",
+        "L2.data",
+        "L3.data",
+        "D4.data",
+        "D4L1.data",
+        "D4L2.data",
+        "D4L3.data",
+        "data_star",
+        "state_star_1",
+        "state_star_2",
+        "state_star_3",
+    ],
+    [
+        "data",
+        "D1.data",
+        "D1L1.data",
+        "D1L2.data",
+        "D1L3.data",
+        "data_star",
+        "state_star_1",
+        "state_star_2",
+        "state_star_3",
+        "state_star_4",
+        "state_star_5",
+    ],
+    [
+        "data",
+        "D1.data",
+        "D1^2.data",
+        "D1^2L1.data",
+        "D1^2L2.data",
+        "D1^2L3.data",
+        "data_star",
+        "state_star_1",
+        "state_star_2",
+        "state_star_3",
+        "state_star_4",
+        "state_star_5",
+    ],
+    [
+        "data",
+        "D1.data",
+        "D1^2.data",
+        "D1^2L1.data",
+        "D1^2L2.data",
+        "D1^2L3.data",
+        "D4D1^2.data",
+        "D4D1^2L1.data",
+        "D4D1^2L2.data",
+        "D4D1^2L3.data",
+        "data_star",
+        "state_star_1",
+        "state_star_2",
+        "state_star_3",
+        "state_star_4",
+        "state_star_5",
+    ],
+    [
+        "data",
+        "D1.data",
+        "D1L1.data",
+        "D1L2.data",
+        "D3D1.data",
+        "D3D1L1.data",
+        "D3D1L2.data",
+        "D3^2D1.data",
+        "D3^2D1L1.data",
+        "D3^2D1L2.data",
+        "data_star",
+        "state_star_1",
+        "state_star_2",
+        "state_star_3",
+        "state_star_4",
+    ],
+]
+
+
+@pytest.mark.parametrize(
+    "p,d,q,P,D,Q,S,expected_names",
+    [
+        (2, 0, 2, 0, 0, 0, 0, test_state_names[0]),
+        (2, 1, 2, 0, 0, 0, 0, test_state_names[1]),
+        (2, 2, 2, 0, 0, 0, 0, test_state_names[2]),
+        (2, 3, 2, 0, 0, 0, 0, test_state_names[3]),
+        (0, 0, 0, 1, 0, 0, 4, test_state_names[4]),
+        (0, 0, 0, 2, 0, 1, 4, test_state_names[5]),
+        (2, 0, 2, 2, 0, 2, 4, test_state_names[6]),
+        (0, 0, 0, 1, 1, 0, 4, test_state_names[7]),
+        (0, 0, 0, 1, 2, 0, 4, test_state_names[8]),
+        (1, 1, 1, 1, 1, 1, 4, test_state_names[9]),
+        (1, 2, 1, 1, 1, 1, 4, test_state_names[10]),
+        (1, 2, 1, 1, 2, 1, 4, test_state_names[11]),
+        (1, 1, 1, 1, 3, 1, 3, test_state_names[12]),
+    ],
+)
+def test_harvey_state_names(p, d, q, P, D, Q, S, expected_names):
+    if all([x == 0 for x in [p, d, q, P, D, Q, S]]):
+        pytest.skip("Skip all zero case")
+
+    k_states = max(p + P * S, q + Q * S + 1) + (S * D + d)
+    states = make_harvey_state_names(p, d, q, P, D, Q, S)
+
+    assert len(states) == k_states
+    assert all([name == expected_name for name, expected_name in zip(states, expected_names)])
+
+
+@pytest.mark.parametrize(
+    "p,d,q,P,D,Q,S",
+    [
+        (2, 0, 2, 0, 0, 0, 0),
+        (2, 1, 2, 0, 0, 0, 0),
+        (2, 2, 2, 0, 0, 0, 0),
+        (2, 3, 2, 0, 0, 0, 0),
+        (0, 0, 0, 1, 0, 0, 4),
+        (0, 0, 0, 2, 0, 1, 4),
+        (2, 0, 2, 2, 0, 2, 4),
+        (0, 0, 0, 1, 1, 0, 4),
+        (0, 0, 0, 1, 2, 0, 4),
+        (1, 1, 1, 1, 1, 1, 4),
+        (1, 2, 1, 1, 1, 1, 4),
+        (1, 2, 1, 1, 2, 1, 4),
+        (1, 1, 1, 1, 3, 1, 3),
+    ],
+)
+def test_make_transition_matrix(p, d, q, P, D, Q, S):
+    T = make_seasonal_T(p, d, q, P, D, Q, S)
 
 
 @pytest.mark.parametrize("order", orders, ids=ids)
@@ -173,12 +337,11 @@ def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_inter
         assert_allclose(
             prior_outputs.prior_latent.isel(state=n + t).values[1:],
             prior_outputs.prior_latent.isel(state=n + tm1).values[:-1],
-            err_msg=f"State {n + tm1} is not a lagged version of state {n+t} (MA lags)",
+            err_msg=f"State {n + tm1} is not a lagged version of state {n + t} (MA lags)",
         )
 
 
 def test_representations_are_equivalent(rng):
-
     test_values = {}
     shared_params = {
         "ar_params": np.array([0.95, 0.5, -0.5], dtype=floatX),
