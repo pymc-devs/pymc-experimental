@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytensor
 import pytensor.tensor as pt
+import statsmodels.api as sm
 from numpy.testing import assert_allclose
 from pymc import modelcontext
 
@@ -263,3 +264,27 @@ def assert_pattern_repeats(y, T, atol, rtol):
         atol=atol,
         rtol=rtol,
     )
+
+
+def make_stationary_params(data, p, d, q, P, D, Q, S):
+    sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q), seasonal_order=(P, D, Q, S))
+    res = sm_sarimax.fit(disp=False)
+
+    param_dict = dict(
+        ar_params=[], ma_params=[], seasonal_ar_params=[], seasonal_ma_params=[], sigma_state=[]
+    )
+
+    for name, param in zip(res.param_names, res.params):
+        if name.startswith("ar.S"):
+            param_dict["seasonal_ar_params"].append(param)
+        elif name.startswith("ma.S"):
+            param_dict["seasonal_ma_params"].append(param)
+        elif name.startswith("ar."):
+            param_dict["ar_params"].append(param)
+        elif name.startswith("ma."):
+            param_dict["ma_params"].append(param)
+        else:
+            param_dict["sigma_state"].append(param)
+
+    param_dict = {k: np.array(v) for k, v in param_dict.items() if len(v) > 0}
+    return param_dict

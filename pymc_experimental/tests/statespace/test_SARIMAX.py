@@ -1,4 +1,4 @@
-from itertools import combinations, product
+from itertools import combinations
 
 import numpy as np
 import pymc as pm
@@ -8,10 +8,10 @@ import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose, assert_array_less
 
-from pymc_experimental.statespace import BayesianARIMA
+from pymc_experimental.statespace import BayesianSARIMA
 from pymc_experimental.statespace.models.utilities import (
     make_harvey_state_names,
-    make_seasonal_T,
+    make_SARIMA_transition_matrix,
 )
 from pymc_experimental.statespace.utils.constants import (
     SARIMAX_STATE_STRUCTURES,
@@ -22,75 +22,13 @@ from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # py
 )
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
     load_nile_test_data,
+    make_stationary_params,
     simulate_from_numpy_model,
 )
 
 floatX = pytensor.config.floatX
-ps = [0, 1, 2, 3]
-ds = [0, 1, 2]
-qs = [0, 1, 2, 3]
-orders = list(product(ps, ds, qs))[1:]
-ids = [f"p={x[0]}d={x[1]}q={x[2]}" for x in orders]
-
 ATOL = 1e-8 if floatX.endswith("64") else 1e-6
 RTOL = 0 if floatX.endswith("64") else 1e-6
-
-
-@pytest.fixture
-def data():
-    return load_nile_test_data()
-
-
-@pytest.fixture(scope="session")
-def arima_mod():
-    return BayesianARIMA(order=(2, 0, 1), stationary_initialization=True, verbose=False)
-
-
-@pytest.fixture(scope="session")
-def pymc_mod(arima_mod):
-    data = load_nile_test_data()
-
-    with pm.Model(coords=arima_mod.coords) as pymc_mod:
-        # x0  = pm.Normal('x0', dims=['state'])
-        # P0_diag = pm.Gamma('P0_diag', alpha=2, beta=1, dims=['state'])
-        # P0 = pm.Deterministic('P0', pt.diag(P0_diag), dims=['state', 'state_aux'])
-        ar_params = pm.Normal("ar_params", sigma=0.1, dims=["ar_lag"])
-        ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
-        sigma_state = pm.Exponential("sigma_state", 0.5)
-        arima_mod.build_statespace_graph(data=data)
-
-    return pymc_mod
-
-
-@pytest.fixture(scope="session")
-def arima_mod_interp():
-    return BayesianARIMA(
-        order=(3, 0, 3),
-        stationary_initialization=False,
-        verbose=False,
-        state_structure="interpretable",
-        measurement_error=True,
-    )
-
-
-@pytest.fixture(scope="session")
-def pymc_mod_interp(arima_mod_interp):
-    data = load_nile_test_data()
-
-    with pm.Model(coords=arima_mod_interp.coords) as pymc_mod:
-        x0 = pm.Normal("x0", dims=["state"])
-        P0_sigma = pm.Exponential("P0_sigma", 1)
-        P0 = pm.Deterministic(
-            "P0", pt.eye(arima_mod_interp.k_states) * P0_sigma, dims=["state", "state_aux"]
-        )
-        ar_params = pm.Normal("ar_params", sigma=0.1, dims=["ar_lag"])
-        ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
-        sigma_state = pm.Exponential("sigma_state", 0.5)
-        sigma_obs = pm.Exponential("sigma_obs", 0.1)
-        arima_mod_interp.build_statespace_graph(data=data)
-
-    return pymc_mod
-
 
 test_state_names = [
     ["data", "state_1", "state_2"],
@@ -200,24 +138,85 @@ test_state_names = [
     ],
 ]
 
+test_orders = [
+    (2, 0, 2, 0, 0, 0, 0),
+    (2, 1, 2, 0, 0, 0, 0),
+    (2, 2, 2, 0, 0, 0, 0),
+    (2, 3, 2, 0, 0, 0, 0),
+    (0, 0, 0, 1, 0, 0, 4),
+    (0, 0, 0, 2, 0, 1, 4),
+    (2, 0, 2, 2, 0, 2, 4),
+    (0, 0, 0, 1, 1, 0, 4),
+    (0, 0, 0, 1, 2, 0, 4),
+    (1, 1, 1, 1, 1, 1, 4),
+    (1, 2, 1, 1, 1, 1, 4),
+    (1, 2, 1, 1, 2, 1, 4),
+    (1, 1, 1, 1, 3, 1, 3),
+]
+
+ids = [f"p={p},d={d},q={q},P={P},D={D},Q={Q},S={S}" for (p, d, q, P, D, Q, S) in test_orders]
+
+
+@pytest.fixture
+def data():
+    return load_nile_test_data()
+
+
+@pytest.fixture(scope="session")
+def arima_mod():
+    return BayesianSARIMA(order=(2, 0, 1), stationary_initialization=True, verbose=False)
+
+
+@pytest.fixture(scope="session")
+def pymc_mod(arima_mod):
+    data = load_nile_test_data()
+
+    with pm.Model(coords=arima_mod.coords) as pymc_mod:
+        # x0  = pm.Normal('x0', dims=['state'])
+        # P0_diag = pm.Gamma('P0_diag', alpha=2, beta=1, dims=['state'])
+        # P0 = pm.Deterministic('P0', pt.diag(P0_diag), dims=['state', 'state_aux'])
+        ar_params = pm.Normal("ar_params", sigma=0.1, dims=["ar_lag"])
+        ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
+        sigma_state = pm.Exponential("sigma_state", 0.5)
+        arima_mod.build_statespace_graph(data=data)
+
+    return pymc_mod
+
+
+@pytest.fixture(scope="session")
+def arima_mod_interp():
+    return BayesianSARIMA(
+        order=(3, 0, 3),
+        stationary_initialization=False,
+        verbose=False,
+        state_structure="interpretable",
+        measurement_error=True,
+    )
+
+
+@pytest.fixture(scope="session")
+def pymc_mod_interp(arima_mod_interp):
+    data = load_nile_test_data()
+
+    with pm.Model(coords=arima_mod_interp.coords) as pymc_mod:
+        x0 = pm.Normal("x0", dims=["state"])
+        P0_sigma = pm.Exponential("P0_sigma", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(arima_mod_interp.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
+        ar_params = pm.Normal("ar_params", sigma=0.1, dims=["ar_lag"])
+        ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
+        sigma_state = pm.Exponential("sigma_state", 0.5)
+        sigma_obs = pm.Exponential("sigma_obs", 0.1)
+        arima_mod_interp.build_statespace_graph(data=data)
+
+    return pymc_mod
+
 
 @pytest.mark.parametrize(
     "p,d,q,P,D,Q,S,expected_names",
-    [
-        (2, 0, 2, 0, 0, 0, 0, test_state_names[0]),
-        (2, 1, 2, 0, 0, 0, 0, test_state_names[1]),
-        (2, 2, 2, 0, 0, 0, 0, test_state_names[2]),
-        (2, 3, 2, 0, 0, 0, 0, test_state_names[3]),
-        (0, 0, 0, 1, 0, 0, 4, test_state_names[4]),
-        (0, 0, 0, 2, 0, 1, 4, test_state_names[5]),
-        (2, 0, 2, 2, 0, 2, 4, test_state_names[6]),
-        (0, 0, 0, 1, 1, 0, 4, test_state_names[7]),
-        (0, 0, 0, 1, 2, 0, 4, test_state_names[8]),
-        (1, 1, 1, 1, 1, 1, 4, test_state_names[9]),
-        (1, 2, 1, 1, 1, 1, 4, test_state_names[10]),
-        (1, 2, 1, 1, 2, 1, 4, test_state_names[11]),
-        (1, 1, 1, 1, 3, 1, 3, test_state_names[12]),
-    ],
+    [order + (name,) for order, name in zip(test_orders, test_state_names)],
+    ids=ids,
 )
 def test_harvey_state_names(p, d, q, P, D, Q, S, expected_names):
     if all([x == 0 for x in [p, d, q, P, D, Q, S]]):
@@ -230,42 +229,33 @@ def test_harvey_state_names(p, d, q, P, D, Q, S, expected_names):
     assert all([name == expected_name for name, expected_name in zip(states, expected_names)])
 
 
-@pytest.mark.parametrize(
-    "p,d,q,P,D,Q,S",
-    [
-        (2, 0, 2, 0, 0, 0, 0),
-        (2, 1, 2, 0, 0, 0, 0),
-        (2, 2, 2, 0, 0, 0, 0),
-        (2, 3, 2, 0, 0, 0, 0),
-        (0, 0, 0, 1, 0, 0, 4),
-        (0, 0, 0, 2, 0, 1, 4),
-        (2, 0, 2, 2, 0, 2, 4),
-        (0, 0, 0, 1, 1, 0, 4),
-        (0, 0, 0, 1, 2, 0, 4),
-        (1, 1, 1, 1, 1, 1, 4),
-        (1, 2, 1, 1, 1, 1, 4),
-        (1, 2, 1, 1, 2, 1, 4),
-        (1, 1, 1, 1, 3, 1, 3),
-    ],
-)
-def test_make_transition_matrix(p, d, q, P, D, Q, S):
-    T = make_seasonal_T(p, d, q, P, D, Q, S)
+@pytest.mark.parametrize("p,d,q,P,D,Q,S", test_orders)
+def test_make_SARIMA_transition_matrix(p, d, q, P, D, Q, S):
+    T = make_SARIMA_transition_matrix(p, d, q, P, D, Q, S)
+    mod = sm.tsa.SARIMAX(np.random.normal(size=100), order=(p, d, q), seasonal_order=(P, D, Q, S))
+    T2 = mod.ssm["transition"]
+
+    if D > 2:
+        pytest.skip("Statsmodels has a bug when D > 2, skip this test.")
+    else:
+        assert_allclose(T, T2, err_msg="Transition matrix does not match statsmodels")
 
 
-@pytest.mark.parametrize("order", orders, ids=ids)
+@pytest.mark.parametrize("p, d, q, P, D, Q, S", test_orders, ids=ids)
 @pytest.mark.filterwarnings(
     "ignore:Non-invertible starting MA parameters found.",
     "ignore:Non-stationary starting autoregressive parameters found",
 )
-def test_SARIMAX_update_matches_statsmodels(data, order, rng):
-    p, d, q = order
-    sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q))
+def test_SARIMAX_update_matches_statsmodels(p, d, q, P, D, Q, S, data, rng):
+    sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q), seasonal_order=(P, D, Q, S))
 
     param_names = sm_sarimax.param_names
     param_d = {name: getattr(np, floatX)(rng.normal(scale=0.1) ** 2) for name in param_names}
 
     res = sm_sarimax.fit_constrained(param_d)
-    mod = BayesianARIMA(order=(p, d, q), verbose=False, stationary_initialization=False)
+    mod = BayesianSARIMA(
+        order=(p, d, q), seasonal_order=(P, D, Q, S), verbose=False, stationary_initialization=False
+    )
 
     with pm.Model() as pm_mod:
         x0 = pm.Normal("x0", shape=(mod.k_states,))
@@ -275,16 +265,32 @@ def test_SARIMAX_update_matches_statsmodels(data, order, rng):
             pm.Deterministic(
                 "ma_params",
                 pt.as_tensor_variable(
-                    np.array([param_d[k] for k in param_d if k.startswith("ma.")])
+                    np.array([param_d[k] for k in param_d if k.startswith("ma.") and "S." not in k])
                 ),
             )
         if p > 0:
             pm.Deterministic(
                 "ar_params",
                 pt.as_tensor_variable(
-                    np.array([param_d[k] for k in param_d if k.startswith("ar.")])
+                    np.array([param_d[k] for k in param_d if k.startswith("ar.") and "S." not in k])
                 ),
             )
+        if P > 0:
+            pm.Deterministic(
+                "seasonal_ar_params",
+                pt.as_tensor_variable(
+                    np.array([param_d[k] for k in param_d if k.startswith("ar.S.")])
+                ),
+            )
+
+        if Q > 0:
+            pm.Deterministic(
+                "seasonal_ma_params",
+                pt.as_tensor_variable(
+                    np.array([param_d[k] for k in param_d if k.startswith("ma.S.")])
+                ),
+            )
+
         pm.Deterministic("sigma_state", pt.as_tensor_variable(np.array([param_d["sigma2"]])))
 
         mod._insert_random_variables()
@@ -292,6 +298,8 @@ def test_SARIMAX_update_matches_statsmodels(data, order, rng):
         matrix_dict = dict(zip(SHORT_NAME_TO_LONG.values(), matrices))
 
     for matrix in ["transition", "selection", "state_cov", "obs_cov", "design"]:
+        if matrix == "transition" and D > 2:
+            pytest.skip("Statsmodels has a bug when D > 2, skip this test.)")
         assert_allclose(matrix_dict[matrix], sm_sarimax.ssm[matrix], err_msg=f"{matrix} not equal")
 
 
@@ -307,7 +315,7 @@ def test_interpretable_raises_if_d_nonzero():
     with pytest.raises(
         ValueError, match="Cannot use interpretable state structure with statespace differencing"
     ):
-        BayesianARIMA(
+        BayesianSARIMA(
             order=(2, 1, 1),
             stationary_initialization=True,
             verbose=False,
@@ -341,25 +349,30 @@ def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_inter
         )
 
 
-def test_representations_are_equivalent(rng):
+@pytest.mark.parametrize("p, d, q, P, D, Q, S", test_orders, ids=ids)
+@pytest.mark.filterwarnings(
+    "ignore:Non-invertible starting MA parameters found.",
+    "ignore:Non-stationary starting autoregressive parameters found",
+)
+def test_representations_are_equivalent(p, d, q, P, D, Q, S, data, rng):
+    if (d + D) > 0:
+        pytest.skip('state_structure = "interpretable" cannot include statespace differences')
+
+    shared_params = make_stationary_params(data, p, d, q, P, D, Q, S)
     test_values = {}
-    shared_params = {
-        "ar_params": np.array([0.95, 0.5, -0.5], dtype=floatX),
-        "ma_params": np.array([1.1, -0.6, 2.4], dtype=floatX),
-        "sigma_state": np.array([0.8], dtype=floatX),
-    }
 
     for representation in SARIMAX_STATE_STRUCTURES:
         rng = np.random.default_rng(sum(map(ord, "representation test")))
-        mod = BayesianARIMA(
-            order=(3, 0, 3),
-            stationary_initialization=False,
+        mod = BayesianSARIMA(
+            order=(p, d, q),
+            seasonal_order=(P, D, Q, S),
+            stationary_initialization=True,
             verbose=False,
             state_structure=representation,
         )
         params = shared_params.copy()
-        params["x0"] = np.zeros(mod.k_states, dtype=floatX)
-        params["initial_state_cov"] = np.eye(mod.k_states, dtype=floatX)
+        # params["x0"] = np.zeros(mod.k_states, dtype=floatX)
+        # params["initial_state_cov"] = np.eye(mod.k_states, dtype=floatX)
 
         x, y = simulate_from_numpy_model(mod, rng, params)
         test_values[representation] = y
@@ -373,3 +386,10 @@ def test_representations_are_equivalent(rng):
             atol=ATOL,
             rtol=RTOL,
         )
+
+
+@pytest.mark.parametrize("order, name", [((4, 1, 0, 0), "AR"), ((0, 0, 4, 1), "MA")])
+def test_invalid_order_raises(order, name):
+    p, P, q, Q = order
+    with pytest.raises(ValueError, match=f"The following {name} and seasonal {name} terms overlap"):
+        BayesianSARIMA(order=(p, 0, q), seasonal_order=(P, 0, Q, 4))

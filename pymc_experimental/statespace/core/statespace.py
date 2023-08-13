@@ -582,7 +582,7 @@ class PyMCStateSpace:
         --------
         .. code:: python
 
-            ss_mod = pmss.BayesianARIMA(order=(2, 0, 2), verbose=False, stationary_initialization=True)
+            ss_mod = pmss.BayesianSARIMA(order=(2, 0, 2), verbose=False, stationary_initialization=True)
             with pm.Model():
                  x0 = pm.Normal('x0', size=ss_mod.k_states)
                  ar_params = pm.Normal('ar_params', size=ss_mod.p)

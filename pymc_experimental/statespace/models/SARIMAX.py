@@ -4,7 +4,11 @@ import numpy as np
 import pytensor.tensor as pt
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace, floatX
-from pymc_experimental.statespace.models.utilities import make_default_coords
+from pymc_experimental.statespace.models.utilities import (
+    make_default_coords,
+    make_harvey_state_names,
+    make_SARIMA_transition_matrix,
+)
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
@@ -12,24 +16,48 @@ from pymc_experimental.statespace.utils.constants import (
     MA_PARAM_DIM,
     OBS_STATE_DIM,
     SARIMAX_STATE_STRUCTURES,
+    SEASONAL_AR_PARAM_DIM,
+    SEASONAL_MA_PARAM_DIM,
 )
 from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lyapunov
 
 
-class BayesianARIMA(PyMCStateSpace):
+def _verify_order(p, d, q, P, D, Q, S):
+    for name, terms in zip(["AR", "MA"], [(p, P), (q, Q)]):
+        a, A = terms
+        seasonal_lags = [(1 + i) * S for i in range(A)]
+        lags = [(1 + i) for i in range(a)]
+        overlapping_terms = set(seasonal_lags).intersection(set(lags))
+        if any(overlapping_terms):
+            raise ValueError(
+                f"The following {name} and seasonal {name} terms overlap, check model "
+                f"definition: {overlapping_terms}"
+            )
+
+
+class BayesianSARIMA(PyMCStateSpace):
     r"""
-    AutoRegressive Integrated Moving Average with eXogenous regressors
+    Seasonal AutoRegressive Integrated Moving Average with eXogenous regressors
 
     Parameters
     ----------
     order: tuple(int, int, int)
-        Order of the ARIMAX process. The order has the notation (p, d, q), where p is the number of autoregressive
+        Order of the ARIMA process. The order has the notation (p, d, q), where p is the number of autoregressive
         lags, q is the number of moving average components, and d is order of integration -- the number of
         differences needed to render the data stationary.
 
         If d > 0, the differences are modeled as components of the hidden state, and all available data can be used.
         This is only possible if state_structure = 'fast'. For interpretable states, the user must manually
         difference the data prior to calling the `build_statespace_graph` method.
+
+    seasonal_order: tuple(int, int, int, int), optional
+        Seasonal order of the SARIMA process. The order has the notation (P, D, Q, S), where P is the number of seasonal
+        lags to include, Q is the number of seasonal innovation lags to include, and D is the number of seasonal
+        differences to perform. S is the length of the season.
+
+        Seasonal terms are similar to ARIMA terms, in that they are merely lags of the data or innovations. It is thus
+        possible for the seasonal lags and the ARIMA lags to overlap, for example if P <= p. In this case, an error
+        will be raised.
 
     stationary_initialization: bool, default False
         If true, the initial state and initial state covariance will not be assigned priors. Instead, their steady
@@ -114,14 +142,14 @@ class BayesianARIMA(PyMCStateSpace):
 
     Examples
     --------
-    The following example shows how to build an ARMA(1, 1) model -- ARIMA(1, 0, 1) -- using the BayesianARIMA class:
+    The following example shows how to build an ARMA(1, 1) model -- ARIMA(1, 0, 1) -- using the BayesianSARIMA class:
 
     .. code:: python
 
         import pymc_experimental.statespace as pmss
         import pymc as pm
 
-        ss_mod = pmss.BayesianARIMA(order=(1, 0, 1), verbose=True)
+        ss_mod = pmss.BayesianSARIMA(order=(1, 0, 1), verbose=True)
 
         with pm.Model(coords=ss_mod.coords) as arma_model:
             state_sigmas = pm.HalfNormal("sigma_state", sigma=1.0, dims=ss_mod.param_dims["sigma_state"])
@@ -145,7 +173,7 @@ class BayesianARIMA(PyMCStateSpace):
     def __init__(
         self,
         order: Tuple[int, int, int],
-        seasonal_order: Optional[Tuple[int, int, int, int]],
+        seasonal_order: Optional[Tuple[int, int, int, int]] = None,
         stationary_initialization: bool = True,
         filter_type: str = "standard",
         state_structure: str = "fast",
@@ -156,16 +184,19 @@ class BayesianARIMA(PyMCStateSpace):
         self.p, self.d, self.q = order
         if seasonal_order is None:
             seasonal_order = (0, 0, 0, 0)
+
         self.P, self.D, self.Q, self.S = seasonal_order
+        _verify_order(self.p, self.d, self.q, self.P, self.D, self.Q, self.S)
+
         self.stationary_initialization = stationary_initialization
 
         self.state_structure = state_structure
 
-        self._p_max = max(1, self.p)
-        self._q_max = max(1, self.q)
+        self._p_max = max(1, self.p + self.P * self.S)
+        self._q_max = max(1, self.q + self.Q * self.S)
 
         k_states = None
-        self._k_diffs = self.d
+        self._k_diffs = self.d + self.S * self.D
 
         if state_structure not in SARIMAX_STATE_STRUCTURES:
             raise ValueError(
@@ -173,7 +204,7 @@ class BayesianARIMA(PyMCStateSpace):
                 f'{", ".join(SARIMAX_STATE_STRUCTURES)}'
             )
 
-        if state_structure == "interpretable" and self.d > 0:
+        if state_structure == "interpretable" and (self.d + self.D) > 0:
             raise ValueError(
                 "Cannot use interpretable state structure with statespace differencing. Difference the "
                 'data by hand (leaving NaN values to be interpolated), or use state_structure="fast"'
@@ -184,7 +215,7 @@ class BayesianARIMA(PyMCStateSpace):
                 self.S * self.D + self.d
             )
         elif self.state_structure == "interpretable":
-            k_states = self._p_max + self._q_max + self.d
+            k_states = self._p_max + self._q_max
 
         k_posdef = 1
         k_endog = 1
@@ -265,17 +296,18 @@ class BayesianARIMA(PyMCStateSpace):
     @property
     def state_names(self):
         if self.state_structure == "fast":
-            states = ["data"]
-            states += [f"D{i}.data" for i in range(self._k_diffs)]
-            states += [f"state_{i + 1}" for i in range(self.k_states - self._k_diffs - 1)]
+            p, d, q = self.p, self.d, self.q
+            P, D, Q, S = self.P, self.D, self.Q, self.S
+            states = make_harvey_state_names(p, d, q, P, D, Q, S)
 
-        else:
+        elif self.state_structure == "interpretable":
             states = ["data"]
             if self.p > 0:
-                states += [f"L{i + 1}.data" for i in range(self.p - 1)]
+                states += [f"L{i + 1}.data" for i in range(self._p_max - 1)]
             states += ["innovations"]
             if self.q > 0:
-                states += [f"L{i + 1}.innovations" for i in range(self.q - 1)]
+                states += [f"L{i + 1}.innovations" for i in range(self._q_max - 1)]
+
         return states
 
     @property
@@ -295,6 +327,8 @@ class BayesianARIMA(PyMCStateSpace):
             "sigma_state": (OBS_STATE_DIM,),
             "ar_params": (AR_PARAM_DIM,),
             "ma_params": (MA_PARAM_DIM,),
+            "seasonal_ar_params": (SEASONAL_AR_PARAM_DIM,),
+            "seasonal_ma_params": (SEASONAL_MA_PARAM_DIM,),
         }
 
         if not self.measurement_error:
@@ -303,6 +337,10 @@ class BayesianARIMA(PyMCStateSpace):
             del coord_map["ar_params"]
         if self.q == 0:
             del coord_map["ma_params"]
+        if self.P == 0:
+            del coord_map["seasonal_ar_params"]
+        if self.Q == 0:
+            del coord_map["seasonal_ma_params"]
         if self.stationary_initialization:
             del coord_map["P0"]
             del coord_map["x0"]
@@ -334,6 +372,9 @@ class BayesianARIMA(PyMCStateSpace):
         return x0, P0
 
     def make_symbolic_graph(self) -> None:
+        p, d, q = self.p, self.d, self.q
+        P, D, Q, S = self.P, self.D, self.Q, self.S
+
         # Initial state and covariance can be handled first if we're not doing a stationary initialization
         if not self.stationary_initialization:
             x0 = self.make_and_register_variable("x0", shape=(self.k_states,), dtype=floatX)
@@ -345,56 +386,76 @@ class BayesianARIMA(PyMCStateSpace):
             self.ssm["initial_state_cov"] = P0
 
         # Design matrix has no RVs
-        self.ssm["design"] = np.r_[
-            [1.0] * (self._k_diffs + 1), np.zeros(self.k_states - self._k_diffs - 1)
-        ][None]
+        k_lags = self.k_states - self._k_diffs
+        self.ssm["design"] = np.r_[[1] * d, ([0] * (S - 1) + [1]) * D, [1], [0] * (k_lags - 1)][
+            None
+        ]
 
         # Set up the transition and selection matrices, depending on the requested representation
         if self.state_structure == "fast":
+            transition = make_SARIMA_transition_matrix(p, d, q, P, D, Q, S)
+            selection = np.r_[
+                [0] * self._k_diffs, [1.0], np.zeros(self.k_states - self._k_diffs - 1)
+            ][:, None]
+
             ar_param_idx = np.s_[
                 "transition", self._k_diffs : self._k_diffs + self.p, self._k_diffs
             ]
             ma_param_idx = np.s_["selection", 1 + self._k_diffs : 1 + self._k_diffs + self.q, 0]
 
-            idx = np.triu_indices(self.d)
-            transition = np.eye(self.k_states, k=1)
-            transition[idx] = 1
-            transition[: self.d, self._k_diffs] = 1
-            selection = np.r_[
-                [0] * self._k_diffs, [1.0], np.zeros(self.k_states - self._k_diffs - 1)
-            ][:, None]
-
             self.ssm["transition"] = transition
             self.ssm["selection"] = selection
 
-            if self.p > 0:
-                ar_params = self.make_and_register_variable(
-                    "ar_params", shape=(self.p,), dtype=floatX
-                )
+            if p > 0:
+                ar_params = self.make_and_register_variable("ar_params", shape=(p,), dtype=floatX)
                 self.ssm[ar_param_idx] = ar_params
 
-            if self.q > 0:
-                ma_params = self.make_and_register_variable(
-                    "ma_params", shape=(self.q,), dtype=floatX
+            if P > 0:
+                seasonal_ar_params = self.make_and_register_variable(
+                    "seasonal_ar_params", shape=(P,), dtype=floatX
                 )
+                idx_rows = self._k_diffs + (np.arange(1, P + 1) * S) - 1
+                S_ar_param_idx = np.s_["transition", idx_rows, self._k_diffs]
+                self.ssm[S_ar_param_idx] = seasonal_ar_params
+
+                if p > 0:
+                    cross_term_idx = np.s_[
+                        "transition",
+                        idx_rows.repeat(p) + np.tile(np.arange(p), P) + 1,
+                        self._k_diffs,
+                    ]
+                    self.ssm[cross_term_idx] = -pt.repeat(seasonal_ar_params, p) * pt.tile(
+                        ar_params, P
+                    )
+
+            if q > 0:
+                ma_params = self.make_and_register_variable("ma_params", shape=(q,), dtype=floatX)
                 self.ssm[ma_param_idx] = ma_params
 
+            if Q > 0:
+                seasonal_ma_params = self.make_and_register_variable(
+                    "seasonal_ma_params", shape=(Q,), dtype=floatX
+                )
+                idx_rows = self._k_diffs + np.arange(1, Q + 1) * S
+                S_ma_param_idx = np.s_["selection", idx_rows, 0]
+                self.ssm[S_ma_param_idx] = seasonal_ma_params
+
+                if q > 0:
+                    cross_term_idx = np.s_[
+                        "selection", idx_rows.repeat(q) + np.tile(np.arange(q), Q) + 1, 0
+                    ]
+                    self.ssm[cross_term_idx] = pt.repeat(seasonal_ma_params, q) * pt.tile(
+                        ma_params, Q
+                    )
+
         elif self.state_structure == "interpretable":
-            ar_param_idx = np.s_[
-                "transition", self._k_diffs, self._k_diffs : self._k_diffs + self._p_max
-            ]
-            ma_param_idx = np.s_[
-                "transition",
-                self._k_diffs,
-                self._k_diffs + self._p_max : self._k_diffs + self._p_max + self.q,
-            ]
+            ar_param_idx = np.s_["transition", 0, : max(1, p)]
+            ma_param_idx = np.s_["transition", 0, self._p_max : self._p_max + max(1, q)]
 
             transition = np.eye(self.k_states, k=-1)
             transition[-self._q_max, self._p_max - 1] = 0
 
-            selection = np.r_[
-                [0] * self._k_diffs, [1.0], np.zeros(self.k_states - self._k_diffs - 1)
-            ][:, None]
+            selection = np.r_[[1.0], np.zeros(self.k_states - 1)][:, None]
             selection[-self._q_max, 0] = 1
 
             self.ssm["transition"] = transition
@@ -406,11 +467,43 @@ class BayesianARIMA(PyMCStateSpace):
                 )
                 self.ssm[ar_param_idx] = ar_params
 
+            if self.P > 0:
+                seasonal_ar_params = self.make_and_register_variable(
+                    "seasonal_ar_params", shape=(P,), dtype=floatX
+                )
+                idx_cols = np.arange(1, P + 1) * S - 1
+                S_ar_param_idx = np.s_["transition", 0, idx_cols]
+                self.ssm[S_ar_param_idx] = seasonal_ar_params
+
+                if p > 0:
+                    cross_term_idx = np.s_[
+                        "transition", 0, idx_cols.repeat(p) + np.tile(np.arange(p), P) + 1
+                    ]
+                    self.ssm[cross_term_idx] = -pt.repeat(seasonal_ar_params, p) * pt.tile(
+                        ar_params, P
+                    )
+
             if self.q > 0:
                 ma_params = self.make_and_register_variable(
                     "ma_params", shape=(self.q,), dtype=floatX
                 )
                 self.ssm[ma_param_idx] = ma_params
+
+            if Q > 0:
+                seasonal_ma_params = self.make_and_register_variable(
+                    "seasonal_ma_params", shape=(Q,), dtype=floatX
+                )
+                idx_cols = self._p_max + np.arange(1, Q + 1) * S - 1
+                S_ma_param_idx = np.s_["transition", 0, idx_cols]
+                self.ssm[S_ma_param_idx] = seasonal_ma_params
+
+                if q > 0:
+                    cross_term_idx = np.s_[
+                        "transition", 0, idx_cols.repeat(q) + np.tile(np.arange(q), Q) + 1
+                    ]
+                    self.ssm[cross_term_idx] = pt.repeat(seasonal_ma_params, q) * pt.tile(
+                        ma_params, Q
+                    )
 
         # Set up the state covariance matrix
         state_cov_idx = ("state_cov",) + np.diag_indices(self.k_posdef)

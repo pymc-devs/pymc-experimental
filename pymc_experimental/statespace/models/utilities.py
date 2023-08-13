@@ -142,7 +142,9 @@ def make_harvey_state_names(p, d, q, P, D, Q, S) -> List[str]:
     return states
 
 
-def make_seasonal_T(p: int, d: int, q: int, P: int, D: int, Q: int, S: int) -> np.ndarray:
+def make_SARIMA_transition_matrix(
+    p: int, d: int, q: int, P: int, D: int, Q: int, S: int
+) -> np.ndarray:
     r"""
     Make the transition matrix for a SARIMA model
 
@@ -208,9 +210,62 @@ def make_seasonal_T(p: int, d: int, q: int, P: int, D: int, Q: int, S: int) -> n
             \end{bmatrix}
             \begin{bmatrix} x_{t-1} \\ \Delta x_{t-1} \\ \Delta^2 x_{t-1} \\ x_{t-1}^\star \end{bmatrix}
 
-    The upper-left corner has an upper-triangular matrix of shape ``(d,d)``, responsible for creating the ARIMA differences.
+    Next are the seasonal differences. The highest seasonal difference stored in the states is one less than the
+    seasonal difference order, ``D``. That is, if ``D = 1, S = 4``, there will be states :math:``x_{t-1}, x_{t-2}, x_{t-3},
+    x_{t-4}, x_t^\star`, with :math:`x_t^\star = \Delta_4 x_t = x_t - x_{t-4}`. The level state can be recovered by
+    adding :math:`x_t^\star + x_{t-4}`. To accomplish all of this, two things need to be inserted into the transition
+    matrix:
 
+        1. A shifted identity matrix to "roll" the lagged states forward each transition, and
+        2. A pair of 1's to recover the level state by adding the last 2 states (:math:`x_t^\star + x_{t-4}`)
 
+    Keeping the example of ``D = 1, S = 4``, the block that handles the seasonal difference will look this this:
+    .. math::
+        \begin{bmatrix} 0 & 0 & 0 & 1 & 1 \\
+                        1 & 0 & 0 & 0 & 0 \\
+                        0 & 1 & 0 & 0 & 0 \\
+                        0 & 0 & 1 & 0 & 0 \\
+                        0 & 0 & 0 & 0 & 0 \end{bmatrix}
+
+    In the presence of higher order seasonal differences, there needs to be one block per difference. And the level
+    state is recovered by adding together the last state from each block. For example, if ``D = 2, S = 4``, the states
+    will be :math:`x_{t-1}, x_{t-2}, x_{t-3}, x_{t-4}, \Delta_4 x_{t-1}, \Delta_4 x_{t-2}, \Delta_4 x_{t-3},
+    \Delta_4 x_{t-4} x_t^\star`, with :math:`x_t^\star = \Delta_4^2 = \Delta_4(x_t - x_{t-4}) = x_t - 2 x_{t-4} +
+    x_{t-8}`. To recover the level state, we need :math:`x_t = x_t^\star + \Delta_4 x_{t-4} + x_{t-4}`. In addition,
+    to recover :math:`\Delta_4 x_t`, we have to compute :math:`\Delta_4 x_t = x_t^\star + \Delta_4 x_{t-4} =
+    \Delta_4(x_t - x_{t-4}) + \Delta_4 x_{t-4} = \Delta_4 x_t`. The block of the transition matrix associated with all
+    this is thus:
+
+    .. math::
+        \begin{bmatrix} 0 & 0 & 0 & 1 & 0 & 0 & 0 & 1 & 1 \\
+                        1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                        0 & 1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                        0 & 0 & 1 & 0 & 0 & 0 & 0 & 0 & 0 \\
+                        0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 1 \\
+                        0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 0 \\
+                        0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 \\
+                        0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 \\
+                        0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \end{bmatrix}
+
+    When ARIMA differences and seasonal differences are mixed, the seasonal differences will be written in terms of the
+    highest ARIMA difference order, and recovery of the level state will require the use of all the ARIMA differences,
+    as well as the seasonal differences. In addition, the seasonal differences are needed to back out the ARIMA
+    differences from :math:`x_t^\star`. Here is the differencing block for a SARIMA(0,2,0)x(0,2,0,4) -- the identites
+    of the states is left an exercise for the motivated reader:
+
+    .. math::
+        \begin{bmatrix}
+            1 & 1 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 1 & 1 \\
+            0 & 1 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 1 & 1 \\
+            0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 1 & 1 \\
+            0 & 0 & 1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+            0 & 0 & 0 & 1 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\
+            0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 0 & 0 & 0 \\
+            0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 1 \\
+            0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 0 \\
+            0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 \\
+            0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 \\
+            0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \end{bmatrix}
     """
     n_diffs = S * D + d
     k_lags = max(p + P * S, q + Q * S + 1)
@@ -222,30 +277,45 @@ def make_seasonal_T(p: int, d: int, q: int, P: int, D: int, Q: int, S: int) -> n
     diff_idx = np.triu_indices(d)
     T[diff_idx] = 1
 
-    # First block of seasonal differences
-    sum_row_idx = np.arange(d + 1).repeat(D + 1)
-    sum_col_idx = (S - 1) * np.arange(D + 1)[1:] + np.arange(D + 1)[:-1]
-    sum_col_idx = d + np.tile(np.r_[sum_col_idx, sum_col_idx[-1] + 1], d + 1)
+    # Adjustment factors for difference states All of the difference states are computed relative to x_t_star using
+    # combinations of states, so there's a lot of "backing out" that needs to happen here. The columns are the more
+    # straightforward part. After the (d,d) upper triangle of 1s for the ARIMA lags, there will be (S - 1) zeros,
+    # and then a 1. In addition, there is an extra column of 1s at position n_diffs + 1, corresponding to x_star itself.
 
-    # Higher order seasonal differences
-    sum_row_idx = np.r_[
-        sum_row_idx, np.concatenate([sum_row_idx[-(D - i) :] + S * i for i in range(D)])
-    ]
-    sum_col_idx = np.r_[
-        sum_col_idx, np.concatenate([sum_col_idx[-(D - i) :] for i in range(D)] * D)
-    ]
+    # This will slowly taper down, but first we build the "full" set of column indices with values
+    base_col_idx = d + S + np.arange(D) * S - 1
+    if len(base_col_idx) > 0:
+        base_col_idx = np.r_[base_col_idx, base_col_idx[-1] + 1]
 
-    T[sum_row_idx, sum_col_idx] = 1
+    # The first d rows -- associated with the ARIMA differences -- will have 1s in all columns.
+    col_idx = np.tile(base_col_idx, d)
+    row_idx = np.arange(d).repeat(D + 1)
 
-    # "Rolling" indices for seasonal differences
-    (row_roll_idx, col_roll_idx) = np.diag_indices(S * D)
-    row_roll_idx = row_roll_idx + d + 1
-    col_roll_idx = col_roll_idx + d
+    # Next, if there are seasonal differences, there will be more rows, with the columns slowly dropping off.
+    # Starting from the d+1-th row, there will be 1 in the column positions every S rows, for a total of (D-1) rows.
+    # Every row will drop 2 columns from the left of base_col_idx.
+    for i in range(D):
+        n = len(base_col_idx[i:])
+        col_idx = np.r_[col_idx, base_col_idx[i:]]
+        row_idx = np.r_[row_idx, np.full(n, d + S * i)]
 
-    # Rolling indices have a zero after every diagonal of length S-1
-    T[row_roll_idx, col_roll_idx] = 1
-    zero_idx = row_roll_idx[S - 1 :: S], col_roll_idx[S - 1 :: S]
-    T[zero_idx] = 0
+    if D == 0 and d > 0:
+        # Special case: If there are *only* ARIMA lags, there still needs to be a single column of 1s at position
+        # [:d, d]
+        row_idx = np.arange(d)
+        col_idx = np.full(d, d)
+    T[row_idx, col_idx] = 1
+
+    if S > 0:
+        # "Rolling" indices for seasonal differences
+        (row_roll_idx, col_roll_idx) = np.diag_indices(S * D)
+        row_roll_idx = row_roll_idx + d + 1
+        col_roll_idx = col_roll_idx + d
+
+        # Rolling indices have a zero after every diagonal of length S-1
+        T[row_roll_idx, col_roll_idx] = 1
+        zero_idx = row_roll_idx[S - 1 :: S], col_roll_idx[S - 1 :: S]
+        T[zero_idx] = 0
 
     # Bottom part
     # Rolling indices for the "compute" states, x_star
