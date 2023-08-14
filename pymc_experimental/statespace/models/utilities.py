@@ -1,6 +1,7 @@
 from typing import List
 
 import numpy as np
+import pytensor.tensor as pt
 
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
@@ -9,6 +10,7 @@ from pymc_experimental.statespace.utils.constants import (
     OBS_STATE_DIM,
     SHOCK_AUX_DIM,
     SHOCK_DIM,
+    VECTOR_VALUED,
 )
 
 
@@ -49,7 +51,9 @@ def cleanup_states(states: List[str]) -> List[str]:
     out = []
     for state in states:
         state = state.replace("^1", "")
+        state = state.replace("^0", "")
         state = state.replace("L0", "")
+        state = state.replace("D0", "")
         out.append(state)
     return out
 
@@ -87,56 +91,39 @@ def make_harvey_state_names(p, d, q, P, D, Q, S) -> List[str]:
     n_diffs = S * D + d
     k_lags = max(p + P * S, q + Q * S + 1)
     k_states = k_lags + n_diffs
+    has_diff = (d + D) > 0
 
     # First state is always data
     states = ["data"]
 
-    # Next we add the ARIMA differences
-    states.extend([f"D1^{(i + 1)}.data" for i in range(d)[:-1]])
+    # Differencing operations
+    # The goal here is to get down to "data_star", the state that actually has the SARIMA dynamics applied to it.
+    # To get there, first the data needs to be differenced d-1 times
+    d_size = d + int(D > 0)
+    states.extend([f"D1^{(i + 1)}.data" for i in range(d_size)[:-1]])
 
-    # This next line handles two cases. If d > 0, we need to do cycles of the "base state" for the seasonal
-    # terms. If d == 0, we can start adding the seasonal lags.
+    # Next, if there are seasonal differences, we need to lag the ARIMA differenced state S times, then seasonal
+    # difference it. This procedure is done D-1 times.
 
-    # No matter what, we're going to need a total of S * max(P, Q+1) seasonal lags, so we add the first S
-    # here if d = 0. These will also be the first rotation of the seasonal differences corresponding to D=1
-    has_diff = (d + D) > 0
-    has_single_diff = ((d == 0) & (D != 0)) | ((d != 0) & (D == 0))
-    has_both_diff = (d > 0) & (D > 0)
+    arma_diff = [int(d_size > 1), d_size - 1]
+    season_diff = [S, 0]
+    curr_state = f"D{arma_diff[0]}^{arma_diff[1]}"
+    for i in range(D):
+        states.extend([f"L{j+1}{curr_state}.data" for j in range(S - 1)])
+        season_diff[1] += 1
+        curr_state = f"D{arma_diff[0]}^{arma_diff[1]}D{season_diff[0]}^{season_diff[1]}"
+        if i != (D - 1):
+            states.append(f"{curr_state}.data")
 
-    prefix = f"D1^{d}" if d > 0 else ""
-    lag_adj = 1 - int(d > 0)
-    season_adj = 1 - has_both_diff
-    states.extend([f"{prefix}L{i + lag_adj}.data" for i in range(S - season_adj)])
-
-    suffix = "_star" if has_diff else ""
-
-    # Handle seasonal differences. This involves cyling the base state and adding an additonal ΔS every
-    # S seasons
-    states.extend([f"D{S}^{(d + 1)}{prefix}L{i}.data" for d in range(D - 1) for i in range(S)])
-
+    # Now we are at data_star. If we did any differencing, add it in.
     if has_diff:
-        states.append(f"data{suffix}")
-    # Next we need to add the actual "computation" states.
+        states.append("data_star")
 
-    # If d = 0 and D = 0, these are just lags of the data, equal to max(p + P * S, q + Q * S + 1). We already
-    # added S lags above, so shift the lag index to restart the count from there
-    adj = max(1, S * (1 - int(has_diff)) + int(has_diff))
+    # Next, we add the time series dynamics states. These don't have a immediately obvious interpretation, so just call
+    # them "state_1" .., "state_n".
+    suffix = "_star" if "star" in states[-1] else ""
+    states.extend([f"state{suffix}_{i+1}" for i in range(k_lags - 1)])
 
-    # We also need to figure out how many more lags to add. There are two cases. If we don't have any differences,
-    # the seasonal "rolling" is handled by this block, so there are more states. If we do have differences, the
-    # rolling is handled above, so we only need to handle ARIMA dynamics of x_star, which is max(p, q+1) states
-
-    if has_diff:
-        # x_star itself counts and was already handled, so subtract 1
-        n_more_lags = max(p + P * S, q + Q * S + 1) - has_single_diff - (1 - season_adj)
-    else:
-        # subtract seasonal lags already added, as well as x_star
-        n_more_lags = max(p + P * S, q + Q * S + 1) - max(0, S - 1) - 1
-
-    if suffix == "_star" or S == 0:
-        states.extend([f"state{suffix}_{adj + i}" for i in range(n_more_lags)])
-    else:
-        states.extend([f"L{adj + i}.state{suffix}" for i in range(n_more_lags)])
     states = cleanup_states(states)
 
     return states
@@ -326,3 +313,60 @@ def make_SARIMA_transition_matrix(
     T[star_roll_row, star_roll_col] = 1
 
     return T
+
+
+def conform_time_varying_and_time_invariant_matrices(A, B):
+    """
+    Adjust either A or B to conform to the other in the time dimension
+
+    In the context of building a structural model from components, it might be the case that one component has
+    time-varying statespace matrices, while the other does not. In this case, it is not possible to concatenate
+    or block diagonalize the pair of matrices A and B without first expanding the time-invariant matrix to have a
+    time dimension. This function checks if exactly one of the two time varies, and adjusts the other accordingly if
+    need be.
+
+    Parameters
+    ----------
+    A: pt.TensorVariable
+        An anonymous statespace matrix
+    B: pt.TensorVariable
+        An anonymous statespace matrix
+
+    Returns
+    -------
+    (A, B): Tuple of pt.TensorVariable
+        A and B, with one or neither expanded to have a time dimension.
+    """
+    if A.name != B.name:
+        raise ValueError(
+            "conform_time_varying_and_time_invariant_matrices should only be called on two instances of "
+            "the same statespace matrix"
+        )
+
+    name = A.name
+    time_varying_ndim = 3 - int(name in VECTOR_VALUED)
+
+    if not all([x.ndim == time_varying_ndim for x in [A, B]]):
+        return A, B
+
+    T_A, A_a, A_b = A.type.shape
+    T_B, B_a, B_b = B.type.shape
+
+    if T_A == T_B:
+        return A, B
+
+    if T_A == 1:
+        A_out = pt.repeat(A, T_B, axis=0)
+        A_out = pt.specify_shape(A_out, (T_B, A_a, A_b))
+        A_out.name = A.name
+
+        return A_out, B
+
+    if T_B == 1:
+        B_out = pt.repeat(B, T_A, axis=0)
+        B_out = pt.specify_shape(B_out, (T_A, B_a, B_b))
+        B_out.name = B.name
+
+        return A, B_out
+
+    return A, B

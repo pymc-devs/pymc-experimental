@@ -354,6 +354,10 @@ class BayesianSARIMA(PyMCStateSpace):
             coords.update({AR_PARAM_DIM: list(range(1, self.p + 1))})
         if self.q > 0:
             coords.update({MA_PARAM_DIM: list(range(1, self.q + 1))})
+        if self.P > 0:
+            coords.update({SEASONAL_AR_PARAM_DIM: list(range(1, self.P + 1))})
+        if self.Q > 0:
+            coords.update({SEASONAL_MA_PARAM_DIM: list(range(1, self.Q + 1))})
 
         return coords
 

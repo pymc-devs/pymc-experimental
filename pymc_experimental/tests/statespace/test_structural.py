@@ -1,5 +1,8 @@
 import numpy as np
+import pandas as pd
+import pymc as pm
 import pytensor
+import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
 from numpy.testing import assert_allclose
@@ -236,3 +239,35 @@ def test_add_components():
 
     for (ll_mat, se_mat, all_mat, axis) in zip(ll_mats, se_mats, all_mats, axes):
         assert_allclose(all_mat, np.concatenate([ll_mat, se_mat], axis=axis), atol=ATOL, rtol=RTOL)
+
+
+def test_adding_exogenous_component(rng):
+    data = rng.normal(size=(100, 2))
+    reg = st.RegressionComponent(data=data, state_names=["a", "b"], name="exog")
+    ll = st.LevelTrendComponent(name="level")
+    seasonal = st.FrequencySeasonality(name="annual", season_length=12, n=4)
+    mod = reg + ll + seasonal
+
+    assert mod.ssm["design"].type.shape == (100, 1, 2 + 2 + 8)
+    assert_allclose(mod.ssm["design", 5, 0, :2].eval(), data[5])
+
+
+def test_filter_scans_time_varying_design_matrix(rng):
+    time_idx = pd.date_range(start="2000-01-01", freq="D", periods=100)
+    data = pd.DataFrame(rng.normal(size=(100, 2)), columns=["a", "b"], index=time_idx)
+
+    y = pd.DataFrame(rng.normal(size=(100, 1)), columns=["data"], index=time_idx)
+
+    reg = st.RegressionComponent(data=data, state_names=["a", "b"], name="exog")
+    mod = reg.build(verbose=False)
+
+    with pm.Model(coords=mod.coords) as m:
+        x0 = pm.Normal("x0", dims=["state"])
+        P0 = pm.Deterministic("P0", pt.eye(mod.k_states), dims=["state", "state_aux"])
+        beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
+        mod.build_statespace_graph(y)
+        prior = pm.sample_prior_predictive(samples=10)
+
+    prior_Z = prior.prior.Z.values
+    assert prior_Z.shape == (1, 10, 100, 1, 2)
+    assert_allclose(prior_Z[0, :, :, 0, :], data.values[None].repeat(10, axis=0))

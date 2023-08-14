@@ -4,11 +4,13 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 
+from pymc_experimental.statespace.utils.constants import (
+    NEVER_TIME_VARYING,
+    VECTOR_VALUED,
+)
+
 floatX = pytensor.config.floatX
 KeyLike = Union[Tuple[Union[str, int]], str]
-
-NEVER_TIME_VARYING = ["initial_state", "initial_state_cov", "a0", "P0"]
-VECTOR_VALUED = ["initial_state", "state_intercept", "obs_intercept", "a0", "c", "d"]
 
 
 class PytensorRepresentation:
@@ -106,10 +108,13 @@ class PytensorRepresentation:
     and :math:`P_0`) can be time varying. In this case, a time dimension of shape :math:`n`, equal to the number of
     observations, can be added.
 
+    .. warning:: The time dimension is used as a batch dimension during kalman filtering, and must thus **always**
+                 be the **leftmost** dimension.
+
     The purpose of this class is to store these matrices, as well as to allow users to easily index into them. Matrices
     are stored as pytensor ``TensorVariables`` of known shape. Shapes are always accessible via the ``.type.shape``
     method, which should never return ``None``. Matrices can be accessed via normal numpy array slicing after first
-    indexing by the name of the desired array. The time dimension is stored on the far right, and is automatically
+    indexing by the name of the desired array. The time dimension is stored on the far left, and is automatically
     sliced away unless specifically requested by the user. See the examples for details.
 
     Examples
@@ -132,11 +137,11 @@ class PytensorRepresentation:
         print(ssm['design'].eval())
         >>> np.array([[1, 0, 0]])
 
-        # Setting an entire matrix is also permitted. If you set a time dimension, it must be the last dimension, and the
-        # core dimensions must agree with those set when the ssm object was instantiated.
-        ssm['obs_intercept'] = np.arange(10).reshape(1, 10) # 10 timesteps
+        # Setting an entire matrix is also permitted. If you set a time dimension, it must be the first dimension, and
+        # the "core" dimensions must agree with those set when the ssm object was instantiated.
+        ssm['obs_intercept'] = np.arange(10).reshape(10, 1) # 10 timesteps
         print(ssm['obs_intercept'].eval())
-        >>> np.array([[1., 2., 3., 4., 5., 6., 7., 8., 9.]])
+        >>> np.array([[1.], [2.], [3.], [4.], [5.], [6.], [7.], [8.], [9.]])
 
     References
     ----------
@@ -166,15 +171,16 @@ class PytensorRepresentation:
         self.k_endog = k_endog
         self.k_posdef = k_posdef if k_posdef is not None else k_states
 
-        # The last dimension is for time varying matrices; it could be n_obs. Not thinking about that now.
+        # The first dimension is for time varying matrices; it could be n_obs. Not thinking about that now.
         self.shapes = {
-            "design": (self.k_endog, self.k_states, 1),
-            "obs_intercept": (self.k_endog, 1),
-            "obs_cov": (self.k_endog, self.k_endog, 1),
-            "transition": (self.k_states, self.k_states, 1),
-            "state_intercept": (self.k_states, 1),
-            "selection": (self.k_states, self.k_posdef, 1),
-            "state_cov": (self.k_posdef, self.k_posdef, 1),
+            "design": (1, self.k_endog, self.k_states),
+            "obs_intercept": (1, self.k_endog),
+            "obs_cov": (1, self.k_endog, self.k_endog),
+            "transition": (1, self.k_states, self.k_states),
+            "state_intercept": (1, self.k_states),
+            "selection": (1, self.k_states, self.k_posdef),
+            "state_cov": (1, self.k_posdef, self.k_posdef),
+            # These are never time varying, so they don't have a dummy first dimension
             "initial_state": (self.k_states,),
             "initial_state_cov": (self.k_states, self.k_states),
         }
@@ -183,7 +189,11 @@ class PytensorRepresentation:
         scope = locals()
         for name, shape in self.shapes.items():
             if scope[name] is not None:
-                matrix = self._numpy_to_pytensor(name, scope[name])
+                matrix = scope[name]
+                if isinstance(matrix, np.ndarray):
+                    matrix = self._numpy_to_pytensor(name, matrix)
+                else:
+                    matrix = self._check_provided_tensor(name, matrix)
                 setattr(self, name, matrix)
 
             else:
@@ -203,16 +213,17 @@ class PytensorRepresentation:
             shape = value.shape
 
         old_shape = self.shapes[key]
-        check_slice = slice(None, 2) if key not in VECTOR_VALUED else slice(None, 1)
-
-        if not all([a == b for a, b in zip(shape[check_slice], old_shape[check_slice])]):
+        if not all([a == b for a, b in zip(shape[1:], old_shape[1:])]):
             raise ValueError(
-                f"The first two dimensions of {key} must be {old_shape[check_slice]}, found {shape[check_slice]}"
+                f"The last two dimensions of {key} must be {old_shape[1:]}, found {shape[1:]}"
             )
 
         # Add time dimension dummy if none present
-        if len(shape) == 2 and key not in NEVER_TIME_VARYING:
-            self.shapes[key] = shape + (1,)
+        if key not in NEVER_TIME_VARYING:
+            if len(shape) == 2 and key not in VECTOR_VALUED:
+                shape = (1,) + shape
+            elif len(shape) == 1:
+                shape = (1,) + shape
 
         self.shapes[key] = shape
 
@@ -231,7 +242,7 @@ class PytensorRepresentation:
         if len(slice_) < n_dim:
             empty_slice = (slice(None, None, None),)
             n_omitted = n_dim - len(slice_) - 1
-            return tuple(slice_) + empty_slice * n_omitted + (0,)
+            return (0,) + tuple(slice_) + empty_slice * n_omitted
 
     @staticmethod
     def _validate_key_and_get_type(key: KeyLike) -> Type[str]:
@@ -240,9 +251,10 @@ class PytensorRepresentation:
 
         return type(key)
 
-    def _validate_matrix_shape(self, name: str, X: np.ndarray) -> None:
-        *expected_shape, time_dim = self.shapes[name]
+    def _validate_matrix_shape(self, name: str, X: Union[np.ndarray, pt.TensorVariable]) -> None:
+        time_dim, *expected_shape = self.shapes[name]
         expected_shape = tuple(expected_shape)
+        shape = X.shape if isinstance(X, np.ndarray) else X.type.shape
 
         is_vector = name in VECTOR_VALUED
         not_time_varying = name in NEVER_TIME_VARYING
@@ -267,9 +279,11 @@ class PytensorRepresentation:
                         f"Array provided for {name} has {X.ndim} dimensions, "
                         f"expecting 1 (static) or 2 (time-varying)"
                     )
-                if X.ndim == 2 and X.shape[:-1] != expected_shape:
+
+                # Time varying vector case, check only the static shapes
+                if X.ndim == 2 and X.shape[1:] != expected_shape:
                     raise ValueError(
-                        f"First dimension of array provided for {name} has shape {X.shape[0]}, "
+                        f"Last dimension of array provided for {name} has shape {X.shape[1]}, "
                         f"expected {expected_shape}"
                     )
 
@@ -280,9 +294,10 @@ class PytensorRepresentation:
                         f"expecting 2 (static) or 3 (time-varying)"
                     )
 
-                if X.ndim == 3 and X.shape[:-1] != expected_shape:
+                # Time varying matrix case, check only the static shapes
+                if X.ndim == 3 and shape[1:] != expected_shape:
                     raise ValueError(
-                        f"First two dimensions of array provided for {name} has shape {X.shape[:-1]}, "
+                        f"Last two dimensions of array provided for {name} have shapes {X.shape[1:]}, "
                         f"expected {expected_shape}"
                     )
 
@@ -295,6 +310,19 @@ class PytensorRepresentation:
             #         f"provided data)"
             #     )
 
+    def _check_provided_tensor(self, name: str, X: pt.TensorVariable) -> pt.TensorVariable:
+        self._validate_matrix_shape(name, X)
+        if name not in NEVER_TIME_VARYING:
+            if X.ndim == 1 and name in VECTOR_VALUED:
+                X = pt.expand_dims(X, (0,))
+                X = pt.specify_shape(X, self.shapes[name])
+
+            elif X.ndim == 2:
+                X = pt.expand_dims(X, (0,))
+                X = pt.specify_shape(X, self.shapes[name])
+
+        return X
+
     def _numpy_to_pytensor(self, name: str, X: np.ndarray) -> pt.TensorVariable:
         X = X.copy()
         self._validate_matrix_shape(name, X)
@@ -302,9 +330,9 @@ class PytensorRepresentation:
         # Add a time dimension if one isn't provided
         if name not in NEVER_TIME_VARYING:
             if X.ndim == 1 and name in VECTOR_VALUED:
-                X = X[..., None]
-            elif X.ndim == 2:
-                X = X[..., None]
+                X = X[None, ...]
+            elif X.ndim == 2 and name not in VECTOR_VALUED:
+                X = X[None, ...]
 
         X_pt = pt.as_tensor(X, name=name, dtype=floatX)
         return X_pt
@@ -318,34 +346,43 @@ class PytensorRepresentation:
             matrix = getattr(self, key)
 
             # Slice away the time dimension if it's a dummy
-            if (self.shapes[key][-1] == 1) and (key not in NEVER_TIME_VARYING):
-                X = matrix[(slice(None),) * (matrix.ndim - 1) + (0,)]
-                X = pt.specify_shape(X, self.shapes[key][:-1])
-
+            if (matrix.type.shape[0] == 1) and (key not in NEVER_TIME_VARYING):
+                X = matrix[(0,) + (slice(None),) * (matrix.ndim - 1)]
+                X = pt.specify_shape(X, self.shapes[key][1:])
                 X.name = key
+
                 return X
 
             # If it's never time varying, return everything
             elif key in NEVER_TIME_VARYING:
-                X = pt.specify_shape(matrix, self.shapes[key])
-                X.name = key
-
-                return X
+                return matrix
 
             # Last possibility is that it's time varying -- also return everything (for now, might need some processing)
             else:
-                X = pt.specify_shape(matrix, self.shapes[key])
-                X.name = key
-                return X
+                return matrix
 
         # Case 2: user asked for a particular matrix and some slices of it
         elif _type is tuple:
             name, *slice_ = key
+            slice_ = tuple(slice_)
             self._validate_key(name)
 
             matrix = getattr(self, name)
-            slice_ = self._add_time_dim_to_slice(name, slice_, matrix.ndim)
+            # Case 2a: The user asked for the whole matrix, with time dummies. Return the whole thing
+            # without slicing anything away
+            if slice_ == (slice(None, None, None),) * matrix.ndim:
+                return matrix
 
+            # Case 2b: The user asked for the whole matrix except time dummies. Ignore the slice and act like we're in
+            # case 1.
+            elif slice_ == (slice(None, None, None),) * (matrix.ndim - 1):
+                X = matrix[(0,) + (slice(None),) * (matrix.ndim - 1)]
+                X = pt.specify_shape(X, self.shapes[name][1:])
+                X.name = name
+                return X
+
+            # Case 3b: User asked for an arbitrary sub-matrix. Give it back -- nothing else to be done
+            slice_ = self._add_time_dim_to_slice(name, slice_, matrix.ndim)
             return matrix[slice_]
 
         # Case 3: There is only one slice index, but it's not a string

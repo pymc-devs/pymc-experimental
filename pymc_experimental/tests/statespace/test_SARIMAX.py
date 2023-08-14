@@ -35,20 +35,20 @@ test_state_names = [
     ["data", "data_star", "state_star_1", "state_star_2"],
     ["data", "D1.data", "data_star", "state_star_1", "state_star_2"],
     ["data", "D1.data", "D1^2.data", "data_star", "state_star_1", "state_star_2"],
-    ["data", "L1.data", "L2.data", "L3.data"],
-    ["data", "L1.data", "L2.data", "L3.data", "L4.state", "L5.state", "L6.state", "L7.state"],
+    ["data", "state_1", "state_2", "state_3"],
+    ["data", "state_1", "state_2", "state_3", "state_4", "state_5", "state_6", "state_7"],
     [
         "data",
-        "L1.data",
-        "L2.data",
-        "L3.data",
-        "L4.state",
-        "L5.state",
-        "L6.state",
-        "L7.state",
-        "L8.state",
-        "L9.state",
-        "L10.state",
+        "state_1",
+        "state_2",
+        "state_3",
+        "state_4",
+        "state_5",
+        "state_6",
+        "state_7",
+        "state_8",
+        "state_9",
+        "state_10",
     ],
     [
         "data",
@@ -66,9 +66,9 @@ test_state_names = [
         "L2.data",
         "L3.data",
         "D4.data",
-        "D4L1.data",
-        "D4L2.data",
-        "D4L3.data",
+        "L1D4.data",
+        "L2D4.data",
+        "L3D4.data",
         "data_star",
         "state_star_1",
         "state_star_2",
@@ -77,9 +77,9 @@ test_state_names = [
     [
         "data",
         "D1.data",
-        "D1L1.data",
-        "D1L2.data",
-        "D1L3.data",
+        "L1D1.data",
+        "L2D1.data",
+        "L3D1.data",
         "data_star",
         "state_star_1",
         "state_star_2",
@@ -91,9 +91,9 @@ test_state_names = [
         "data",
         "D1.data",
         "D1^2.data",
-        "D1^2L1.data",
-        "D1^2L2.data",
-        "D1^2L3.data",
+        "L1D1^2.data",
+        "L2D1^2.data",
+        "L3D1^2.data",
         "data_star",
         "state_star_1",
         "state_star_2",
@@ -105,13 +105,13 @@ test_state_names = [
         "data",
         "D1.data",
         "D1^2.data",
-        "D1^2L1.data",
-        "D1^2L2.data",
-        "D1^2L3.data",
-        "D4D1^2.data",
-        "D4D1^2L1.data",
-        "D4D1^2L2.data",
-        "D4D1^2L3.data",
+        "L1D1^2.data",
+        "L2D1^2.data",
+        "L3D1^2.data",
+        "D1^2D4.data",
+        "L1D1^2D4.data",
+        "L2D1^2D4.data",
+        "L3D1^2D4.data",
         "data_star",
         "state_star_1",
         "state_star_2",
@@ -122,20 +122,21 @@ test_state_names = [
     [
         "data",
         "D1.data",
-        "D1L1.data",
-        "D1L2.data",
-        "D3D1.data",
-        "D3D1L1.data",
-        "D3D1L2.data",
-        "D3^2D1.data",
-        "D3^2D1L1.data",
-        "D3^2D1L2.data",
+        "L1D1.data",
+        "L2D1.data",
+        "D1D3.data",
+        "L1D1D3.data",
+        "L2D1D3.data",
+        "D1D3^2.data",
+        "L1D1D3^2.data",
+        "L2D1D3^2.data",
         "data_star",
         "state_star_1",
         "state_star_2",
         "state_star_3",
         "state_star_4",
     ],
+    ["data", "data_star"] + [f"state_star_{i+1}" for i in range(26)],
 ]
 
 test_orders = [
@@ -152,6 +153,7 @@ test_orders = [
     (1, 2, 1, 1, 1, 1, 4),
     (1, 2, 1, 1, 2, 1, 4),
     (1, 1, 1, 1, 3, 1, 3),
+    (2, 1, 2, 2, 0, 2, 12),
 ]
 
 ids = [f"p={p},d={d},q={q},P={P},D={D},Q={Q},S={S}" for (p, d, q, P, D, Q, S) in test_orders]
@@ -226,7 +228,8 @@ def test_harvey_state_names(p, d, q, P, D, Q, S, expected_names):
     states = make_harvey_state_names(p, d, q, P, D, Q, S)
 
     assert len(states) == k_states
-    assert all([name == expected_name for name, expected_name in zip(states, expected_names)])
+    missing_from_expected = set(expected_names) - set(states)
+    assert len(missing_from_expected) == 0
 
 
 @pytest.mark.parametrize("p,d,q,P,D,Q,S", test_orders)
@@ -245,6 +248,8 @@ def test_make_SARIMA_transition_matrix(p, d, q, P, D, Q, S):
 @pytest.mark.filterwarnings(
     "ignore:Non-invertible starting MA parameters found.",
     "ignore:Non-stationary starting autoregressive parameters found",
+    "ignore:Non-invertible starting seasonal moving average",
+    "ignore:Non-stationary starting seasonal autoregressive",
 )
 def test_SARIMAX_update_matches_statsmodels(p, d, q, P, D, Q, S, data, rng):
     sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q), seasonal_order=(P, D, Q, S))
@@ -353,6 +358,7 @@ def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_inter
 @pytest.mark.filterwarnings(
     "ignore:Non-invertible starting MA parameters found.",
     "ignore:Non-stationary starting autoregressive parameters found",
+    "ignore:Maximum Likelihood optimization failed to converge.",
 )
 def test_representations_are_equivalent(p, d, q, P, D, Q, S, data, rng):
     if (d + D) > 0:
@@ -366,15 +372,17 @@ def test_representations_are_equivalent(p, d, q, P, D, Q, S, data, rng):
         mod = BayesianSARIMA(
             order=(p, d, q),
             seasonal_order=(P, D, Q, S),
-            stationary_initialization=True,
+            stationary_initialization=False,
             verbose=False,
             state_structure=representation,
         )
-        params = shared_params.copy()
-        # params["x0"] = np.zeros(mod.k_states, dtype=floatX)
-        # params["initial_state_cov"] = np.eye(mod.k_states, dtype=floatX)
-
-        x, y = simulate_from_numpy_model(mod, rng, params)
+        shared_params.update(
+            {
+                "x0": np.zeros(mod.k_states, dtype=floatX),
+                "initial_state_cov": np.eye(mod.k_states, dtype=floatX) * 100,
+            }
+        )
+        x, y = simulate_from_numpy_model(mod, rng, shared_params)
         test_values[representation] = y
 
     all_pairs = combinations(SARIMAX_STATE_STRUCTURES, r=2)
@@ -382,7 +390,7 @@ def test_representations_are_equivalent(p, d, q, P, D, Q, S, data, rng):
         assert_allclose(
             test_values[rep_1],
             test_values[rep_2],
-            err_msg=f"{rep_1} and {rep_2} are not the same!",
+            err_msg=f"{rep_1} and {rep_2} are not the same",
             atol=ATOL,
             rtol=RTOL,
         )

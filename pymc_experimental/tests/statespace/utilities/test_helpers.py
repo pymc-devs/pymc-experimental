@@ -286,5 +286,5 @@ def make_stationary_params(data, p, d, q, P, D, Q, S):
         else:
             param_dict["sigma_state"].append(param)
 
-    param_dict = {k: np.array(v) for k, v in param_dict.items() if len(v) > 0}
+    param_dict = {k: np.array(v, dtype=floatX) for k, v in param_dict.items() if len(v) > 0}
     return param_dict

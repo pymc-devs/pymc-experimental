@@ -1,8 +1,9 @@
 import logging
 from abc import ABC
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
+import pandas as pd
 import pytensor
 import pytensor.tensor as pt
 import xarray as xr
@@ -10,7 +11,10 @@ from pytensor import Variable
 
 from pymc_experimental.statespace.core import PytensorRepresentation
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
-from pymc_experimental.statespace.models.utilities import make_default_coords
+from pymc_experimental.statespace.models.utilities import (
+    conform_time_varying_and_time_invariant_matrices,
+    make_default_coords,
+)
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
@@ -22,7 +26,7 @@ from pymc_experimental.statespace.utils.constants import (
 
 _log = logging.getLogger("pymc.experimental.statespace")
 
-MATRIX_NAMES_LONG = [SHORT_NAME_TO_LONG[x] for x in MATRIX_NAMES if x != "P0"]
+MATRIX_NAMES_LONG = [SHORT_NAME_TO_LONG[x] for x in MATRIX_NAMES]
 floatX = pytensor.config.floatX
 
 
@@ -433,22 +437,42 @@ class Component(ABC):
         return k_states, k_posdef, k_endog
 
     def _combine_statespace_representations(self, other):
+        def make_slice(name, x):
+            return (name,) + (slice(None, None, None),) * x.ndim
+
         k_states, k_posdef, k_endog = self._get_combined_shapes(other)
 
-        initial_state = pt.concatenate([self.ssm["initial_state"], other.ssm["initial_state"]])
-        initial_state_cov = block_diagonal(
-            [self.ssm["initial_state_cov"], other.ssm["initial_state_cov"]]
+        self_matrices = x0, P0, c, d, T, Z, R, H, Q = [self.ssm[name] for name in MATRIX_NAMES_LONG]
+        o_x0, o_P0, o_c, o_d, o_T, o_Z, o_R, o_H, o_Q = (
+            other.ssm[make_slice(name, x)] for name, x in zip(MATRIX_NAMES_LONG, self_matrices)
         )
-        state_intercept = pt.concatenate(
-            [self.ssm["state_intercept"], other.ssm["state_intercept"]]
-        )
-        obs_intercept = self.ssm["obs_intercept"] + other.ssm["obs_intercept"]
 
-        transition = block_diagonal([self.ssm["transition"], other.ssm["transition"]])
-        design = pt.concatenate([self.ssm["design"], other.ssm["design"]], axis=-1)
-        selection = block_diagonal([self.ssm["selection"], other.ssm["selection"]])
-        obs_cov = self.ssm["obs_cov"] + other.ssm["obs_cov"]
-        state_cov = block_diagonal([self.ssm["state_cov"], other.ssm["state_cov"]])
+        initial_state = pt.concatenate(conform_time_varying_and_time_invariant_matrices(x0, o_x0))
+        initial_state.name = x0.name
+
+        initial_state_cov = block_diagonal([P0, o_P0])
+        initial_state_cov.name = P0.name
+
+        state_intercept = pt.concatenate(conform_time_varying_and_time_invariant_matrices(c, o_c))
+        state_intercept.name = c.name
+
+        obs_intercept = d + o_d
+        obs_intercept.name = d.name
+
+        transition = block_diagonal([T, o_T])
+        transition.name = T.name
+
+        design = pt.concatenate(conform_time_varying_and_time_invariant_matrices(Z, o_Z), axis=-1)
+        design.name = Z.name
+
+        selection = block_diagonal([R, o_R])
+        selection.name = R.name
+
+        obs_cov = H + o_H
+        obs_cov.name = H.name
+
+        state_cov = block_diagonal([Q, o_Q])
+        state_cov.name = Q.name
 
         new_ssm = PytensorRepresentation(
             k_endog=k_endog,
@@ -1323,3 +1347,94 @@ class CycleComponent(Component):
                 "dims": "None",
             }
             self.shock_names = [f"{self.name}"]
+
+
+class RegressionComponent(Component):
+    def __init__(
+        self,
+        data,
+        name: Optional[str] = "Exogenous",
+        state_names: Optional[List[str]] = None,
+        innovations=False,
+    ):
+        T, k = data.shape
+        self._state_names = None
+        self.data = None
+        self._handle_input_data(data, state_names)
+
+        self._state_names = state_names
+        self.data = np.expand_dims(data, 1)
+        self.innovations = innovations
+
+        k_states = k
+        k_endog = 1
+        k_posdef = k
+
+        super().__init__(
+            name=name,
+            k_endog=k_endog,
+            k_states=k_states,
+            k_posdef=k_posdef,
+            measurement_error=False,
+            combine_hidden_states=False,
+        )
+
+    def _get_state_names(self, data, state_names):
+        if state_names is None:
+            if isinstance(pd.Series, data):
+                state_names = data.name
+            elif isinstance(pd.DataFrame, data):
+                state_names = data.columns
+            else:
+                if data.ndims == 1:
+                    k = 1
+                else:
+                    k = data.shape[-1]
+                state_names = [f"exog_{i + 1}" for i in range(k)]
+
+        return state_names
+
+    def _handle_input_data(
+        self, data: Union[np.ndarray, pd.Series, pd.DataFrame], state_names: Optional[List[str]]
+    ) -> None:
+
+        self.state_names = self._get_state_names(data, state_names)
+        if isinstance(data, (pd.Series, pd.DataFrame)):
+            data = data.values
+        self.data = data
+
+    def make_symbolic_graph(self) -> None:
+        betas = self.make_and_register_variable(f"beta_{self.name}", shape=(self.k_states,))
+        self.ssm["initial_state", :] = betas
+
+        self.ssm["transition", :, :] = np.eye(self.k_states)
+        self.ssm["selection", :, :] = np.eye(self.k_states)
+        self.ssm["design"] = self.data
+
+        if self.innovations:
+            sigma_beta = self.make_and_register_variable(
+                f"sigma_beta_{self.name}", (self.k_states,)
+            )
+            self.ssm["state_cov", np.diag_indices(self.k_states)] = sigma_beta
+
+    def populate_component_properties(self) -> None:
+        self.state_names = self._state_names
+        self.shock_names = self._state_names
+
+        self.param_names = [f"beta_{self.name}"]
+        self.param_dims = {f"beta_{self.name}": "exog_state"}
+        self.param_info = {
+            f"beta_{self.name}": {"shape": (1,), "constraints": "None", "dims": ("exog_states",)}
+        }
+        self.coords = {f"exog_state": self.state_names}
+
+        if self.innovations:
+            self.param_names += [f"sigma_beta_{self.name}"]
+            self.param_dims[f"sigma_beta_{self.name}"] = "exog_state"
+            self.param_info = {
+                f"sigma_beta_{self.name}": {
+                    "shape": (1,),
+                    "constriants": "Positive",
+                    "dims": ("exog_states",),
+                }
+            }

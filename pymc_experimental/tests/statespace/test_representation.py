@@ -120,13 +120,13 @@ class BasicFunctionality(unittest.TestCase):
         ssm["transition", 0, :] = 2.7
         ssm["selection", -1, -1] = 9.9
 
-        ssm["state_intercept"] = np.zeros((5, n))
-        ssm["state_intercept", 0, :] = np.arange(n)
+        ssm["state_intercept"] = np.zeros((n, 5))
+        ssm["state_intercept", :, 0] = np.arange(n)
 
         assert_allclose(fast_eval(ssm["design"][0, 0]), 3.0, atol=atol)
         assert_allclose(fast_eval(ssm["transition"][0, :]), 2.7, atol=atol)
         assert_allclose(fast_eval(ssm["selection"][-1, -1]), 9.9, atol=atol)
-        assert_allclose(fast_eval(ssm["state_intercept"][0, :]), np.arange(n), atol=atol)
+        assert_allclose(fast_eval(ssm["state_intercept"][:, 0]), np.arange(n), atol=atol)
 
     def test_invalid_key_name_raises(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
@@ -169,7 +169,7 @@ class BasicFunctionality(unittest.TestCase):
             ssm["transition"] = T
         msg = str(e.exception)
         self.assertEqual(
-            msg, "The first two dimensions of transition must be (5, 5), found (10, 10)"
+            msg, "The last two dimensions of transition must be (5, 5), found (10, 10)"
         )
 
 

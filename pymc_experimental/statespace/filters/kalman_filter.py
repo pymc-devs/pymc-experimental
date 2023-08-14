@@ -147,12 +147,12 @@ class BaseFilter(ABC):
         # TODO: The PytensorRepresentation object puts the time dimension last, should the reshaping happen here in
             the Kalman filter, or in the StateSpaceModel, before passing into the KF?
         """
-
-        n_steps = data.shape[0]
-        return [
-            assert_time_varying_dim_correct(param, pt.eq(param.shape[0], n_steps))
+        params_with_assert = [
+            assert_time_varying_dim_correct(param, pt.eq(param.shape[0], data.shape[0]))
             for param in sequence_params
         ]
+
+        return params_with_assert
 
     def unpack_args(self, args) -> Tuple:
         """

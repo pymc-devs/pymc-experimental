@@ -499,7 +499,6 @@ class PyMCStateSpace:
         it will only find named dimension if they are the "default" dimension names defined in the
         statespace.utils.constant.py file.
 
-
         Parameters
         ----------
         name : str
@@ -697,13 +696,11 @@ class PyMCStateSpace:
 
         self._insert_random_variables()
         matrices = self.unpack_statespace()
-
-        n_obs = self.ssm.shapes["obs_intercept"][0]
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
 
         data, nan_mask = register_data_with_pymc(
             data,
-            n_obs=n_obs,
+            n_obs=self.ssm.k_endog,
             obs_coords=obs_coords,
             register_data=register_data,
             missing_fill_value=missing_fill_value,
@@ -713,6 +710,11 @@ class PyMCStateSpace:
         for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
             if not getattr(pm_mod, name, None):
                 shape, dims = self._get_matrix_shape_and_dims(name)
+
+                # TODO: Does this check always work?
+                if matrix.ndim == 3:
+                    dims = (TIME_DIM,) + dims
+
                 x = pm.Deterministic(name, matrix, dims=dims)
                 registered_matrices.append(x)
             else:
