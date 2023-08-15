@@ -74,8 +74,8 @@ class ModelBuilder:
         sampler_config = self.default_sampler_config if sampler_config is None else sampler_config
         self.sampler_config = sampler_config
         model_config = self.default_model_config if model_config is None else model_config
-
         self.model_config = model_config  # parameters for priors etc.
+        self.model_coords = None
         self.model = None  # Set by build_model
         self.idata: Optional[az.InferenceData] = None  # idata is generated during fitting
         self.is_fitted_ = False
@@ -172,7 +172,7 @@ class ModelBuilder:
         --------
         >>>     @classmethod
         >>>     def default_sampler_config(self):
-        >>>         Return {
+        >>>         return {
         >>>             'draws': 1_000,
         >>>             'tune': 1_000,
         >>>             'chains': 1,
@@ -187,13 +187,10 @@ class ModelBuilder:
         raise NotImplementedError
 
     @abstractmethod
-    def generate_and_preprocess_model_data(
-        self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
-    ) -> None:
+    def preprocess_model_data(self, X: Union[pd.DataFrame, pd.Series], y: pd.Series = None) -> None:
         """
         Applies preprocessing to the data before fitting the model.
         if validate is True, it will check if the data is valid for the model.
-        sets self.model_coords based on provided dataset
 
         Parameters:
         X : array, shape (n_obs, n_features)
@@ -202,17 +199,16 @@ class ModelBuilder:
         Examples
         --------
         >>>     @classmethod
-        >>>     def generate_and_preprocess_model_data(self, X, y):
+        >>>     def preprocess_model_data(self, X, y):
         >>>         x = np.linspace(start=1, stop=50, num=100)
         >>>         y = 5 * x + 3 + np.random.normal(0, 1, len(x)) * np.random.rand(100)*10 +  np.random.rand(100)*6.4
         >>>         X = pd.DataFrame(x, columns=['x'])
         >>>         y = pd.Series(y, name='y')
-        >>>         self.X = X
-        >>>         self.y = y
+        >>>         return X, y
 
         Returns
         -------
-        None
+        pd.DataFrame, pd.Series
 
         """
         raise NotImplementedError
@@ -257,6 +253,23 @@ class ModelBuilder:
             This is an abstract method and must be implemented in a subclass.
         """
         raise NotImplementedError
+
+    def save_model_coords(self, X: Union[pd.DataFrame, pd.Series], y: pd.Series):
+        """Creates the model coords.
+
+        Parameters:
+        X : array, shape (n_obs, n_features)
+        y : array, shape (n_obs,)
+
+        Examples
+        --------
+        def set_model_coords(self, X, y):
+            group_dim1 = X['group1'].unique()
+            group_dim2 = X['group2'].unique()
+
+            self.model_coords = {'group1':group_dim1, 'group2':group_dim2}
+        """
+        self.model_coords = None
 
     def sample_model(self, **kwargs):
         """
@@ -339,6 +352,7 @@ class ModelBuilder:
         idata.attrs["version"] = self.version
         idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
+        idata.attrs["model_coords"] = json.dumps(self.model_coords)
         # Only classes with non-dataset parameters will implement save_input_params
         if hasattr(self, "_save_input_params"):
             self._save_input_params(idata)
@@ -432,18 +446,12 @@ class ModelBuilder:
             model_config=model_config,
             sampler_config=json.loads(idata.attrs["sampler_config"]),
         )
+        model.model_coords = json.loads(idata.attrs["model_coords"])
         model.idata = idata
-        dataset = idata.fit_data.to_dataframe()
-        X = dataset.drop(columns=[model.output_var])
-        y = dataset[model.output_var]
-        model.build_model(X, y)
-        # All previously used data is in idata.
-
         if model.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
             )
-
         return model
 
     def fit(
@@ -492,26 +500,15 @@ class ModelBuilder:
         if y is None:
             y = np.zeros(X.shape[0])
         y = pd.DataFrame({self.output_var: y})
-        self.generate_and_preprocess_model_data(X, y.values.flatten())
-        self.build_model(self.X, self.y)
+        X_prep, y_prep = self.preprocess_model_data(X, y.values.flatten())
+        self.save_model_coords(X_prep, y_prep)
+        self.build_model(X_prep, y_prep)
 
         sampler_config = self.sampler_config.copy()
         sampler_config["progressbar"] = progressbar
         sampler_config["random_seed"] = random_seed
         sampler_config.update(**kwargs)
         self.idata = self.sample_model(**sampler_config)
-
-        X_df = pd.DataFrame(X, columns=X.columns)
-        combined_data = pd.concat([X_df, y], axis=1)
-        assert all(combined_data.columns), "All columns must have non-empty names"
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                category=UserWarning,
-                message="The group fit_data is not defined in the InferenceData scheme",
-            )
-            self.idata.add_groups(fit_data=combined_data.to_xarray())  # type: ignore
-
         return self.idata  # type: ignore
 
     def predict(
@@ -545,9 +542,12 @@ class ModelBuilder:
         >>> prediction_data = pd.DataFrame({'input':x_pred})
         >>> pred_mean = model.predict(prediction_data)
         """
-
+        synth_y = pd.Series(np.zeros(len(X_pred)))
+        X_pred_prep, y_synth_prep = self.preprocess_model_data(X_pred, synth_y)
+        if self.model is None:
+            self.build_model(X_pred_prep, y_synth_prep)
         posterior_predictive_samples = self.sample_posterior_predictive(
-            X_pred, extend_idata, combined=False, **kwargs
+            X_pred_prep, extend_idata, combined=False, **kwargs
         )
 
         if self.output_var not in posterior_predictive_samples:
@@ -652,6 +652,7 @@ class ModelBuilder:
         return {
             "model_config": self.model_config,
             "sampler_config": self.sampler_config,
+            "model_coords": self.model_coords,
         }
 
     def set_params(self, **params):
@@ -660,6 +661,7 @@ class ModelBuilder:
         """
         self.model_config = params["model_config"]
         self.sampler_config = params["sampler_config"]
+        self.model_coords = params["model_coords"]
 
     @property
     @abstractmethod
@@ -682,7 +684,11 @@ class ModelBuilder:
         **kwargs,
     ) -> xr.DataArray:
         """Alias for `predict_posterior`, for consistency with scikit-learn probabilistic estimators."""
-        return self.predict_posterior(X_pred, extend_idata, combined, **kwargs)
+        synth_y = pd.Series(np.zeros(len(X_pred)))
+        X_pred_prep, y_synth_prep = self.preprocess_model_data(X_pred, synth_y)
+        if self.model is None:
+            self.build_model(X_pred_prep, y_synth_prep)
+        return self.predict_posterior(X_pred_prep, extend_idata, combined, **kwargs)
 
     def predict_posterior(
         self,
@@ -710,9 +716,13 @@ class ModelBuilder:
             Posterior predictive samples for each input X_pred
         """
 
-        X_pred = self._validate_data(X_pred)
+        synth_y = pd.Series(np.zeros(len(X_pred)))
+        X_pred_prep, y_synth_prep = self.preprocess_model_data(X_pred, synth_y)
+        if self.model is None:
+            self.build_model(X_pred_prep, y_synth_prep)
+
         posterior_predictive_samples = self.sample_posterior_predictive(
-            X_pred, extend_idata, combined, **kwargs
+            X_pred_prep, extend_idata, combined=False, **kwargs
         )
 
         if self.output_var not in posterior_predictive_samples:
