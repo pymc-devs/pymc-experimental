@@ -462,7 +462,7 @@ class ModelBuilder:
 
         Parameters
         ----------
-        X : array-like if sklearn is available, otherwise array, shape (n_obs, n_features)
+        X : pd.DataFrame (n_obs, n_features)
             The training input samples.
         y : array-like if sklearn is available, otherwise array, shape (n_obs,)
             The target values (real numbers).
@@ -526,7 +526,7 @@ class ModelBuilder:
 
         Parameters
         ---------
-        X_pred : array-like if sklearn is available, otherwise array, shape (n_pred, n_features)
+        X_pred : pd.DataFrame (n_pred, n_features)
             The input data used for prediction.
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
             Defaults to True.
