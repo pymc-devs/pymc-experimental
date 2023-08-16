@@ -18,7 +18,7 @@ import json
 import warnings
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 import arviz as az
 import numpy as np
@@ -187,7 +187,9 @@ class ModelBuilder:
         raise NotImplementedError
 
     @abstractmethod
-    def preprocess_model_data(self, X: Union[pd.DataFrame, pd.Series], y: pd.Series = None) -> None:
+    def preprocess_model_data(
+        self, X: Union[pd.DataFrame, pd.Series], y: Optional[pd.Series] = None
+    ) -> Union[pd.DataFrame, Tuple[pd.DataFrame, pd.Series]]:
         """
         Applies preprocessing to the data before fitting the model.
         if validate is True, it will check if the data is valid for the model.
@@ -198,17 +200,16 @@ class ModelBuilder:
 
         Examples
         --------
-        >>>     @classmethod
-        >>>     def preprocess_model_data(self, X, y):
-        >>>         x = np.linspace(start=1, stop=50, num=100)
-        >>>         y = 5 * x + 3 + np.random.normal(0, 1, len(x)) * np.random.rand(100)*10 +  np.random.rand(100)*6.4
-        >>>         X = pd.DataFrame(x, columns=['x'])
-        >>>         y = pd.Series(y, name='y')
-        >>>         return X, y
+        >>> def preprocess_model_data(self, X: DataFrame | Series, y: Series = None):
+        >>>     X_prep = X.copy()
+        >>>     X_prep['x'] = (X_prep['x'] - X_prep['x'].mean())/X_prep['x'].std()
+        >>>     if y is None:
+        >>>         return X_prep
+        >>>     return X_prep, y.copy()
 
         Returns
         -------
-        pd.DataFrame, pd.Series
+        Union[pd.DataFrame, Tuple[pd.DataFrame, pd.Series]]
 
         """
         raise NotImplementedError
@@ -254,7 +255,10 @@ class ModelBuilder:
         """
         raise NotImplementedError
 
-    def save_model_coords(self, X: Union[pd.DataFrame, pd.Series], y: pd.Series):
+    @abstractmethod
+    def set_model_coords_from_data(
+        self, X: Union[pd.DataFrame, pd.Series], y: Optional[pd.Series] = None
+    ) -> None:
         """Creates the model coords.
 
         Parameters:
@@ -263,13 +267,15 @@ class ModelBuilder:
 
         Examples
         --------
-        def set_model_coords(self, X, y):
+        def extract_model_coords_from_data(self, X):
             group_dim1 = X['group1'].unique()
             group_dim2 = X['group2'].unique()
-
             self.model_coords = {'group1':group_dim1, 'group2':group_dim2}
+
+        Returns
+        -------
+        Dict[str, List[Union[str, int]]
         """
-        self.model_coords = None
 
     def sample_model(self, **kwargs):
         """
@@ -352,7 +358,6 @@ class ModelBuilder:
         idata.attrs["version"] = self.version
         idata.attrs["sampler_config"] = json.dumps(self.sampler_config)
         idata.attrs["model_config"] = json.dumps(self._serializable_model_config)
-        idata.attrs["model_coords"] = json.dumps(self.model_coords)
         # Only classes with non-dataset parameters will implement save_input_params
         if hasattr(self, "_save_input_params"):
             self._save_input_params(idata)
@@ -388,7 +393,7 @@ class ModelBuilder:
         >>> model.fit(data)
         >>> model.save('model_results.nc')  # This will call the overridden method in MyModel
         """
-        if self.idata is not None and "posterior" in self.idata:
+        if self.is_fitted:
             file = Path(str(fname))
             self.idata.to_netcdf(str(file))
         else:
@@ -446,8 +451,8 @@ class ModelBuilder:
             model_config=model_config,
             sampler_config=json.loads(idata.attrs["sampler_config"]),
         )
-        model.model_coords = json.loads(idata.attrs["model_coords"])
         model.idata = idata
+        model.set_model_coords_from_idata()
         if model.id != idata.attrs["id"]:
             raise ValueError(
                 f"The file '{fname}' does not contain an inference data of the same model or configuration as '{cls._model_type}'"
@@ -501,7 +506,7 @@ class ModelBuilder:
             y = np.zeros(X.shape[0])
         y = pd.DataFrame({self.output_var: y})
         X_prep, y_prep = self.preprocess_model_data(X, y.values.flatten())
-        self.save_model_coords(X_prep, y_prep)
+        self.set_model_coords_from_data(X)
         self.build_model(X_prep, y_prep)
 
         sampler_config = self.sampler_config.copy()
@@ -542,10 +547,11 @@ class ModelBuilder:
         >>> prediction_data = pd.DataFrame({'input':x_pred})
         >>> pred_mean = model.predict(prediction_data)
         """
-        synth_y = pd.Series(np.zeros(len(X_pred)))
-        X_pred_prep, y_synth_prep = self.preprocess_model_data(X_pred, synth_y)
+        X_pred_prep = self.preprocess_model_data(X_pred)
         if self.model is None:
-            self.build_model(X_pred_prep, y_synth_prep)
+            synth_y = pd.Series(np.zeros(len(X_pred)))
+            self.build_model(X_pred_prep, synth_y)
+
         posterior_predictive_samples = self.sample_posterior_predictive(
             X_pred_prep, extend_idata, combined=False, **kwargs
         )
@@ -652,7 +658,6 @@ class ModelBuilder:
         return {
             "model_config": self.model_config,
             "sampler_config": self.sampler_config,
-            "model_coords": self.model_coords,
         }
 
     def set_params(self, **params):
@@ -661,7 +666,6 @@ class ModelBuilder:
         """
         self.model_config = params["model_config"]
         self.sampler_config = params["sampler_config"]
-        self.model_coords = params["model_coords"]
 
     @property
     @abstractmethod
@@ -756,3 +760,13 @@ class ModelBuilder:
         hasher.update(self.version.encode())
         hasher.update(self._model_type.encode())
         return hasher.hexdigest()[:16]
+
+    @property
+    def is_fitted(self):
+        return self.idata is not None and "posterior" in self.idata
+
+    def set_model_coords_from_idata(self):
+        az_coords = self.idata.posterior.coords.variables
+        self.model_coords = {
+            k: list(az_coords[k].to_numpy()) for k in az_coords if not k in ["chain", "draw"]
+        }
