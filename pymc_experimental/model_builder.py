@@ -187,13 +187,16 @@ class ModelBuilder:
         raise NotImplementedError
 
     @abstractmethod
-    def generate_and_preprocess_model_data(
+    def _generate_and_preprocess_model_data(
         self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
     ) -> None:
         """
         Applies preprocessing to the data before fitting the model.
         if validate is True, it will check if the data is valid for the model.
         sets self.model_coords based on provided dataset
+
+        In case of optional parameters being passed into the model, this method should implement the conditional
+        logic responsible for correct handling of the optional parameters, and including them into the dataset.
 
         Parameters:
         X : array, shape (n_obs, n_features)
@@ -203,10 +206,9 @@ class ModelBuilder:
         --------
         >>>     @classmethod
         >>>     def generate_and_preprocess_model_data(self, X, y):
-        >>>         x = np.linspace(start=1, stop=50, num=100)
-        >>>         y = 5 * x + 3 + np.random.normal(0, 1, len(x)) * np.random.rand(100)*10 +  np.random.rand(100)*6.4
-        >>>         X = pd.DataFrame(x, columns=['x'])
-        >>>         y = pd.Series(y, name='y')
+                    coords = {
+                        'x_dim': X.dim_variable,
+                    } #only include if applicable for your model
         >>>         self.X = X
         >>>         self.y = y
 
