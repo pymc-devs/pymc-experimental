@@ -288,6 +288,7 @@ def test_forecast(filter_output, ss_mod, idata, rng):
     assert not np.any(np.isnan(forecast_idata.forecast_observed.values))
 
 
+@pytest.mark.filterwarnings("ignore:No time index found on the supplied data.")
 def test_forecast_fails_if_exog_needed(exog_ss_mod, idata_exog):
     time_idx = idata_exog.posterior.coords["time"].values
     with pytest.xfail("Scenario-based forcasting with exogenous variables not currently supported"):
