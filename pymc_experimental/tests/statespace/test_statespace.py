@@ -99,11 +99,49 @@ def pymc_mod(ss_mod):
 
 
 @pytest.fixture(scope="session")
+def exog_ss_mod(rng):
+    ll = st.LevelTrendComponent()
+    reg = st.RegressionComponent(name="exog", state_names=["a", "b", "c"])
+    mod = (ll + reg).build(verbose=False)
+
+    return mod
+
+
+@pytest.fixture(scope="session")
+def exog_pymc_mod(exog_ss_mod, rng):
+    y = rng.normal(size=(100, 1)).astype(floatX)
+    X = rng.normal(size=(100, 3)).astype(floatX)
+
+    with pm.Model(coords=exog_ss_mod.coords) as m:
+        exog_data = pm.MutableData("data_exog", X)
+        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        P0_sigma = pm.Exponential("P0_sigma", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(exog_ss_mod.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
+        beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
+
+        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        exog_ss_mod.build_statespace_graph(y)
+
+    return m
+
+
+@pytest.fixture(scope="session")
 def idata(pymc_mod, rng):
     with pymc_mod:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
         idata_prior = pm.sample_prior_predictive(samples=10, random_seed=rng)
 
+    idata.extend(idata_prior)
+    return idata
+
+
+@pytest.fixture(scope="session")
+def idata_exog(exog_pymc_mod, rng):
+    with exog_pymc_mod:
+        idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(samples=10, random_seed=rng)
     idata.extend(idata_prior)
     return idata
 
@@ -228,6 +266,7 @@ def test_sampling_methods(group, kind, ss_mod, idata, rng):
         for output in ["filtered", "predicted", "smoothed"]:
             assert f"{output}_{group}" in test_idata
             assert not np.any(np.isnan(test_idata[f"{output}_{group}"].values))
+            assert not np.any(np.isnan(test_idata[f"{output}_{group}_observed"].values))
     if kind == "unconditional":
         for output in ["latent", "observed"]:
             assert f"{group}_{output}" in test_idata
@@ -247,3 +286,37 @@ def test_forecast(filter_output, ss_mod, idata, rng):
 
     assert not np.any(np.isnan(forecast_idata.forecast_latent.values))
     assert not np.any(np.isnan(forecast_idata.forecast_observed.values))
+
+
+def test_forecast_fails_if_exog_needed(exog_ss_mod, idata_exog):
+    time_idx = idata_exog.posterior.coords["time"].values
+    with pytest.xfail("Scenario-based forcasting with exogenous variables not currently supported"):
+        forecast_idata = exog_ss_mod.forecast(
+            idata_exog, start=time_idx[-1], periods=10, random_seed=rng
+        )
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        None,
+        (10,),
+        (10, 1),
+        pytest.param((10, 3), marks=[pytest.mark.xfail]),
+        pytest.param((10, 1, 1), marks=[pytest.mark.xfail]),
+    ],
+    ids=["None", "(10,)", "(10, 1)", "(10,3)", "(10, 1, 1)"],
+)
+def test_add_exogenous(rng, shape):
+    ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
+    y = rng.normal(size=(10, 1))
+
+    with pm.Model() as m:
+        initial_trend = pm.Normal("initial_trend")
+        P0 = pm.Deterministic("P0", pt.eye(1, dtype=floatX))
+        constant = pm.Normal("constant", shape=shape)
+        ss_mod.add_exogenous(constant)
+        ss_mod.build_statespace_graph(data=y)
+
+    d, const = pm.draw([m["d"].squeeze(), m["constant"].squeeze()], 10)
+    assert_allclose(d, const)

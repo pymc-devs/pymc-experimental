@@ -1,9 +1,9 @@
+import functools as ft
 import logging
 from abc import ABC
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
-import pandas as pd
 import pytensor
 import pytensor.tensor as pt
 import xarray as xr
@@ -18,15 +18,13 @@ from pymc_experimental.statespace.models.utilities import (
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
-    MATRIX_NAMES,
+    LONG_MATRIX_NAMES,
     OBS_STATE_DIM,
     POSITION_DERIVATIVE_NAMES,
-    SHORT_NAME_TO_LONG,
 )
 
 _log = logging.getLogger("pymc.experimental.statespace")
 
-MATRIX_NAMES_LONG = [SHORT_NAME_TO_LONG[x] for x in MATRIX_NAMES]
 floatX = pytensor.config.floatX
 
 
@@ -83,6 +81,7 @@ class StructuralTimeSeries(PyMCStateSpace):
         state_names,
         shock_names,
         param_names,
+        exog_names,
         param_dims,
         coords,
         param_info,
@@ -126,6 +125,8 @@ class StructuralTimeSeries(PyMCStateSpace):
         self.ssm = ssm
         self._component_info = component_info
         self._name_to_variable = name_to_variable
+        self._exog_names = exog_names
+        self._needs_exog_data = len(exog_names) > 0
 
         P0 = self.make_and_register_variable("P0", shape=(self.k_states, self.k_states))
         self.ssm["initial_state_cov"] = P0
@@ -189,19 +190,20 @@ class StructuralTimeSeries(PyMCStateSpace):
 
         return state_slices
 
-    def hidden_states_from_data(self, data):
+    def _hidden_states_from_data(self, data):
         state_slices = self._state_slices_from_info()
         info = self._component_info
         names = info.keys()
         result = []
 
         for i, (name, s) in enumerate(zip(names, state_slices)):
-            Z = self.ssm["design", 0, s].eval()
-            if Z.shape[0] == 0:
+            obs_idx = info[name]["obs_state_idx"]
+            if obs_idx is None:
                 continue
+
             X = data[..., s]
             if info[name]["combine_hidden_states"]:
-                sum_idx = np.flatnonzero(Z)
+                sum_idx = np.flatnonzero(obs_idx)
                 result.append(X[..., sum_idx].sum(axis=-1)[..., None])
             else:
                 comp_names = self.state_names[s]
@@ -217,9 +219,6 @@ class StructuralTimeSeries(PyMCStateSpace):
         result = []
 
         for i, (name, s) in enumerate(zip(names, state_slices)):
-            Z = self.ssm["design", 0, s].eval()
-            if Z.shape[0] == 0:
-                continue
             if info[name]["combine_hidden_states"]:
                 result.append(name)
             else:
@@ -267,8 +266,9 @@ class StructuralTimeSeries(PyMCStateSpace):
 
         def _extract_and_transform_variable(idata, new_state_names):
             *_, time_dim, state_dim = idata.dims
+            state_func = ft.partial(self._hidden_states_from_data)
             new_idata = xr.apply_ufunc(
-                self.hidden_states_from_data,
+                state_func,
                 idata,
                 input_core_dims=[[time_dim, state_dim]],
                 output_core_dims=[[time_dim, state_dim]],
@@ -335,10 +335,15 @@ class Component(ABC):
         k_endog,
         k_states,
         k_posdef,
+        state_names=None,
+        shock_names=None,
+        param_names=None,
+        exog_names=None,
         representation: Optional[PytensorRepresentation] = None,
         measurement_error=False,
         combine_hidden_states=True,
         component_from_sum=False,
+        obs_state_idxs=None,
     ):
         self.name = name
         self.k_endog = k_endog
@@ -346,10 +351,12 @@ class Component(ABC):
         self.k_posdef = k_posdef
         self.measurement_error = measurement_error
 
-        self.state_names = []
-        self.shock_names = []
-        self.param_names = []
+        self.state_names = state_names if state_names is not None else []
+        self.shock_names = shock_names if shock_names is not None else []
+        self.param_names = param_names if param_names is not None else []
+        self.exog_names = exog_names if exog_names is not None else []
 
+        self.needs_exog_data = len(self.exog_names) > 0
         self.coords = {}
         self.param_dims = {}
         self.param_info = {}
@@ -372,6 +379,7 @@ class Component(ABC):
                 "k_enodg": self.k_endog,
                 "k_posdef": self.k_posdef,
                 "combine_hidden_states": combine_hidden_states,
+                "obs_state_idx": obs_state_idxs,
             }
         }
 
@@ -437,14 +445,22 @@ class Component(ABC):
         return k_states, k_posdef, k_endog
 
     def _combine_statespace_representations(self, other):
-        def make_slice(name, x):
-            return (name,) + (slice(None, None, None),) * x.ndim
+        def make_slice(name, x, o_x):
+            ndim = max(x.ndim, o_x.ndim)
+            return (name,) + (slice(None, None, None),) * ndim
 
         k_states, k_posdef, k_endog = self._get_combined_shapes(other)
 
-        self_matrices = x0, P0, c, d, T, Z, R, H, Q = [self.ssm[name] for name in MATRIX_NAMES_LONG]
+        self_matrices = [self.ssm[name] for name in LONG_MATRIX_NAMES]
+        other_matrices = [other.ssm[name] for name in LONG_MATRIX_NAMES]
+
+        x0, P0, c, d, T, Z, R, H, Q = (
+            self.ssm[make_slice(name, x, o_x)]
+            for name, x, o_x in zip(LONG_MATRIX_NAMES, self_matrices, other_matrices)
+        )
         o_x0, o_P0, o_c, o_d, o_T, o_Z, o_R, o_H, o_Q = (
-            other.ssm[make_slice(name, x)] for name, x in zip(MATRIX_NAMES_LONG, self_matrices)
+            other.ssm[make_slice(name, x, o_x)]
+            for name, x, o_x in zip(LONG_MATRIX_NAMES, self_matrices, other_matrices)
         )
 
         initial_state = pt.concatenate(conform_time_varying_and_time_invariant_matrices(x0, o_x0))
@@ -463,6 +479,7 @@ class Component(ABC):
         transition.name = T.name
 
         design = pt.concatenate(conform_time_varying_and_time_invariant_matrices(Z, o_Z), axis=-1)
+
         design.name = Z.name
 
         selection = block_diagonal([R, o_R])
@@ -528,6 +545,8 @@ class Component(ABC):
         param_info = self._combine_property(other, "param_info")
         param_dims = self._combine_property(other, "param_dims")
         coords = self._combine_property(other, "coords")
+        exog_names = self._combine_property(other, "exog_names")
+
         _name_to_variable = self._combine_property(other, "_name_to_variable")
         measurement_error = any([self.measurement_error, other.measurement_error])
 
@@ -554,6 +573,7 @@ class Component(ABC):
             "coords",
             "param_dims",
             "param_info",
+            "exog_names",
             "_name_to_variable",
         ]
         property_values = [
@@ -564,6 +584,7 @@ class Component(ABC):
             coords,
             param_dims,
             param_info,
+            exog_names,
             _name_to_variable,
         ]
 
@@ -606,6 +627,7 @@ class Component(ABC):
             param_info=self.param_info,
             component_info=self._component_info,
             measurement_error=self.measurement_error,
+            exog_names=self.exog_names,
             name_to_variable=self._name_to_variable,
             filter_type=filter_type,
             verbose=verbose,
@@ -737,21 +759,27 @@ class LevelTrendComponent(Component):
         k_posdef = int(sum(innovations_order))
 
         super().__init__(
-            name, 1, k_states, k_posdef, measurement_error=False, combine_hidden_states=False
+            name,
+            1,
+            k_states,
+            k_posdef,
+            measurement_error=False,
+            combine_hidden_states=False,
+            obs_state_idxs=np.array([1.0] + [0.0] * (k_states - 1)),
         )
 
     def populate_component_properties(self):
         self.param_names = ["initial_trend"]
         self.state_names = POSITION_DERIVATIVE_NAMES[: self.k_states]
-        self.param_dims = {"initial_trend": ("trend_states",)}
-        self.coords = {"trend_states": self.state_names}
+        self.param_dims = {"initial_trend": ("trend_state",)}
+        self.coords = {"trend_state": self.state_names}
         self.param_info = {"initial_trend": {"shape": (self.k_states,), "constraints": "None"}}
 
         if self.k_posdef > 0:
             self.param_names += ["sigma_trend"]
             self.shock_names = list(np.array(self.state_names)[self.innovations_order])
-            self.param_dims["sigma_trend"] = ("trend_shocks",)
-            self.coords["trend_shocks"] = self.shock_names
+            self.param_dims["sigma_trend"] = ("trend_shock",)
+            self.coords["trend_shock"] = self.shock_names
             self.param_info["sigma_trend"] = {"shape": (self.k_posdef,), "constraints": "Positive"}
 
         for name in self.param_names:
@@ -909,6 +937,7 @@ class AutoregressiveComponent(Component):
             k_posdef=1,
             measurement_error=True,
             combine_hidden_states=True,
+            obs_state_idxs=np.r_[[1.0], np.zeros(k_states - 1)],
         )
 
     def populate_component_properties(self):
@@ -1080,6 +1109,7 @@ class TimeSeasonality(Component):
             k_posdef=1,  # TODO: Why not int(self.innovation)?
             measurement_error=False,
             combine_hidden_states=True,
+            obs_state_idxs=np.r_[[1.0], np.zeros(k_states - 1)],
         )
 
     def populate_component_properties(self):
@@ -1190,6 +1220,9 @@ class FrequencySeasonality(Component):
         self.last_state_not_identified = self.season_length / self.n == 2.0
         self.n_coefs = k_states - int(self.last_state_not_identified)
 
+        obs_state_idx = np.zeros(k_states)
+        obs_state_idx[slice(0, k_states, 2)] = 1
+
         super().__init__(
             name=name,
             k_endog=1,
@@ -1197,6 +1230,7 @@ class FrequencySeasonality(Component):
             k_posdef=k_states,
             measurement_error=False,
             combine_hidden_states=True,
+            obs_state_idxs=obs_state_idx,
         )
 
     def make_symbolic_graph(self) -> None:
@@ -1219,6 +1253,7 @@ class FrequencySeasonality(Component):
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
         self.param_names = [f"{self.name}"]
+        self.shock_names = self.state_names.copy()
 
         self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
@@ -1241,7 +1276,6 @@ class FrequencySeasonality(Component):
                 "constraints": "Positive",
                 "dims": "None",
             }
-            self.shock_names = self.state_names.copy()
 
 
 class CycleComponent(Component):
@@ -1275,6 +1309,9 @@ class CycleComponent(Component):
         k_endog = 1
         k_posdef = 2
 
+        obs_state_idx = np.zeros(k_states)
+        obs_state_idx[slice(0, k_states, 2)] = 1
+
         super().__init__(
             name=name,
             k_endog=k_endog,
@@ -1282,6 +1319,7 @@ class CycleComponent(Component):
             k_posdef=k_posdef,
             measurement_error=False,
             combine_hidden_states=True,
+            obs_state_idxs=obs_state_idx,
         )
 
     def make_symbolic_graph(self) -> None:
@@ -1352,89 +1390,91 @@ class CycleComponent(Component):
 class RegressionComponent(Component):
     def __init__(
         self,
-        data,
+        k_exog: Optional[int] = None,
         name: Optional[str] = "Exogenous",
         state_names: Optional[List[str]] = None,
         innovations=False,
     ):
-        T, k = data.shape
-        self._state_names = None
-        self.data = None
-        self._handle_input_data(data, state_names)
-
-        self._state_names = state_names
-        self.data = np.expand_dims(data, 1)
         self.innovations = innovations
+        k_exog = self._handle_input_data(k_exog, state_names, name)
 
-        k_states = k
+        k_states = k_exog
         k_endog = 1
-        k_posdef = k
+        k_posdef = k_exog
 
         super().__init__(
             name=name,
             k_endog=k_endog,
             k_states=k_states,
             k_posdef=k_posdef,
+            state_names=self.state_names,
             measurement_error=False,
             combine_hidden_states=False,
+            exog_names=[f"data_{name}"],
+            obs_state_idxs=np.ones(k_states),
         )
 
-    def _get_state_names(self, data, state_names):
-        if state_names is None:
-            if isinstance(pd.Series, data):
-                state_names = data.name
-            elif isinstance(pd.DataFrame, data):
-                state_names = data.columns
-            else:
-                if data.ndims == 1:
-                    k = 1
-                else:
-                    k = data.shape[-1]
-                state_names = [f"exog_{i + 1}" for i in range(k)]
+    def _get_state_names(self, k_exog, state_names, name):
+        if k_exog is None and state_names is None:
+            raise ValueError("Must specify at least one of k_exog or state_names")
+        if state_names is not None and k_exog is not None:
+            if len(state_names) != k_exog:
+                raise ValueError(f"Expected {k_exog} state names, found {len(state_names)}")
+        elif k_exog is None:
+            k_exog = len(state_names)
+        else:
+            state_names = [f"{name}_{i + 1}" for i in range(k_exog)]
 
-        return state_names
+        return k_exog, state_names
 
-    def _handle_input_data(
-        self, data: Union[np.ndarray, pd.Series, pd.DataFrame], state_names: Optional[List[str]]
-    ) -> None:
+    def _handle_input_data(self, k_exog: int, state_names: Optional[List[str]], name) -> int:
 
-        self.state_names = self._get_state_names(data, state_names)
-        if isinstance(data, (pd.Series, pd.DataFrame)):
-            data = data.values
-        self.data = data
+        k_exog, state_names = self._get_state_names(k_exog, state_names, name)
+        self.state_names = state_names
+
+        return k_exog
 
     def make_symbolic_graph(self) -> None:
         betas = self.make_and_register_variable(f"beta_{self.name}", shape=(self.k_states,))
-        self.ssm["initial_state", :] = betas
+        regression_data = self.make_and_register_variable(
+            f"data_{self.name}", shape=(None, self.k_states)
+        )
 
+        self.ssm["initial_state", :] = betas
         self.ssm["transition", :, :] = np.eye(self.k_states)
         self.ssm["selection", :, :] = np.eye(self.k_states)
-        self.ssm["design"] = self.data
+        self.ssm["design"] = pt.expand_dims(regression_data, 1)
 
         if self.innovations:
             sigma_beta = self.make_and_register_variable(
                 f"sigma_beta_{self.name}", (self.k_states,)
             )
-            self.ssm["state_cov", np.diag_indices(self.k_states)] = sigma_beta
+            row_idx, col_idx = np.diag_indices(self.k_states)
+            self.ssm["state_cov", row_idx, col_idx] = sigma_beta
 
     def populate_component_properties(self) -> None:
-        self.state_names = self._state_names
-        self.shock_names = self._state_names
+        self.shock_names = self.state_names
 
-        self.param_names = [f"beta_{self.name}"]
-        self.param_dims = {f"beta_{self.name}": "exog_state"}
+        self.param_names = [f"beta_{self.name}", f"data_{self.name}"]
+        self.param_dims = {
+            f"beta_{self.name}": "exog_state",
+            f"data_{self.name}": ("time", "exog_state"),
+        }
         self.param_info = {
-            f"beta_{self.name}": {"shape": (1,), "constraints": "None", "dims": ("exog_states",)}
+            f"beta_{self.name}": {"shape": (1,), "constraints": "None", "dims": ("exog_state",)},
+            f"data_{self.name}": {
+                "shape": (None, self.k_states),
+                "constraints": "None",
+                "dims": ("time", "exog_state"),
+            },
         }
         self.coords = {f"exog_state": self.state_names}
 
         if self.innovations:
             self.param_names += [f"sigma_beta_{self.name}"]
             self.param_dims[f"sigma_beta_{self.name}"] = "exog_state"
-            self.param_info = {
-                f"sigma_beta_{self.name}": {
-                    "shape": (1,),
-                    "constriants": "Positive",
-                    "dims": ("exog_states",),
-                }
+            self.param_info[f"sigma_beta_{self.name}"] = {
+                "shape": (1,),
+                "constraints": "Positive",
+                "dims": ("exog_state",),
             }

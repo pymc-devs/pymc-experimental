@@ -41,6 +41,7 @@ from pymc_experimental.statespace.utils.constants import (
     SHORT_NAME_TO_LONG,
     SMOOTHER_OUTPUT_NAMES,
     TIME_DIM,
+    VECTOR_VALUED,
 )
 from pymc_experimental.statespace.utils.data_tools import register_data_with_pymc
 
@@ -222,13 +223,15 @@ class PyMCStateSpace:
     ):
         self._fit_mode = None
         self._fit_coords = None
-        self._prior_mod = pm.Model()
+        self._needs_exog_data = False
+        self._exog_names = []
+        self._name_to_variable = {}
 
         self.k_endog = k_endog
         self.k_states = k_states
         self.k_posdef = k_posdef
         self.measurement_error = measurement_error
-        self._name_to_variable = {}
+        self.data_len = None
 
         # All models contain a state space representation and a Kalman filter
         self.ssm = PytensorRepresentation(k_endog, k_states, k_posdef)
@@ -516,7 +519,14 @@ class PyMCStateSpace:
         pm_mod = modelcontext(None)
         dims = MATRIX_DIMS.get(name, None)
         dims = dims if all([dim in pm_mod.coords.keys() for dim in dims]) else None
-        shape = self.ssm[SHORT_NAME_TO_LONG[name]].type.shape if dims is None else None
+
+        if name in self.kalman_filter.seq_names:
+            shape = (self.data_len,) + self.ssm[SHORT_NAME_TO_LONG[name]].type.shape
+            dims = (TIME_DIM,) + dims
+        else:
+            shape = self.ssm[SHORT_NAME_TO_LONG[name]].type.shape
+
+        shape = shape if dims is None else None
 
         return shape, dims
 
@@ -626,6 +636,47 @@ class PyMCStateSpace:
         }
         self.subbed_ssm = graph_replace(matrices, replace=replacement_dict, strict=True)
 
+    def add_exogenous(self, exog: pt.TensorVariable) -> None:
+        """
+        Add an exogenous process to the statespace model
+
+        Parameters
+        ----------
+        exog: TensorVariable
+            An (N, k_endog) tensor representing exogenous processes to be included in the statespace model
+
+        Notes
+        -----
+        This function can be used to "inject" absolutely any type of dynamics you wish into a statespace model.
+        Recall that a statespace model is a system of two matrix equations:
+
+        .. math::
+            \begin{align} X_t &= c_t + T_t x_{t-1} + R_t \varepsilon_t & \varepsilon_t &\\sim N(0, Q_t) \\
+                          y_t &= d_t + Z_t x_t + \\eta_t & \\eta_t &\\sim N(0, H_t)
+            \\end{align}
+
+        Any of the matrices :math:`c, d, T, Z, R, H, Q` can vary across time. When this function is invoked, the
+        provided exogenous data is set as the observation intercept, :math:`d_t`. This makes the statespace model
+        a model of the residuals :math:`y_t - d_t`. In fact, this is precisely the quantity that is used to compute
+        the likelihood of the data during Kalman filtering.
+        """
+        # User might pass a flat time-varying exog vector, need to make it a column
+        if exog.ndim == 1:
+            exog = pt.expand_dims(exog, -1)
+        elif (exog.ndim == 2) and (exog.type.shape[-1] != 1):
+            raise ValueError(
+                f"If exogenous data is 2d, it must have a single column, found {exog.type.shape[-1]}"
+            )
+        elif exog.ndim > 2:
+            raise ValueError(f"Exogenous data must be at most 2d, found {exog.ndim} dimensions")
+
+        # Need to specifically ask for the time dim
+        d = self.ssm["obs_intercept", :, :]
+        self.ssm["obs_intercept"] = d + exog
+
+        self._needs_exog_data = True
+        self._exog_names.append(exog.name)
+
     def build_statespace_graph(
         self,
         data: Union[np.ndarray, pd.DataFrame, pt.TensorVariable],
@@ -698,6 +749,7 @@ class PyMCStateSpace:
         matrices = self.unpack_statespace()
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
 
+        self.data_len = data.shape[0]
         data, nan_mask = register_data_with_pymc(
             data,
             n_obs=self.ssm.k_endog,
@@ -708,11 +760,12 @@ class PyMCStateSpace:
 
         registered_matrices = []
         for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
+            time_varying_ndim = 2 if name in VECTOR_VALUED else 3
             if not getattr(pm_mod, name, None):
                 shape, dims = self._get_matrix_shape_and_dims(name)
+                has_dims = dims is not None
 
-                # TODO: Does this check always work?
-                if matrix.ndim == 3:
+                if matrix.ndim == time_varying_ndim and has_dims:
                     dims = (TIME_DIM,) + dims
 
                 x = pm.Deterministic(name, matrix, dims=dims)
@@ -848,7 +901,6 @@ class PyMCStateSpace:
             A list of pm.Flat variables representing the dummy matrices used in the state space model. The return
             order is always x0, P0, c, d, T, Z, R, H, Q, skipping any matrices indicated in `skip_matrices`.
         """
-
         modelcontext(None)
         if skip_matrices is None:
             skip_matrices = []
@@ -859,7 +911,7 @@ class PyMCStateSpace:
                 continue
 
             shape, dims = self._get_matrix_shape_and_dims(name)
-            x = pm.Flat(name, shape=shape, dims=dims)
+            x = pm.Flat(f"{name}", shape=shape, dims=dims)
             matrices.append(x)
 
         return matrices
@@ -898,6 +950,8 @@ class PyMCStateSpace:
         filters_to_use = ["filtered", "predicted", "smoothed"]
 
         with pm.Model(coords=self._fit_coords):
+            d, Z, H = self._build_dummy_graph(skip_matrices=["x0", "P0", "c", "T", "R", "Q"])
+
             for filter_output in filters_to_use:
                 mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
                     group_idata, filter_output
@@ -905,17 +959,38 @@ class PyMCStateSpace:
 
                 mus = pm.Flat(f"{filter_output}_state", shape=mu_shape, dims=mu_dims)
                 covs = pm.Flat(f"{filter_output}_covariance", shape=cov_shape, dims=cov_dims)
-
-                SequenceMvNormal(
+                latent_states = SequenceMvNormal(
                     f"{filter_output}_{group}",
                     mus=mus,
                     covs=covs,
                     logp=pt.zeros(mus.shape[0]),
                     dims=mu_dims,
                 )
+
+                obs_mu, obs_covs = self._observed_mu_cov_from_latent(d, Z, H, latent_states)
+
+                # If there are dims on the latent dim, we can use the defaults to put them on the observed too
+                obs_dims = (
+                    (TIME_DIM, OBS_STATE_DIM)
+                    if not all([x is None for x in mu_dims])
+                    else (None, None)
+                )
+
+                SequenceMvNormal(
+                    f"{filter_output}_{group}_observed",
+                    mus=obs_mu,
+                    covs=obs_covs,
+                    logp=pt.zeros(obs_mu.shape[0]),
+                    dims=obs_dims,
+                )
+
             idata_conditional = pm.sample_posterior_predictive(
                 group_idata,
-                var_names=[f"{name}_{group}" for name in filters_to_use],
+                var_names=[
+                    f"{name}_{group}{suffix}"
+                    for name in filters_to_use
+                    for suffix in ["", "_observed"]
+                ],
                 compile_kwargs={"mode": get_mode(self._fit_mode)},
                 random_seed=random_seed,
                 **kwargs,
@@ -996,6 +1071,7 @@ class PyMCStateSpace:
 
         with pm.Model(coords=temp_coords if dims is not None else None):
             matrices = [x0, P0, c, d, T, Z, R, H, Q] = self._build_dummy_graph()
+
             if not self.measurement_error:
                 H_jittered = pm.Deterministic(
                     "H_jittered", pt.specify_shape(stabilize(H), (self.k_endog, self.k_endog))
@@ -1008,6 +1084,7 @@ class PyMCStateSpace:
                 steps=steps,
                 dims=dims,
                 mode=self._fit_mode,
+                sequence_names=self.kalman_filter.seq_names,
             )
 
             idata_unconditional = pm.sample_posterior_predictive(
@@ -1250,6 +1327,10 @@ class PyMCStateSpace:
             raise ValueError("Must specify one of either periods or end")
         if periods is not None and end is not None:
             raise ValueError("Must specify exactly one of either periods or end")
+        if self._needs_exog_data:
+            raise ValueError(
+                "Scenario-based forcasting with exogenous variables not currently supported"
+            )
 
         dims = None
         temp_coords = self._fit_coords.copy()
@@ -1329,6 +1410,7 @@ class PyMCStateSpace:
                 steps=len(forecast_index[:-1]),
                 dims=dims,
                 mode=self._fit_mode,
+                sequence_names=self.kalman_filter.seq_names,
             )
 
             idata_forecast = pm.sample_posterior_predictive(
@@ -1500,3 +1582,72 @@ class PyMCStateSpace:
             )
 
             return irf_idata.posterior_predictive
+
+    def _sort_obs_inputs_by_time_varying(self, d, Z):
+        seqs = []
+        non_seqs = []
+
+        for matrix, name in zip([d, Z], ["d", "Z"]):
+            if name in self.kalman_filter.seq_names:
+                seqs.append(matrix)
+            else:
+                non_seqs.append(matrix)
+
+        return seqs, non_seqs
+
+    def _sort_obs_scan_args(self, args):
+        args = list(args)
+
+        # If a matrix is time-varying, pytensor will put a [t] on the name
+        arg_names = [x.name.replace("[t]", "") for x in args]
+        ordered_args = []
+
+        for name in ["d", "Z"]:
+            idx = arg_names.index(name)
+            ordered_args.append(args[idx])
+
+        return ordered_args
+
+    def _observed_mu_cov_from_latent(self, d, Z, H, latent_states):
+        """
+        Given a PyMC Random Variable of latent states, construct an RV of for the observed states
+
+        This function constructs an observed mean from the latent mean by applying the observation equation:
+
+        .. math::
+            \begin{align} y_t &= Z_t x_t + d_t + \\eta_t & \\eta &\\sim N(0, H_t) \\end{align}
+
+        It also has some logic to handle time-varying matrices Z, d, or H.
+
+        Parameters
+        ----------
+        latent_states: RandomVariable
+            SequenceMvNormal of latent states
+
+        Returns
+        -------
+        observed_states: RandomVariable
+            SequenceMvNormal of observed states
+        """
+        seqs, non_seqs = self._sort_obs_inputs_by_time_varying(d, Z)
+        seqs = [latent_states] + seqs
+
+        def obs_step(*args):
+            x, *dZ = args
+            d, Z = self._sort_obs_scan_args(dZ)
+
+            return d + Z @ x
+
+        obs_mu, _ = pytensor.scan(
+            obs_step, sequences=seqs, non_sequences=non_seqs, strict=False, mode=self._fit_mode
+        )
+
+        obs_covs = (
+            H
+            if "H" in self.kalman_filter.seq_names
+            else pt.expand_dims(
+                pt.specify_shape(stabilize(H, JITTER_DEFAULT), H.type.shape), (0,)
+            ).repeat(obs_mu.shape[0], axis=0)
+        )
+
+        return obs_mu, obs_covs

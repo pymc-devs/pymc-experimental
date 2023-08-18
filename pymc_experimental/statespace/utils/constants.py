@@ -21,18 +21,20 @@ JITTER_DEFAULT = 1e-8 if pytensor.config.floatX.endswith("64") else 1e-6
 FILTER_OUTPUT_TYPES = ["filtered", "predicted", "smoothed"]
 
 MATRIX_NAMES = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
+LONG_MATRIX_NAMES = [
+    "initial_state",
+    "initial_state_cov",
+    "state_intercept",
+    "obs_intercept",
+    "transition",
+    "design",
+    "selection",
+    "obs_cov",
+    "state_cov",
+]
 
-SHORT_NAME_TO_LONG = {
-    "x0": "initial_state",
-    "P0": "initial_state_cov",
-    "c": "state_intercept",
-    "d": "obs_intercept",
-    "T": "transition",
-    "Z": "design",
-    "R": "selection",
-    "H": "obs_cov",
-    "Q": "state_cov",
-}
+SHORT_NAME_TO_LONG = dict(zip(MATRIX_NAMES, LONG_MATRIX_NAMES))
+LONG_NAME_TO_SHORT = dict(zip(LONG_MATRIX_NAMES, MATRIX_NAMES))
 
 FILTER_OUTPUT_NAMES = [
     "filtered_state",

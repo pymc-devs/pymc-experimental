@@ -270,7 +270,7 @@ class BaseFilter(ABC):
             non_sequences=non_sequences,
             name="forward_kalman_pass",
             mode=get_mode(self.mode),
-            strict=True,
+            strict=False,
         )
 
         filter_results = self._postprocess_scan_results(results, a0, P0, n=data.type.shape[0])

@@ -13,6 +13,9 @@ from pymc_experimental.statespace.utils.constants import (
     OBS_STATE_DIM,
     TIME_DIM,
 )
+from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+    rng,
+)
 from pymc_experimental.tests.statespace.utilities.test_helpers import (
     delete_rvs_from_model,
     fast_eval,
@@ -144,6 +147,57 @@ def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
         delete_rvs_from_model(["states_latent", "states_observed", "states_combined"])
 
     assert idata.prior.coords["time"].shape == (101,)
+    assert all(
+        [dim in idata.prior.states_latent.coords.keys() for dim in [TIME_DIM, ALL_STATE_DIM]]
+    )
+    assert all(
+        [dim in idata.prior.states_observed.coords.keys() for dim in [TIME_DIM, OBS_STATE_DIM]]
+    )
+    assert not np.any(np.isnan(idata.prior[output_name].values))
+
+
+@pytest.mark.parametrize("output_name", ["states_latent", "states_observed"])
+def test_lgss_with_time_varying_inputs(output_name, rng):
+    X = rng.random(size=(10, 3), dtype=floatX)
+    ss_mod = structural.LevelTrendComponent() + structural.RegressionComponent(
+        name="exog", k_exog=3
+    )
+    mod = ss_mod.build("data", verbose=False)
+
+    coords = {
+        ALL_STATE_DIM: ["level", "trend", "beta_1", "beta_2", "beta_3"],
+        OBS_STATE_DIM: ["level"],
+        TIME_DIM: np.arange(10, dtype="int"),
+    }
+
+    with pm.Model(coords=coords):
+        exog_data = pm.MutableData("data_exog", X)
+        P0_diag = pm.Exponential("P0_diag", 1, shape=(mod.k_states,))
+        P0 = pm.Deterministic("P0", pt.diag(P0_diag))
+        initial_trend = pm.Normal("initial_trend", shape=(2,))
+        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
+        beta_exog = pm.Normal("beta_exog", shape=(3,))
+
+        intercept = pm.Normal("intercept")
+        slope = pm.Normal("slope")
+        trend = intercept + slope * pt.arange(10, dtype=floatX)
+        mod.add_exogenous(trend)
+
+        mod._insert_random_variables()
+        matrices = mod.unpack_statespace()
+
+        # pylint: disable=unpacking-non-sequence
+        latent_states, obs_states = LinearGaussianStateSpace(
+            "states",
+            *matrices,
+            steps=9,
+            sequence_names=["d", "Z"],
+            dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+        )
+        # pylint: enable=unpacking-non-sequence
+        idata = pm.sample_prior_predictive(samples=10)
+
+    assert idata.prior.coords["time"].shape == (10,)
     assert all(
         [dim in idata.prior.states_latent.coords.keys() for dim in [TIME_DIM, ALL_STATE_DIM]]
     )

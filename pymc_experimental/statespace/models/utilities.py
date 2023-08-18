@@ -6,6 +6,8 @@ import pytensor.tensor as pt
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
+    LONG_MATRIX_NAMES,
+    MATRIX_NAMES,
     OBS_STATE_AUX_DIM,
     OBS_STATE_DIM,
     SHOCK_AUX_DIM,
@@ -337,36 +339,53 @@ def conform_time_varying_and_time_invariant_matrices(A, B):
     (A, B): Tuple of pt.TensorVariable
         A and B, with one or neither expanded to have a time dimension.
     """
-    if A.name != B.name:
-        raise ValueError(
-            "conform_time_varying_and_time_invariant_matrices should only be called on two instances of "
-            "the same statespace matrix"
-        )
 
-    name = A.name
+    if A.name == B.name:
+        name = A.name
+    else:
+        if all([X.name not in MATRIX_NAMES + LONG_MATRIX_NAMES for X in [A, B]]):
+            raise ValueError(
+                "At least one matrix passed to conform_time_varying_and_time_invariant_matrices should be a "
+                "statespace matrix"
+            )
+        name = A.name if A.name in MATRIX_NAMES + LONG_MATRIX_NAMES else B.name
+
     time_varying_ndim = 3 - int(name in VECTOR_VALUED)
 
     if not all([x.ndim == time_varying_ndim for x in [A, B]]):
         return A, B
 
-    T_A, A_a, A_b = A.type.shape
-    T_B, B_a, B_b = B.type.shape
+    T_A, *A_dims = A.type.shape
+    T_B, *B_dims = B.type.shape
 
     if T_A == T_B:
         return A, B
 
     if T_A == 1:
-        A_out = pt.repeat(A, T_B, axis=0)
-        A_out = pt.specify_shape(A_out, (T_B, A_a, A_b))
+        A_out = pt.repeat(A, B.shape[0], axis=0)
+        A_out = pt.specify_shape(A_out, (T_B,) + tuple(A_dims))
         A_out.name = A.name
 
         return A_out, B
 
     if T_B == 1:
-        B_out = pt.repeat(B, T_A, axis=0)
-        B_out = pt.specify_shape(B_out, (T_A, B_a, B_b))
+        B_out = pt.repeat(B, A.shape[0], axis=0)
+        B_out = pt.specify_shape(B_out, (T_A,) + tuple(B_dims))
         B_out.name = B.name
 
         return A, B_out
 
     return A, B
+
+
+def get_exog_dims_from_idata(exog_name, idata):
+    if exog_name in idata.posterior.data_vars:
+        exog_dims = idata.posterior[exog_name].dims[2:]
+    elif exog_name in getattr(idata, "constant_data", []):
+        exog_dims = idata.constant_data[exog_name].dims
+    elif exog_name in getattr(idata, "mutable_data", []):
+        exog_dims = idata.mutable_data[exog_name].dims
+    else:
+        exog_dims = None
+
+    return exog_dims

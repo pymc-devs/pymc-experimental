@@ -242,14 +242,15 @@ def test_add_components():
 
 
 def test_adding_exogenous_component(rng):
-    data = rng.normal(size=(100, 2))
-    reg = st.RegressionComponent(data=data, state_names=["a", "b"], name="exog")
+    data = rng.normal(size=(100, 2)).astype(floatX)
+    reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
     ll = st.LevelTrendComponent(name="level")
+
     seasonal = st.FrequencySeasonality(name="annual", season_length=12, n=4)
     mod = reg + ll + seasonal
 
-    assert mod.ssm["design"].type.shape == (100, 1, 2 + 2 + 8)
-    assert_allclose(mod.ssm["design", 5, 0, :2].eval(), data[5])
+    assert mod.ssm["design"].eval({"data_exog": data}).shape == (100, 1, 2 + 2 + 8)
+    assert_allclose(mod.ssm["design", 5, 0, :2].eval({"data_exog": data}), data[5])
 
 
 def test_filter_scans_time_varying_design_matrix(rng):
@@ -258,16 +259,52 @@ def test_filter_scans_time_varying_design_matrix(rng):
 
     y = pd.DataFrame(rng.normal(size=(100, 1)), columns=["data"], index=time_idx)
 
-    reg = st.RegressionComponent(data=data, state_names=["a", "b"], name="exog")
+    reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
     mod = reg.build(verbose=False)
 
     with pm.Model(coords=mod.coords) as m:
+        data_exog = pm.MutableData("data_exog", data.values)
+
         x0 = pm.Normal("x0", dims=["state"])
         P0 = pm.Deterministic("P0", pt.eye(mod.k_states), dims=["state", "state_aux"])
         beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
+
         mod.build_statespace_graph(y)
         prior = pm.sample_prior_predictive(samples=10)
 
     prior_Z = prior.prior.Z.values
     assert prior_Z.shape == (1, 10, 100, 1, 2)
     assert_allclose(prior_Z[0, :, :, 0, :], data.values[None].repeat(10, axis=0))
+
+
+def test_extract_components_from_idata(rng):
+    time_idx = pd.date_range(start="2000-01-01", freq="D", periods=100)
+    data = pd.DataFrame(rng.normal(size=(100, 2)), columns=["a", "b"], index=time_idx)
+
+    y = pd.DataFrame(rng.normal(size=(100, 1)), columns=["data"], index=time_idx)
+
+    ll = st.LevelTrendComponent()
+    season = st.FrequencySeasonality(name="seasonal", season_length=12, n=2, innovations=False)
+    reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
+    mod = (ll + season + reg).build(verbose=False)
+
+    with pm.Model(coords=mod.coords) as m:
+        data_exog = pm.MutableData("data_exog", data.values)
+
+        x0 = pm.Normal("x0", dims=["state"])
+        P0 = pm.Deterministic("P0", pt.eye(mod.k_states), dims=["state", "state_aux"])
+        beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
+        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        seasonal_coefs = pm.Normal("seasonal", dims=["seasonal_initial_state"])
+
+        mod.build_statespace_graph(y)
+        prior = pm.sample_prior_predictive(samples=10)
+
+    filter_prior = mod.sample_conditional_prior(prior)
+    comp_prior = mod.extract_components_from_idata(filter_prior)
+    comp_states = comp_prior.filtered_prior.coords["state"].values
+    expected_states = ["LevelTrend[level]", "LevelTrend[trend]", "seasonal", "exog[a]", "exog[b]"]
+    missing = set(comp_states) - set(expected_states)
+
+    assert len(missing) == 0, missing

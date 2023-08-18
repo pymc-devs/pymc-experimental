@@ -11,7 +11,6 @@ from pytensor.graph.basic import Node
 
 floatX = pytensor.config.floatX
 
-
 lgss_shape_message = (
     "The LinearGaussianStateSpace distribution needs shape information to be constructed. "
     "Ensure that all input matrices have shape information specified."
@@ -43,6 +42,7 @@ class _LinearGaussianStateSpace(Continuous):
         Q,
         steps=None,
         mode=None,
+        sequence_names=None,
         **kwargs,
     ):
         # Ignore dims in support shape because they are just passed along to the "observed" and "latent" distributions
@@ -69,11 +69,14 @@ class _LinearGaussianStateSpace(Continuous):
             Q,
             steps=steps,
             mode=mode,
+            sequence_names=sequence_names,
             **kwargs,
         )
 
     @classmethod
-    def dist(cls, a0, P0, c, d, T, Z, R, H, Q, steps=None, mode=None, **kwargs):
+    def dist(
+        cls, a0, P0, c, d, T, Z, R, H, Q, steps=None, mode=None, sequence_names=None, **kwargs
+    ):
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
         )
@@ -83,7 +86,9 @@ class _LinearGaussianStateSpace(Continuous):
 
         steps = pt.as_tensor_variable(intX(steps), ndim=0)
 
-        return super().dist([a0, P0, c, d, T, Z, R, H, Q, steps], mode=mode, **kwargs)
+        return super().dist(
+            [a0, P0, c, d, T, Z, R, H, Q, steps], mode=mode, sequence_names=sequence_names, **kwargs
+        )
 
     @classmethod
     def _get_k_states(cls, T):
@@ -101,19 +106,51 @@ class _LinearGaussianStateSpace(Continuous):
         return k_endog
 
     @classmethod
-    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, size=None, mode=None):
+    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, size=None, mode=None, sequence_names=None):
         if size is not None:
             batch_size = size
+        if sequence_names is None:
+            sequence_names = []
 
         a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_ = map(
             lambda x: x.type(), [a0, P0, c, d, T, Z, R, H, Q]
         )
 
+        c_.name = "c"
+        d_.name = "d"
+        T_.name = "T"
+        Z_.name = "Z"
+        R_.name = "R"
+        H_.name = "H"
+        Q_.name = "Q"
+
+        n_seq = len(sequence_names)
+        sequences = [
+            x
+            for x, name in zip([c_, d_, T_, Z_, R_, H_, Q_], ["c", "d", "T", "Z", "R", "H", "Q"])
+            if name in sequence_names
+        ]
+        non_sequences = [x for x in [c_, d_, T_, Z_, R_, H_, Q_] if x not in sequences]
+
         steps_ = steps.type()
         rng = pytensor.shared(np.random.default_rng())
 
+        def sort_args(args):
+            sorted_args = []
+            arg_names = [x.name.replace("[t]", "") for x in args]
+
+            for name in ["c", "d", "T", "Z", "R", "H", "Q"]:
+                idx = arg_names.index(name)
+                sorted_args.append(args[idx])
+
+            return sorted_args
+
         def step_fn(*args):
-            state, c, d, T, Z, R, H, Q, rng = args
+            seqs, state, non_seqs = args[:n_seq], args[n_seq], args[n_seq + 1 :]
+            non_seqs, rng = non_seqs[:-1], non_seqs[-1]
+
+            c, d, T, Z, R, H, Q = sort_args(seqs + non_seqs)
+
             k = T.shape[0]
             a = state[:k]
 
@@ -128,13 +165,17 @@ class _LinearGaussianStateSpace(Continuous):
             return next_state, {rng: next_rng}
 
         init_x_ = pm.MvNormal.dist(a0_, P0_, rng=rng)
-        init_y_ = pm.MvNormal.dist(Z_ @ init_x_, H_, rng=rng)
+        Z_init = Z_ if Z_ in non_sequences else Z_[0]
+        H_init = H_ if H_ in non_sequences else H_[0]
 
+        init_y_ = pm.MvNormal.dist(Z_init @ init_x_, H_init, rng=rng)
         init_dist_ = pt.concatenate([init_x_, init_y_], axis=0)
+
         statespace, updates = pytensor.scan(
             step_fn,
             outputs_info=[init_dist_],
-            non_sequences=[c_, d_, T_, Z_, R_, H_, Q_, rng],
+            sequences=None if len(sequences) == 0 else sequences,
+            non_sequences=non_sequences + [rng],
             n_steps=steps_,
             mode=mode,
             strict=True,
@@ -174,6 +215,7 @@ class LinearGaussianStateSpace(Continuous):
         *,
         steps=None,
         mode=None,
+        sequence_names=None,
         **kwargs,
     ):
         dims = kwargs.pop("dims", None)
@@ -194,6 +236,7 @@ class LinearGaussianStateSpace(Continuous):
             *matrices,
             steps=steps,
             mode=mode,
+            sequence_names=sequence_names,
             **kwargs,
         )
 

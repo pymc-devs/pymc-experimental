@@ -83,8 +83,8 @@ def create_model(load_dataset):
                 dims="state",
             )
             P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=("state", "state_aux"))
-            initial_trend = pm.Normal("initial_trend", dims="trend_states")
-            sigma_trend = pm.Exponential("sigma_trend", 1, dims="trend_shocks")
+            initial_trend = pm.Normal("initial_trend", dims="trend_state")
+            sigma_trend = pm.Exponential("sigma_trend", 1, dims="trend_shock")
             ss_mod.build_statespace_graph(data)
         return mod
 
