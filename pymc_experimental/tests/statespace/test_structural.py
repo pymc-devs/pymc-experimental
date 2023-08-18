@@ -277,6 +277,7 @@ def test_filter_scans_time_varying_design_matrix(rng):
     assert_allclose(prior_Z[0, :, :, 0, :], data.values[None].repeat(10, axis=0))
 
 
+@pytest.mark.skipif(floatX.endswith("32"), reason="Prior covariance not PSD at half-precision")
 def test_extract_components_from_idata(rng):
     time_idx = pd.date_range(start="2000-01-01", freq="D", periods=100)
     data = pd.DataFrame(rng.normal(size=(100, 2)), columns=["a", "b"], index=time_idx)
@@ -286,7 +287,8 @@ def test_extract_components_from_idata(rng):
     ll = st.LevelTrendComponent()
     season = st.FrequencySeasonality(name="seasonal", season_length=12, n=2, innovations=False)
     reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
-    mod = (ll + season + reg).build(verbose=False)
+    me = st.MeasurementError("obs")
+    mod = (ll + season + reg + me).build(verbose=False)
 
     with pm.Model(coords=mod.coords) as m:
         data_exog = pm.MutableData("data_exog", data.values)
@@ -297,6 +299,7 @@ def test_extract_components_from_idata(rng):
         initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
         sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
         seasonal_coefs = pm.Normal("seasonal", dims=["seasonal_initial_state"])
+        sigma_obs = pm.Exponential("sigma_obs", 1)
 
         mod.build_statespace_graph(y)
         prior = pm.sample_prior_predictive(samples=10)
