@@ -60,3 +60,13 @@ Utils
    prior.prior_from_idata
    model_fgraph.fgraph_from_model
    model_fgraph.model_from_fgraph
+
+Statespace Models
+=================
+.. automodule:: pymc_experimental.statespace
+.. toctree::
+   :maxdepth: 1
+
+   statespace/core
+   statespace/filters
+   statespace/models
