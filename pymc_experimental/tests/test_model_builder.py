@@ -122,6 +122,12 @@ class test_ModelBuilder(ModelBuilder):
             "obs_error": 2,
         }
 
+    def _generate_and_preprocess_model_data(
+        self, X: pd.DataFrame | pd.Series, y: pd.Series
+    ) -> None:
+        self.X = X
+        self.y = y
+
     @property
     def default_sampler_config(self) -> Dict:
         return {
