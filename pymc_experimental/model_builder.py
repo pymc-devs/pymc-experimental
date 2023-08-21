@@ -205,7 +205,7 @@ class ModelBuilder:
         Examples
         --------
         >>>     @classmethod
-        >>>     def generate_and_preprocess_model_data(self, X, y):
+        >>>     def _generate_and_preprocess_model_data(self, X, y):
                     coords = {
                         'x_dim': X.dim_variable,
                     } #only include if applicable for your model
@@ -494,7 +494,7 @@ class ModelBuilder:
         if y is None:
             y = np.zeros(X.shape[0])
         y = pd.DataFrame({self.output_var: y})
-        self.generate_and_preprocess_model_data(X, y.values.flatten())
+        self._generate_and_preprocess_model_data(X, y.values.flatten())
         self.build_model(self.X, self.y)
 
         sampler_config = self.sampler_config.copy()
