@@ -16,7 +16,7 @@ import hashlib
 import json
 import sys
 import tempfile
-from typing import Dict
+from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -121,6 +121,12 @@ class test_ModelBuilder(ModelBuilder):
             "b": {"loc": 0, "scale": 10},
             "obs_error": 2,
         }
+
+    def _generate_and_preprocess_model_data(
+        self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
+    ) -> None:
+        self.X = X
+        self.y = y
 
     @property
     def default_sampler_config(self) -> Dict:
