@@ -153,7 +153,7 @@ def test_fit(fitted_model_instance):
 
 def test_fit_no_y(toy_X):
     model_builder = test_ModelBuilder()
-    model_builder.idata = model_builder.fit(X=toy_X)
+    model_builder.idata = model_builder.fit(X=toy_X, chains=1, tune=1, draws=1)
     assert model_builder.model is not None
     assert model_builder.idata is not None
     assert "posterior" in model_builder.idata.groups()
