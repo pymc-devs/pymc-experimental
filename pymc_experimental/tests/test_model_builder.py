@@ -74,7 +74,7 @@ class test_ModelBuilder(ModelBuilder):
         self.generate_and_preprocess_model_data(X, y)
         with pm.Model(coords=coords) as self.model:
             if model_config is None:
-                model_config = self.default_model_config
+                model_config = self.model_config
             x = pm.MutableData("x", self.X["input"].values)
             y_data = pm.MutableData("y_data", self.y)
 
@@ -114,8 +114,8 @@ class test_ModelBuilder(ModelBuilder):
         self.X = X
         self.y = y
 
-    @property
-    def default_model_config(self) -> Dict:
+    @classmethod
+    def get_default_model_config(self) -> Dict:
         return {
             "a": {"loc": 0, "scale": 10, "dims": ("numbers",)},
             "b": {"loc": 0, "scale": 10},
@@ -128,8 +128,8 @@ class test_ModelBuilder(ModelBuilder):
         self.X = X
         self.y = y
 
-    @property
-    def default_sampler_config(self) -> Dict:
+    @classmethod
+    def get_default_sampler_config(self) -> Dict:
         return {
             "draws": 1_000,
             "tune": 1_000,

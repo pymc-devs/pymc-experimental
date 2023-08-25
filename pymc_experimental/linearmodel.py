@@ -20,16 +20,16 @@ class LinearModel(ModelBuilder):
     _model_type = "LinearModel"
     version = "0.1"
 
-    @property
-    def default_model_config(self):
+    @classmethod
+    def get_default_model_config(self):
         return {
             "intercept": {"loc": 0, "scale": 10},
             "slope": {"loc": 0, "scale": 10},
             "obs_error": 2,
         }
 
-    @property
-    def default_sampler_config(self):
+    @classmethod
+    def get_default_sampler_config(self):
         return {
             "draws": 1_000,
             "tune": 1_000,
