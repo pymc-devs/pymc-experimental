@@ -135,17 +135,17 @@ class ModelBuilder:
         """
         raise NotImplementedError
 
-    @classmethod
+    @staticmethod
     @abstractmethod
-    def get_default_model_config(self) -> Dict:
+    def get_default_model_config() -> Dict:
         """
         Returns a class default config dict for model builder if no model_config is provided on class initialization
         Useful for understanding structure of required model_config to allow its customization by users
         Examples
         --------
-        >>>     @classmethod
-        >>>     def default_model_config(self):
-        >>>         Return {
+        >>>     @staticmethod
+        >>>     def default_model_config():
+        >>>         return {
         >>>             'a' : {
         >>>                 'loc': 7,
         >>>                 'scale' : 3
@@ -164,7 +164,7 @@ class ModelBuilder:
         """
         raise NotImplementedError
 
-    @classmethod
+    @staticmethod
     @abstractmethod
     def get_default_sampler_config(self) -> Dict:
         """
@@ -172,9 +172,9 @@ class ModelBuilder:
         Useful for understanding structure of required sampler_config to allow its customization by users
         Examples
         --------
-        >>>     @classmethod
-        >>>     def default_sampler_config(self):
-        >>>         Return {
+        >>>     @staticmethod
+        >>>     def default_sampler_config():
+        >>>         return {
         >>>             'draws': 1_000,
         >>>             'tune': 1_000,
         >>>             'chains': 1,

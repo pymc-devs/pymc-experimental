@@ -114,8 +114,8 @@ class test_ModelBuilder(ModelBuilder):
         self.X = X
         self.y = y
 
-    @classmethod
-    def get_default_model_config(self) -> Dict:
+    @staticmethod
+    def get_default_model_config() -> Dict:
         return {
             "a": {"loc": 0, "scale": 10, "dims": ("numbers",)},
             "b": {"loc": 0, "scale": 10},
@@ -128,8 +128,8 @@ class test_ModelBuilder(ModelBuilder):
         self.X = X
         self.y = y
 
-    @classmethod
-    def get_default_sampler_config(self) -> Dict:
+    @staticmethod
+    def get_default_sampler_config() -> Dict:
         return {
             "draws": 1_000,
             "tune": 1_000,
