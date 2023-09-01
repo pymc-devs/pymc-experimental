@@ -71,9 +71,11 @@ class ModelBuilder:
         >>>     ...
         >>> model = MyModel(model_config, sampler_config)
         """
-        sampler_config = self.default_sampler_config if sampler_config is None else sampler_config
+        sampler_config = (
+            self.get_default_sampler_config() if sampler_config is None else sampler_config
+        )
         self.sampler_config = sampler_config
-        model_config = self.default_model_config if model_config is None else model_config
+        model_config = self.get_default_model_config() if model_config is None else model_config
 
         self.model_config = model_config  # parameters for priors etc.
         self.model = None  # Set by build_model
@@ -133,17 +135,17 @@ class ModelBuilder:
         """
         raise NotImplementedError
 
-    @property
+    @staticmethod
     @abstractmethod
-    def default_model_config(self) -> Dict:
+    def get_default_model_config() -> Dict:
         """
         Returns a class default config dict for model builder if no model_config is provided on class initialization
         Useful for understanding structure of required model_config to allow its customization by users
         Examples
         --------
-        >>>     @classmethod
-        >>>     def default_model_config(self):
-        >>>         Return {
+        >>>     @staticmethod
+        >>>     def default_model_config():
+        >>>         return {
         >>>             'a' : {
         >>>                 'loc': 7,
         >>>                 'scale' : 3
@@ -162,17 +164,17 @@ class ModelBuilder:
         """
         raise NotImplementedError
 
-    @property
+    @staticmethod
     @abstractmethod
-    def default_sampler_config(self) -> Dict:
+    def get_default_sampler_config(self) -> Dict:
         """
         Returns a class default sampler dict for model builder if no sampler_config is provided on class initialization
         Useful for understanding structure of required sampler_config to allow its customization by users
         Examples
         --------
-        >>>     @classmethod
-        >>>     def default_sampler_config(self):
-        >>>         Return {
+        >>>     @staticmethod
+        >>>     def default_sampler_config():
+        >>>         return {
         >>>             'draws': 1_000,
         >>>             'tune': 1_000,
         >>>             'chains': 1,
