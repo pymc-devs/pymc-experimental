@@ -12,7 +12,6 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-
 import collections
 import sys
 from typing import Optional
@@ -20,31 +19,30 @@ from typing import Optional
 import arviz as az
 import blackjax
 import jax
-import jax.numpy as jnp
-import jax.random as random
 import numpy as np
 import pymc as pm
-from pymc import modelcontext
+from packaging import version
+from pymc.backends.arviz import coords_and_dims_for_inferencedata
+from pymc.blocking import DictToArrayBijection, RaveledVars
+from pymc.model import modelcontext
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import RandomSeed, _get_seeds_per_chain, get_default_varnames
 
 
 def convert_flat_trace_to_idata(
     samples,
-    dims=None,
-    coords=None,
     include_transformed=False,
     postprocessing_backend="cpu",
     model=None,
 ):
 
     model = modelcontext(model)
-    init_position_dict = model.initial_point()
+    ip = model.initial_point()
+    ip_point_map_info = pm.blocking.DictToArrayBijection.map(ip).point_map_info
     trace = collections.defaultdict(list)
-    astart = pm.blocking.DictToArrayBijection.map(init_position_dict)
     for sample in samples:
-        raveld_vars = pm.blocking.RaveledVars(sample, astart.point_map_info)
-        point = pm.blocking.DictToArrayBijection.rmap(raveld_vars, init_position_dict)
+        raveld_vars = RaveledVars(sample, ip_point_map_info)
+        point = DictToArrayBijection.rmap(raveld_vars, ip)
         for p, v in point.items():
             trace[p].append(v.tolist())
 
@@ -57,19 +55,19 @@ def convert_flat_trace_to_idata(
     result = jax.vmap(jax.vmap(jax_fn))(
         *jax.device_put(list(trace.values()), jax.devices(postprocessing_backend)[0])
     )
-
     trace = {v.name: r for v, r in zip(vars_to_sample, result)}
+    coords, dims = coords_and_dims_for_inferencedata(model)
     idata = az.from_dict(trace, dims=dims, coords=coords)
 
     return idata
 
 
 def fit_pathfinder(
-    iterations=5_000,
+    samples=1000,
     random_seed: Optional[RandomSeed] = None,
     postprocessing_backend="cpu",
-    ftol=1e-4,
     model=None,
+    **pathfinder_kwargs,
 ):
     """
     Fit the pathfinder algorithm as implemented in blackjax
@@ -78,15 +76,15 @@ def fit_pathfinder(
 
     Parameters
     ----------
-    iterations : int
-        Number of iterations to run.
+    samples : int
+        Number of samples to draw from the fitted approximation.
     random_seed : int
         Random seed to set.
     postprocessing_backend : str
         Where to compute transformations of the trace.
         "cpu" or "gpu".
-    ftol : float
-        Floating point tolerance
+    pathfinder_kwargs:
+        kwargs for blackjax.vi.pathfinder.approximate
 
     Returns
     -------
@@ -96,17 +94,17 @@ def fit_pathfinder(
     ---------
     https://arxiv.org/abs/2108.03782
     """
-
-    (random_seed,) = _get_seeds_per_chain(random_seed, 1)
+    # Temporarily helper
+    if version.parse(blackjax.__version__).major < 1:
+        raise ImportError("fit_pathfinder requires blackjax 1.0 or above")
 
     model = modelcontext(model)
 
-    rvs = [rv.name for rv in model.value_vars]
-    init_position_dict = model.initial_point()
-    init_position = [init_position_dict[rv] for rv in rvs]
+    ip = model.initial_point()
+    ip_map = DictToArrayBijection.map(ip)
 
     new_logprob, new_input = pm.pytensorf.join_nonshared_inputs(
-        init_position_dict, (model.logp(),), model.value_vars, ()
+        ip, (model.logp(),), model.value_vars, ()
     )
 
     logprob_fn_list = get_jaxified_graph([new_input], new_logprob)
@@ -114,35 +112,24 @@ def fit_pathfinder(
     def logprob_fn(x):
         return logprob_fn_list(x)[0]
 
-    dim = sum(v.size for v in init_position_dict.values())
+    [pathfinder_seed, sample_seed] = _get_seeds_per_chain(random_seed, 2)
 
-    rng_key = random.PRNGKey(random_seed)
-    w0 = random.multivariate_normal(rng_key, 2.0 + jnp.zeros(dim), jnp.eye(dim))
-    path = blackjax.vi.pathfinder.init(rng_key, logprob_fn, w0, return_path=True, ftol=ftol)
-
-    pathfinder = blackjax.kernels.pathfinder(rng_key, logprob_fn, ftol=ftol)
-    state = pathfinder.init(w0)
-
-    def inference_loop(rng_key, kernel, initial_state, num_samples):
-        @jax.jit
-        def one_step(state, rng_key):
-            state, info = kernel(rng_key, state)
-            return state, (state, info)
-
-        keys = jax.random.split(rng_key, num_samples)
-        return jax.lax.scan(one_step, initial_state, keys)
-
-    _, rng_key = random.split(rng_key)
     print("Running pathfinder...", file=sys.stdout)
-    _, (_, samples) = inference_loop(rng_key, pathfinder.step, state, iterations)
-
-    dims = {
-        var_name: [dim for dim in dims if dim is not None]
-        for var_name, dims in model.named_vars_to_dims.items()
-    }
-
-    idata = convert_flat_trace_to_idata(
-        samples, postprocessing_backend=postprocessing_backend, coords=model.coords, dims=dims
+    pathfinder_state, _ = blackjax.vi.pathfinder.approximate(
+        rng_key=jax.random.key(pathfinder_seed),
+        logdensity_fn=logprob_fn,
+        initial_position=ip_map.data,
+        **pathfinder_kwargs,
+    )
+    samples, _ = blackjax.vi.pathfinder.sample(
+        rng_key=jax.random.key(sample_seed),
+        state=pathfinder_state,
+        num_samples=samples,
     )
 
+    idata = convert_flat_trace_to_idata(
+        samples,
+        postprocessing_backend=postprocessing_backend,
+        model=model,
+    )
     return idata
