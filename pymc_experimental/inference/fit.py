@@ -31,7 +31,10 @@ def fit(method, **kwargs):
     """
     if method == "pathfinder":
         try:
-            from pymc_experimental.inference.pathfinder import fit_pathfinder
+            import blackjax
         except ImportError as exc:
             raise RuntimeError("Need BlackJAX to use `pathfinder`") from exc
+
+        from pymc_experimental.inference.pathfinder import fit_pathfinder
+
         return fit_pathfinder(**kwargs)
