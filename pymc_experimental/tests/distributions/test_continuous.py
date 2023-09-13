@@ -26,6 +26,7 @@ from pymc.testing import (
     BaseTestDistributionRandom,
     Domain,
     R,
+    Rplus,
     Rplusbig,
     assert_moment_is_expected,
     check_logcdf,
@@ -35,7 +36,7 @@ from pymc.testing import (
 )
 
 # the distributions to be tested
-from pymc_experimental.distributions import GenExtreme
+from pymc_experimental.distributions import Chi, GenExtreme
 
 
 class TestGenExtremeClass:
@@ -149,3 +150,26 @@ class TestGenExtreme(BaseTestDistributionRandom):
         "check_pymc_draws_match_reference",
         "check_rv_size",
     ]
+
+
+class TestChiClass:
+    """
+    Wrapper class so that tests of experimental additions can be dropped into
+    PyMC directly on adoption.
+    """
+
+    def test_logp(self):
+        check_logp(
+            Chi,
+            Rplus,
+            {"nu": Rplus},
+            lambda value, nu: sp.chi.logpdf(value, df=nu),
+        )
+
+    def test_logcdf(self):
+        check_logcdf(
+            Chi,
+            Rplus,
+            {"nu": Rplus},
+            lambda value, nu: sp.chi.logcdf(value, df=nu),
+        )

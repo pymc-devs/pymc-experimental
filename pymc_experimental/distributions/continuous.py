@@ -23,6 +23,8 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import pytensor.tensor as pt
+from pymc import ChiSquared, CustomDist
+from pymc.distributions import transforms
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous
 from pymc.distributions.shape_utils import rv_size_is_none
@@ -216,3 +218,65 @@ class GenExtreme(Continuous):
         if not rv_size_is_none(size):
             mode = pt.full(size, mode)
         return mode
+
+
+class Chi:
+    r"""
+    :math:`\chi` log-likelihood.
+
+    The pdf of this distribution is
+
+    .. math::
+
+       f(x \mid \nu) = \frac{x^{\nu - 1}e^{-x^2/2}}{2^{\nu/2 - 1}\Gamma(\nu/2)}
+
+    .. plot::
+        :context: close-figs
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import scipy.stats as st
+        import arviz as az
+        plt.style.use('arviz-darkgrid')
+        x = np.linspace(0, 10, 200)
+        for df in [1, 2, 3, 6, 9]:
+            pdf = st.chi.pdf(x, df)
+            plt.plot(x, pdf, label=r'$\nu$ = {}'.format(df))
+        plt.xlabel('x', fontsize=12)
+        plt.ylabel('f(x)', fontsize=12)
+        plt.legend(loc=1)
+        plt.show()
+
+    ========  =========================================================================
+    Support   :math:`x \in [0, \infty)`
+    Mean      :math:`\sqrt{2}\frac{\Gamma((\nu + 1)/2)}{\Gamma(\nu/2)}`
+    Variance  :math:`\nu - 2\left(\frac{\Gamma((\nu + 1)/2)}{\Gamma(\nu/2)}\right)^2`
+    ========  =========================================================================
+
+    Parameters
+    ----------
+    nu : tensor_like of float
+        Degrees of freedom (nu > 0).
+
+    Examples
+    --------
+    .. code-block:: python
+        import pymc as pm
+        from pymc_experimental.distributions import Chi
+
+        with pm.Model():
+            x = Chi('x', nu=1)
+    """
+
+    @staticmethod
+    def chi_dist(nu: TensorVariable, size: TensorVariable) -> TensorVariable:
+        return pt.math.sqrt(ChiSquared.dist(nu=nu, size=size))
+
+    def __new__(cls, name, nu, **kwargs):
+        if "observed" not in kwargs:
+            kwargs.setdefault("transform", transforms.log)
+        return CustomDist(name, nu, dist=cls.chi_dist, class_name="Chi", **kwargs)
+
+    @classmethod
+    def dist(cls, nu, **kwargs):
+        return CustomDist.dist(nu, dist=cls.chi_dist, class_name="Chi", **kwargs)

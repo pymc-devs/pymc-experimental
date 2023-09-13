@@ -28,9 +28,10 @@ Distributions
 .. autosummary::
    :toctree: generated/
 
-   GenExtreme
-   GeneralizedPoisson
+   Chi
    DiscreteMarkovChain
+   GeneralizedPoisson
+   GenExtreme
    R2D2M2CP
    histogram_approximation
 
