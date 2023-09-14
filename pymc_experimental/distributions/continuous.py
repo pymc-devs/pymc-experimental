@@ -28,7 +28,7 @@ from pymc.distributions.distribution import Continuous
 from pymc.distributions.shape_utils import rv_size_is_none
 from pymc.pytensorf import floatX
 from pytensor.tensor.random.op import RandomVariable
-from pytensor.tensor.var import TensorVariable
+from pytensor.tensor.variable import TensorVariable
 from scipy import stats
 
 

@@ -11,12 +11,16 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-
+from functools import partial
 
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
-from pymc.gp.util import JITTER_DEFAULT, cholesky, solve_lower, solve_upper, stabilize
+from pymc.gp.util import JITTER_DEFAULT, stabilize
+from pytensor.tensor.linalg import cholesky, solve_triangular
+
+solve_lower = partial(solve_triangular, lower=True)
+solve_upper = partial(solve_triangular, lower=False)
 
 
 class LatentApprox(pm.gp.Latent):

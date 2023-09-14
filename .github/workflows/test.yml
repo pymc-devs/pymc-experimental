@@ -19,7 +19,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         floatx: [float64]
-        python-version: ["3.8"]
+        python-version: ["3.9"]
         test-subset:
           - pymc_experimental/tests
       fail-fast: false
@@ -84,7 +84,7 @@ jobs:
       matrix:
         os: [windows-latest]
         floatx: [float32]
-        python-version: ["3.10"]
+        python-version: ["3.11"]
         test-subset:
           - pymc_experimental/tests
       fail-fast: false
