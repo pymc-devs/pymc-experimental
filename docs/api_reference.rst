@@ -35,19 +35,6 @@ Distributions
    histogram_approximation
 
 
-Model Transformations
-=====================
-
-.. currentmodule:: pymc_experimental.model_transform
-.. autosummary::
-   :toctree: generated/
-
-   conditioning.do
-   conditioning.observe
-   conditioning.change_value_transforms
-   conditioning.remove_value_transforms
-
-
 Utils
 =====
 
@@ -55,11 +42,9 @@ Utils
 .. autosummary::
    :toctree: generated/
 
-   clone_model
    spline.bspline_interpolation
    prior.prior_from_idata
-   model_fgraph.fgraph_from_model
-   model_fgraph.model_from_fgraph
+
 
 Statespace Models
 =================
