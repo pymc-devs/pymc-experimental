@@ -16,7 +16,7 @@
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
-from pymc.gp.util import JITTER_DEFAULT, cholesky, solve_lower, solve_upper, stabilize
+from pymc.gp.util import JITTER_DEFAULT, stabilize
 
 
 class LatentApprox(pm.gp.Latent):
@@ -35,14 +35,16 @@ class ProjectedProcess(pm.gp.Latent):
     def _build_prior(self, name, X, Xu, jitter=JITTER_DEFAULT, **kwargs):
         mu = self.mean_func(X)
         Kuu = self.cov_func(Xu)
-        L = cholesky(stabilize(Kuu, jitter))
+        L = pt.linalg.cholesky(stabilize(Kuu, jitter))
 
         n_inducing_points = np.shape(Xu)[0]
         v = pm.Normal(name + "_u_rotated_", mu=0.0, sigma=1.0, size=n_inducing_points, **kwargs)
         u = pm.Deterministic(name + "_u", L @ v)
 
         Kfu = self.cov_func(X, Xu)
-        Kuuiu = solve_upper(pt.transpose(L), solve_lower(L, u))
+        Kuuiu = pt.linalg.solve_triangular(
+            pt.transpose(L), pt.linalg.solve_triangular(L, u), lower=False
+        )
 
         return pm.Deterministic(name, mu + Kfu @ Kuuiu), Kuuiu, L
 
@@ -62,10 +64,10 @@ class ProjectedProcess(pm.gp.Latent):
     def _build_conditional(self, name, Xnew, Xu, L, Kuuiu, jitter, **kwargs):
         Ksu = self.cov_func(Xnew, Xu)
         mu = self.mean_func(Xnew) + Ksu @ Kuuiu
-        tmp = solve_lower(L, pt.transpose(Ksu))
+        tmp = pt.linalg.solve_triangular(L, pt.transpose(Ksu))
         Qss = pt.transpose(tmp) @ tmp  # Qss = tt.dot(tt.dot(Ksu, tt.nlinalg.pinv(Kuu)), Ksu.T)
         Kss = self.cov_func(Xnew)
-        Lss = cholesky(stabilize(Kss - Qss, jitter))
+        Lss = pt.linalg.cholesky(stabilize(Kss - Qss, jitter))
         return mu, Lss
 
     def conditional(self, name, Xnew, jitter=1e-6, **kwargs):
@@ -123,7 +125,7 @@ class KarhunenLoeveExpansion(pm.gp.Latent):
         Kxxpinv = U @ pt.diag(1.0 / s) @ U.T
         mus = Kxs.T @ Kxxpinv @ f
         K = Kss - Kxs.T @ Kxxpinv @ Kxs
-        L = pm.gp.util.cholesky(pm.gp.util.stabilize(K, jitter))
+        L = pt.linalg.cholesky(stabilize(K, jitter))
         return mus, L
 
     def conditional(self, name, Xnew, jitter=1e-6, **kwargs):
