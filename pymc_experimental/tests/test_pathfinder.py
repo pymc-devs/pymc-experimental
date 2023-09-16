@@ -21,7 +21,9 @@ import pytest
 import pymc_experimental as pmx
 
 
+# TODO: Remove this filterwarning after pytensor uses jnp.prod instead of jnp.product
 @pytest.mark.skipif(sys.platform == "win32", reason="JAX not supported on windows.")
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_pathfinder():
     # Data of the Eight Schools Model
     J = 8
