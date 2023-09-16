@@ -17,6 +17,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 from pymc.gp.util import JITTER_DEFAULT, stabilize
+from pytensor.tensor.slinalg import solve_triangular
 
 
 class LatentApprox(pm.gp.Latent):
@@ -42,9 +43,7 @@ class ProjectedProcess(pm.gp.Latent):
         u = pm.Deterministic(name + "_u", L @ v)
 
         Kfu = self.cov_func(X, Xu)
-        Kuuiu = pt.linalg.solve_triangular(
-            pt.transpose(L), pt.linalg.solve_triangular(L, u), lower=False
-        )
+        Kuuiu = solve_triangular(pt.transpose(L), solve_triangular(L, u), lower=False)
 
         return pm.Deterministic(name, mu + Kfu @ Kuuiu), Kuuiu, L
 
@@ -64,7 +63,7 @@ class ProjectedProcess(pm.gp.Latent):
     def _build_conditional(self, name, Xnew, Xu, L, Kuuiu, jitter, **kwargs):
         Ksu = self.cov_func(Xnew, Xu)
         mu = self.mean_func(Xnew) + Ksu @ Kuuiu
-        tmp = pt.linalg.solve_triangular(L, pt.transpose(Ksu))
+        tmp = solve_triangular(L, pt.transpose(Ksu))
         Qss = pt.transpose(tmp) @ tmp  # Qss = tt.dot(tt.dot(Ksu, tt.nlinalg.pinv(Kuu)), Ksu.T)
         Kss = self.cov_func(Xnew)
         Lss = pt.linalg.cholesky(stabilize(Kss - Qss, jitter))

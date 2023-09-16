@@ -9,6 +9,7 @@ from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
 from pytensor.tensor.nlinalg import matrix_dot
+from pytensor.tensor.slinalg import solve_triangular
 
 from pymc_experimental.statespace.filters.utilities import (
     quad_form_sym,
@@ -682,13 +683,13 @@ class CholeskyFilter(BaseFilter):
         F_chol = pt.linalg.cholesky(F)
 
         # If everything is missing, K = 0, IKZ = I
-        K = pt.linalg.solve_triangular(F_chol.T, pt.linalg.solve_triangular(F_chol, PZT.T)).T
+        K = solve_triangular(F_chol.T, solve_triangular(F_chol, PZT.T)).T
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
-        inner_term = pt.linalg.solve_triangular(F_chol.T, pt.linalg.solve_triangular(F_chol, v))
+        inner_term = solve_triangular(F_chol.T, solve_triangular(F_chol, v))
         n = y.shape[0]
 
         ll = pt.switch(
