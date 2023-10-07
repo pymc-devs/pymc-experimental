@@ -67,8 +67,6 @@ class LinearModel(ModelBuilder):
         """
         cfg = self.model_config
 
-        # The model is built with placeholder data.
-        # Actual data will be set by _data_setter when fitting or evaluating the model.
         # Data array size can change but number of dimensions must stay the same.
         with pm.Model() as self.model:
             x = pm.MutableData("x", np.zeros((1,)), dims="observation")
@@ -93,6 +91,8 @@ class LinearModel(ModelBuilder):
                 observed=y_data,
                 dims="observation",
             )
+
+        self._data_setter(X, y)
 
     def _data_setter(self, X: pd.DataFrame, y: Optional[Union[pd.DataFrame, pd.Series]] = None):
         with self.model:
