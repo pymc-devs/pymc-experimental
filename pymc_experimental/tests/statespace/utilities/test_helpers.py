@@ -227,7 +227,7 @@ def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
     y = np.zeros(steps)
 
     x[0] = x0
-    y[0] = Z @ x0
+    y[0] = (Z @ x0).squeeze()
 
     if not np.allclose(H, 0):
         y[0] += rng.multivariate_normal(mean=np.zeros(1), cov=H)
@@ -245,7 +245,7 @@ def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
             error = 0
 
         x[t] = c + T @ x[t - 1] + innov
-        y[t] = d + Z @ x[t] + error
+        y[t] = (d + Z @ x[t] + error).squeeze()
 
     return x, y
 
