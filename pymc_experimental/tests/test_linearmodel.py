@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+from pytest import approx
 
 from pymc_experimental.linearmodel import LinearModel
 
@@ -37,6 +38,15 @@ except ImportError:
 
 
 @pytest.fixture(scope="module")
+def toy_actual_params():
+    return {
+        "intercept": 3,
+        "slope": 5,
+        "obs_error": 0.5,
+    }
+
+
+@pytest.fixture(scope="module")
 def toy_X():
     x = np.linspace(start=0, stop=1, num=100)
     X = pd.DataFrame({"input": x})
@@ -44,9 +54,10 @@ def toy_X():
 
 
 @pytest.fixture(scope="module")
-def toy_y(toy_X):
-    y = 5 * toy_X["input"] + 3
-    y = y + np.random.normal(0, 1, size=len(toy_X))
+def toy_y(toy_X, toy_actual_params):
+    y = toy_actual_params["slope"] * toy_X["input"] + toy_actual_params["intercept"]
+    np.random.seed(427)
+    y = y + np.random.normal(0, toy_actual_params["obs_error"], size=len(toy_X))
     y = pd.Series(y, name="output")
     return y
 
@@ -60,7 +71,7 @@ def fitted_linear_model_instance(toy_X, toy_y):
         "target_accept": 0.95,
     }
     model = LinearModel(sampler_config=sampler_config)
-    model.fit(toy_X, toy_y)
+    model.fit(toy_X, toy_y, random_seed=312)
     return model
 
 
@@ -99,6 +110,15 @@ def test_fit(fitted_linear_model_instance):
     post_pred = model.predict_posterior(new_X_pred)
     assert len(new_X_pred) == len(post_pred)
     assert isinstance(post_pred, xr.DataArray)
+
+
+def test_parameter_fit(fitted_linear_model_instance, toy_actual_params):
+    """Check that the fit model recovered the data-generating parameters."""
+    model = fitted_linear_model_instance
+    fit_params = model.idata.posterior.mean()
+    assert fit_params["intercept"] == approx(toy_actual_params["intercept"], rel=0.1)
+    assert fit_params["slope"] == approx(toy_actual_params["slope"], rel=0.1)
+    assert fit_params["σ_model_fmc"] == approx(toy_actual_params["obs_error"], rel=0.1)
 
 
 def test_predict(fitted_linear_model_instance):
