@@ -10,9 +10,7 @@ addopts = [
 filterwarnings =[
   "error",
   "ignore::UserWarning:arviz.data.inference_data",
-  'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8)\b).*:DeprecationWarning',
-  "ignore::DeprecationWarning:.*numpy.core.fromnumeric*",
-  "ignore::DeprecationWarning:.*numpy.core.numerictypes*"
+  'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8|np\.find_common_type|np\.cumproduct)\b).*:DeprecationWarning',
 ]
 
 [tool.black]
