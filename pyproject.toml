@@ -7,6 +7,19 @@ addopts = [
   "--ignore=pymc_experimental/model_builder.py"
 ]
 
+filterwarnings =[
+  "error",
+  "ignore::DeprecationWarning:numpy.core.fromnumeric",
+  "ignore:::arviz.*",
+  "ignore:DeprecationWarning",
+  'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8)\b).*:DeprecationWarning',
+  "ignore::UserWarning:arviz.data.inference_data",
+  "ignore::DeprecationWarning:pkg_resources",
+  'ignore:np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.:DeprecationWarning',
+  'ignore:`cumproduct` is deprecated as of NumPy 1.25.0, and will be removed in NumPy 2.0. Please use `cumprod` instead.:DeprecationWarning',
+  'ignore:`product` is deprecated as of NumPy 1.25.0, and will be removed in NumPy 2.0. Please use `prod` instead.:DeprecationWarning',
+  'ignore:ml_dtypes.float8_e4m3b11 is deprecated. Use ml_dtypes.float8_e4m3b11fnuz:DeprecationWarning',
+]
 
 [tool.black]
 line-length = 100
@@ -20,6 +33,7 @@ exclude_lines = [
 
 [tool.isort]
 profile = "black"
+lines_between_types = 1
 
 [tool.nbqa.mutate]
 isort = 1
