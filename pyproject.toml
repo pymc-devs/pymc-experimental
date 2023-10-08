@@ -11,8 +11,8 @@ filterwarnings =[
   "error",
   "ignore::UserWarning:arviz.data.inference_data",
   'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8)\b).*:DeprecationWarning',
-  'ignore::DeprecationWarning:.*numpy.core.fromnumeric*',
-  'ignore::DeprecationWarning:.*numpy.core.numerictypes*'
+  "ignore::DeprecationWarning:.*numpy.core.fromnumeric*",
+  "ignore::DeprecationWarning:.*numpy.core.numerictypes*"
 ]
 
 [tool.black]
@@ -27,7 +27,7 @@ exclude_lines = [
 
 [tool.isort]
 profile = "black"
-lines_between_types = 1
+# lines_between_types = 1
 
 [tool.nbqa.mutate]
 isort = 1
