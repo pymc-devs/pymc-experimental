@@ -10,7 +10,7 @@ addopts = [
 filterwarnings =[
   "error",
   "ignore::UserWarning:arviz.data.inference_data",
-  'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8|np\.find_common_type|cumproduct)\b).*:DeprecationWarning',
+  'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8|np\.find_common_type|cumproduct|product)\b).*:DeprecationWarning',
 ]
 
 [tool.black]
