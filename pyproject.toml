@@ -7,6 +7,14 @@ addopts = [
   "--ignore=pymc_experimental/model_builder.py"
 ]
 
+filterwarnings =[
+  "error",
+  # Raised by arviz when the model_builder class adds non-standard group names to InferenceData
+  "ignore::UserWarning:arviz.data.inference_data",
+
+  # bool8, find_common_type, cumproduct, and product had deprecation warnings added in numpy 1.25
+  'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8|np\.find_common_type|cumproduct|product)\b).*:DeprecationWarning',
+]
 
 [tool.black]
 line-length = 100
@@ -20,6 +28,7 @@ exclude_lines = [
 
 [tool.isort]
 profile = "black"
+# lines_between_types = 1
 
 [tool.nbqa.mutate]
 isort = 1
