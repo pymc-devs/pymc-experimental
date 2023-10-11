@@ -13,6 +13,8 @@
 #   limitations under the License.
 
 
+#   Modified by Stijn de Boer
+
 import hashlib
 import json
 import warnings
