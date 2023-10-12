@@ -17,7 +17,8 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 from pymc.gp.util import JITTER_DEFAULT, stabilize
-from pytensor.tensor.linalg import cholesky, solve_triangular
+from pytensor.tensor.linalg import cholesky
+from pytensor.tensor.slinalg import solve_triangular
 
 solve_lower = partial(solve_triangular, lower=True)
 solve_upper = partial(solve_triangular, lower=False)
