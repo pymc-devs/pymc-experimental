@@ -14,6 +14,7 @@
 import platform
 
 import numpy as np
+import numpy.testing as npt
 import pymc as pm
 
 # general imports
@@ -46,7 +47,7 @@ class TestPCPriorStudentT_dof:
     numerical approximation out to the tail.
     """
 
-    @pytest.mark.parameterize(
+    @pytest.mark.parametrize(
         "test_case",
         [
             {"U": 30, "alpha": 0.5, "dof": 5, "inla_result": -4.792407},
@@ -60,7 +61,7 @@ class TestPCPriorStudentT_dof:
     )
     def test_logp(self, test_case):
         d = PCPriorStudentT_dof.dist(U=test_case["U"], alpha=test_case["alpha"])
-        npt.assert_allclose(pm.logp(d, test_case["dof"]), test_case["inla_result"], rtol=0.1)
+        npt.assert_allclose(pm.logp(d, test_case["dof"]).eval(), test_case["inla_result"], rtol=0.1)
 
 
 class TestGenExtremeClass:
