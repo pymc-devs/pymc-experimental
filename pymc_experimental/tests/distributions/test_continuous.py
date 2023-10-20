@@ -35,7 +35,32 @@ from pymc.testing import (
 )
 
 # the distributions to be tested
-from pymc_experimental.distributions import GenExtreme
+from pymc_experimental.distributions import GenExtreme, PCPriorStudentT_dof
+
+
+class TestPCPriorStudentT_dof:
+    """The test compares the result to what's implemented in INLA.  Since it's a specialized
+    distribution the user shouldn't ever draw random samples from it, calculate the logcdf, or
+    any of that.  The log-probability won't match up exactly to INLA.  INLA uses a numeric
+    approximation and this implementation uses an exact solution in the relevant domain and a
+    numerical approximation out to the tail.
+    """
+
+    @pytest.mark.parameterize(
+        "test_case",
+        [
+            {"U": 30, "alpha": 0.5, "dof": 5, "inla_result": -4.792407},
+            {"U": 30, "alpha": 0.5, "dof": 5000, "inla_result": -14.03713},
+            {"U": 30, "alpha": 0.5, "dof": 1, "inla_result": -np.inf},  # actually INLA throws error
+            {"U": 30, "alpha": 0.1, "dof": 5, "inla_result": -15.25691},
+            {"U": 30, "alpha": 0.9, "dof": 5, "inla_result": -2.416043},
+            {"U": 5, "alpha": 0.99, "dof": 5, "inla_result": -5.992945},
+            {"U": 5, "alpha": 0.01, "dof": 5, "inla_result": -4.460736},
+        ],
+    )
+    def test_logp(self, test_case):
+        d = PCPriorStudentT_dof.dist(U=test_case["U"], alpha=test_case["alpha"])
+        npt.assert_allclose(pm.logp(d, test_case["dof"]), test_case["inla_result"], rtol=0.1)
 
 
 class TestGenExtremeClass:
