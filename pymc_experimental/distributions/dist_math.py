@@ -14,38 +14,30 @@
 
 # coding: utf-8
 
-
-from typing import List, Tuple, Union
-
 import numpy as np
 import pytensor.tensor as pt
-from pymc.distributions.dist_math import check_parameters, SplineWrapper
-from pymc.distributions.distribution import Continuous
-from pymc.distributions.shape_utils import rv_size_is_none
-from pymc.pytensorf import floatX
-from pytensor.tensor.random.op import RandomVariable
-from pytensor.tensor.var import TensorVariable
-from scipy import stats
+from pymc.distributions.dist_math import SplineWrapper
 from scipy.interpolate import UnivariateSpline
 
 
 def studentt_kld_distance(nu):
     """
-    2 * sqrt(KL divergence divergence) between a student t and a normal random variable.  Derived 
+    2 * sqrt(KL divergence divergence) between a student t and a normal random variable.  Derived
     by Tang in https://arxiv.org/abs/1811.08042.
     """
     return pt.sqrt(
-        1 + pt.log(2 * pt.reciprocal(nu - 2))
+        1
+        + pt.log(2 * pt.reciprocal(nu - 2))
         + 2 * pt.gammaln((nu + 1) / 2)
         - 2 * pt.gammaln(nu / 2)
         - (nu + 1) * (pt.digamma((nu + 1) / 2) - pt.digamma(nu / 2))
     )
-    
+
 
 def tri_gamma_approx(x):
-    """ Derivative of the digamma function, or second derivative of the gamma function.  This is a 
+    """Derivative of the digamma function, or second derivative of the gamma function.  This is a
     series expansion taken from wikipedia: https://en.wikipedia.org/wiki/Trigamma_function.  When
-    the trigamma function in pytensor implements a gradient this function can be removed and 
+    the trigamma function in pytensor implements a gradient this function can be removed and
     replaced.
     """
     return (
@@ -62,13 +54,15 @@ def tri_gamma_approx(x):
 
 
 def pc_prior_studentt_logp(nu, lam):
-    """ The log probability density function for the PC prior for the degrees of freedom in a
+    """The log probability density function for the PC prior for the degrees of freedom in a
     student t likelihood. Derived by Tang in https://arxiv.org/abs/1811.08042.
     """
     return (
         pt.log(lam)
-        + pt.log((1 / (nu - 2)) + ((nu + 1) / 2)
-                 * (tri_gamma_approx((nu + 1) / 2) - tri_gamma_approx(nu / 2)))
+        + pt.log(
+            (1 / (nu - 2))
+            + ((nu + 1) / 2) * (tri_gamma_approx((nu + 1) / 2) - tri_gamma_approx(nu / 2))
+        )
         - pt.log(4 * studentt_kld_distance(nu))
         - lam * studentt_kld_distance(nu)
         + pt.log(2)
@@ -76,28 +70,31 @@ def pc_prior_studentt_logp(nu, lam):
 
 
 def _make_pct_inv_func():
-    """ This function constructs a numerical approximation to the inverse of the KLD distance 
+    """This function constructs a numerical approximation to the inverse of the KLD distance
     function, `studentt_kld_distance`.  It does a spline fit for degrees of freedom values
     from 2 + 1e-6 to 4000.  2 is the smallest valid value for the student t degrees of freedom, and
-    values above 4000 don't seem to change much (nearly Gaussian past 30).  It's then wrapped by 
+    values above 4000 don't seem to change much (nearly Gaussian past 30).  It's then wrapped by
     `SplineWrapper` so it can be used as a PyTensor op.
     """
     NU_MIN = 2.0 + 1e-6
-    nu = np.concatenate((
-        np.linspace(NU_MIN, 2.4, 2000),
-        np.linspace(2.4 + 1e-4, 4000, 10000)
-    ))
+    nu = np.concatenate((np.linspace(NU_MIN, 2.4, 2000), np.linspace(2.4 + 1e-4, 4000, 10000)))
     return UnivariateSpline(
-        studentt_kld_distance(nu).eval()[::-1], nu[::-1], ext=3, k=3, s=0,
+        studentt_kld_distance(nu).eval()[::-1],
+        nu[::-1],
+        ext=3,
+        k=3,
+        s=0,
     )
+
+
 pc_prior_studentt_kld_dist_inv_op = SplineWrapper(_make_pct_inv_func())
 
 
 def pc_negbinom_kld_distance_inv(alpha):
     """
-    The inverse of the KLD distance for the PC prior for alpha when doing regression with 
-    overdispersion and a negative binomial likelihood. This is the inverse and not the 
-    actual KLD distance because PyMC parameterizes alpha as 1 / alpha (higher alpha -> more 
+    The inverse of the KLD distance for the PC prior for alpha when doing regression with
+    overdispersion and a negative binomial likelihood. This is the inverse and not the
+    actual KLD distance because PyMC parameterizes alpha as 1 / alpha (higher alpha -> more
     Poisson, lower alpha -> more overdispersion).
     """
     return pt.sqrt(2.0 * (pt.log(1.0 / alpha) - pt.psi(1.0 / alpha)))
