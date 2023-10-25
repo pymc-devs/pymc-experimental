@@ -51,7 +51,7 @@ class TestPCPriorStudentT_dof:
         "test_case",
         [
             {"U": 30, "alpha": 0.5, "dof": 5, "inla_result": -4.792407},
-            {"U": 30, "alpha": 0.5, "dof": 5000, "inla_result": -14.03713},
+            {"U": 30, "alpha": 0.5, "dof": 500, "inla_result": -11.41061},
             {"U": 30, "alpha": 0.5, "dof": 1, "inla_result": -np.inf},  # actually INLA throws error
             {"U": 30, "alpha": 0.1, "dof": 5, "inla_result": -15.25691},
             {"U": 30, "alpha": 0.9, "dof": 5, "inla_result": -2.416043},
