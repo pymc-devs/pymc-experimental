@@ -88,13 +88,3 @@ def _make_pct_inv_func():
 
 
 pc_prior_studentt_kld_dist_inv_op = SplineWrapper(_make_pct_inv_func())
-
-
-def pc_negbinom_kld_distance_inv(alpha):
-    """
-    The inverse of the KLD distance for the PC prior for alpha when doing regression with
-    overdispersion and a negative binomial likelihood. This is the inverse and not the
-    actual KLD distance because PyMC parameterizes alpha as 1 / alpha (higher alpha -> more
-    Poisson, lower alpha -> more overdispersion).
-    """
-    return pt.sqrt(2.0 * (pt.log(1.0 / alpha) - pt.psi(1.0 / alpha)))
