@@ -43,8 +43,8 @@ class TestPCPriorStudentT_dof:
     """The test compares the result to what's implemented in INLA.  Since it's a specialized
     distribution the user shouldn't ever draw random samples from it, calculate the logcdf, or
     any of that.  The log-probability won't match up exactly to INLA.  INLA uses a numeric
-    approximation and this implementation uses an exact solution in the relevant domain and a
-    numerical approximation out to the tail.
+    approximation and this implementation uses an exact solution for the log-probability.  Some
+    numerical approximations are needed for drawing random samples though.
     """
 
     @pytest.mark.parametrize(
