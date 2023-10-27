@@ -19,7 +19,7 @@ from pymc.distributions.shape_utils import (
 )
 from pymc.logprob.abstract import _logprob
 from pymc.logprob.basic import logp
-from pymc.pytensorf import intX
+from pymc.pytensorf import constant_fold, intX
 from pymc.util import check_dist_not_registered
 from pytensor.graph.basic import Node
 from pytensor.tensor import TensorVariable
@@ -252,11 +252,16 @@ def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
     mc_logprob = logp(init_dist, value[..., :n_lags]).sum(axis=-1)
     mc_logprob += pt.log(P[tuple(indexes)]).sum(axis=-1)
 
+    # We cannot leave any RV in the logp graph, even if just for an assert
+    [init_dist_leading_dim] = constant_fold(
+        [pt.atleast_1d(init_dist).shape[0]], raise_not_constant=False
+    )
+
     return check_parameters(
         mc_logprob,
         pt.all(pt.eq(P.shape[-(n_lags + 1) :], P.shape[-1])),
         pt.all(pt.allclose(P.sum(axis=-1), 1.0)),
-        pt.eq(pt.atleast_1d(init_dist).shape[0], n_lags),
+        pt.eq(init_dist_leading_dim, n_lags),
         msg="Last (n_lags + 1) dimensions of P must be square, "
         "P must sum to 1 along the last axis, "
         "First dimension of init_dist must be n_lags",

@@ -90,10 +90,19 @@ class TestDiscreteMarkovRV:
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
         x0 = pm.Categorical.dist(p=np.ones(3) / 3)
 
-        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
+        value = np.array([0, 1, 2])
+        logp_expected = np.log((1 / 3) * 0.5 * 0.3)
 
-        logp = pm.logp(chain, [0, 1, 2]).eval()
-        assert logp == pytest.approx(np.log((1 / 3) * 0.5 * 0.3), rel=1e-6)
+        # Test dist directly
+        chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
+        logp_eval = pm.logp(chain, value).eval()
+        np.testing.assert_allclose(logp_eval, logp_expected, rtol=1e-6)
+
+        # Test via Model
+        with pm.Model() as m:
+            DiscreteMarkovChain("chain", P=P, init_dist=x0, steps=3)
+        model_logp_eval = m.compile_logp()({"chain": value})
+        np.testing.assert_allclose(model_logp_eval, logp_expected, rtol=1e-6)
 
     def test_logp_with_user_defined_init_dist(self):
         P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
