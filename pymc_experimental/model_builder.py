@@ -295,12 +295,18 @@ class ModelBuilder:
             raise RuntimeError(
                 "The model hasn't been built yet, call .build_model() first or call .fit() instead."
             )
-
         with self.model:
             sampler_args = {**self.sampler_config, **kwargs}
-            idata = pm.sample(**sampler_args)
-            idata.extend(pm.sample_prior_predictive())
-            idata.extend(pm.sample_posterior_predictive(idata))
+            if "step" in sampler_args:
+                step_function_name = sampler_args["step"]
+                step_function = getattr(pm, step_function_name)
+                sampler_args["step"] = step_function()
+                idata = pm.sample(**sampler_args)
+                idata.extend(pm.sample_prior_predictive())
+                idata.extend(pm.sample_posterior_predictive(idata))
+                sampler_args["step"] = step_function_name
+            else:
+                idata = pm.sample(**sampler_args)
 
         idata = self.set_idata_attrs(idata)
         return idata
