@@ -608,7 +608,7 @@ class ModelBuilder:
             self.set_idata_attrs(prior_pred)
             if extend_idata:
                 if self.idata is not None:
-                    self.idata.extend(prior_pred)
+                    self.idata.extend(prior_pred, join="right")
                 else:
                     self.idata = prior_pred
 
