@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
-from pytest import approx
 
 from pymc_experimental.linearmodel import LinearModel
 
@@ -65,8 +64,8 @@ def toy_y(toy_X, toy_actual_params):
 @pytest.fixture(scope="module")
 def fitted_linear_model_instance(toy_X, toy_y):
     sampler_config = {
-        "draws": 500,
-        "tune": 300,
+        "draws": 50,
+        "tune": 30,
         "chains": 2,
         "target_accept": 0.95,
     }
@@ -112,13 +111,21 @@ def test_fit(fitted_linear_model_instance):
     assert isinstance(post_pred, xr.DataArray)
 
 
-def test_parameter_fit(fitted_linear_model_instance, toy_actual_params):
+def test_parameter_fit(toy_X, toy_y, toy_actual_params):
     """Check that the fit model recovered the data-generating parameters."""
-    model = fitted_linear_model_instance
+    # Fit the model with a sufficient number of samples
+    sampler_config = {
+        "draws": 500,
+        "tune": 300,
+        "chains": 2,
+        "target_accept": 0.95,
+    }
+    model = LinearModel(sampler_config=sampler_config)
+    model.fit(toy_X, toy_y, random_seed=312)
     fit_params = model.idata.posterior.mean()
-    assert fit_params["intercept"] == approx(toy_actual_params["intercept"], rel=0.1)
-    assert fit_params["slope"] == approx(toy_actual_params["slope"], rel=0.1)
-    assert fit_params["σ_model_fmc"] == approx(toy_actual_params["obs_error"], rel=0.1)
+    np.testing.assert_allclose(fit_params["intercept"], toy_actual_params["intercept"], rtol=0.1)
+    np.testing.assert_allclose(fit_params["slope"], toy_actual_params["slope"], rtol=0.1)
+    np.testing.assert_allclose(fit_params["σ_model_fmc"], toy_actual_params["obs_error"], rtol=0.1)
 
 
 def test_predict(fitted_linear_model_instance):
