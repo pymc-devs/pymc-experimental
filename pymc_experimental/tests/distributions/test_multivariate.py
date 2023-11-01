@@ -1,6 +1,5 @@
 import numpy as np
 import pymc as pm
-import pytensor
 import pytest
 
 import pymc_experimental as pmx
@@ -96,10 +95,6 @@ class TestR2D2M2CP:
             phi_args_base["importance_concentration"] = 10
         return phi_args_base
 
-    @pytest.mark.skipif(
-        pytensor.config.floatX == "float32",
-        reason="pytensor.config.floatX == 'float32', https://github.com/pymc-devs/pymc/issues/6779",
-    )
     def test_init(
         self,
         dims,
