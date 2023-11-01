@@ -11,13 +11,10 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-import platform
-
 import numpy as np
 import pymc as pm
 
 # general imports
-import pytensor
 import pytest
 import scipy.stats.distributions as sp
 
@@ -47,10 +44,6 @@ class TestGenExtremeClass:
     pm.logp(GenExtreme.dist(mu=0.,sigma=1.,xi=0.5),value=-0.01)
     """
 
-    @pytest.mark.xfail(
-        condition=(pytensor.config.floatX == "float32"),
-        reason="PyMC underflows earlier than scipy on float32",
-    )
     def test_logp(self):
         def ref_logp(value, mu, sigma, xi):
             if 1 + xi * (value - mu) / sigma > 0:
@@ -69,13 +62,6 @@ class TestGenExtremeClass:
             ref_logp,
         )
 
-        if pytensor.config.floatX == "float32":
-            raise Exception("Flaky test: It passed this time, but XPASS is not allowed.")
-
-    @pytest.mark.skipif(
-        (pytensor.config.floatX == "float32" and platform.system() == "Windows"),
-        reason="Scipy gives different results on Windows and does not match with desired accuracy",
-    )
     def test_logcdf(self):
         def ref_logcdf(value, mu, sigma, xi):
             if 1 + xi * (value - mu) / sigma > 0:
