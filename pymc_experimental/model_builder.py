@@ -299,8 +299,8 @@ class ModelBuilder:
         with self.model:
             sampler_args = {**self.sampler_config, **kwargs}
             idata = pm.sample(**sampler_args)
-            idata.extend(pm.sample_prior_predictive())
-            idata.extend(pm.sample_posterior_predictive(idata))
+            idata.extend(pm.sample_prior_predictive(), join="right")
+            idata.extend(pm.sample_posterior_predictive(idata), join="right")
 
         idata = self.set_idata_attrs(idata)
         return idata
@@ -640,7 +640,7 @@ class ModelBuilder:
         with self.model:  # sample with new input data
             post_pred = pm.sample_posterior_predictive(self.idata, **kwargs)
             if extend_idata:
-                self.idata.extend(post_pred)
+                self.idata.extend(post_pred, join="right")
 
         posterior_predictive_samples = az.extract(
             post_pred, "posterior_predictive", combined=combined
