@@ -629,3 +629,47 @@ def test_data_container():
 
         ip = marginal_m.initial_point()
         np.testing.assert_allclose(logp_fn(ip), ref_logp_fn(ip))
+
+
+@pytest.mark.parametrize("univariate", (True, False))
+def test_vector_univariate_mixture(univariate):
+
+    with MarginalModel() as m:
+        idx = pm.Bernoulli("idx", p=0.5, shape=(2,) if univariate else ())
+
+        def dist(idx, size):
+            return pm.math.switch(
+                pm.math.eq(idx, 0),
+                pm.Normal.dist([-10, -10], 1),
+                pm.Normal.dist([10, 10], 1),
+            )
+
+        pm.CustomDist("norm", idx, dist=dist)
+
+    m.marginalize(idx)
+    logp_fn = m.compile_logp()
+
+    if univariate:
+        with pm.Model() as ref_m:
+            pm.NormalMixture("norm", w=[0.5, 0.5], mu=[[-10, 10], [-10, 10]], shape=(2,))
+    else:
+        with pm.Model() as ref_m:
+            pm.Mixture(
+                "norm",
+                w=[0.5, 0.5],
+                comp_dists=[
+                    pm.MvNormal.dist([-10, -10], np.eye(2)),
+                    pm.MvNormal.dist([10, 10], np.eye(2)),
+                ],
+                shape=(2,),
+            )
+    ref_logp_fn = ref_m.compile_logp()
+
+    for test_value in (
+        [-10, -10],
+        [10, 10],
+        [-10, 10],
+        [-10, 10],
+    ):
+        pt = {"norm": test_value}
+        np.testing.assert_allclose(logp_fn(pt), ref_logp_fn(pt))
