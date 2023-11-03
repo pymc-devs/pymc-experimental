@@ -31,6 +31,7 @@ Distributions
    Chi
    DiscreteMarkovChain
    GeneralizedPoisson
+   BetaNegativeBinomial
    GenExtreme
    R2D2M2CP
    histogram_approximation

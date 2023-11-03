@@ -14,7 +14,7 @@
 
 import numpy as np
 import pymc as pm
-from pymc.distributions.dist_math import check_parameters, factln, logpow
+from pymc.distributions.dist_math import check_parameters, factln, logpow, betaln 
 from pymc.distributions.shape_utils import rv_size_is_none
 from pytensor import tensor as pt
 from pytensor.tensor.random.op import RandomVariable
@@ -170,4 +170,89 @@ class GeneralizedPoisson(pm.distributions.Discrete):
             pt.abs(lam) <= 1,
             (-mu / 4) <= lam,
             msg="0 < mu, max(-1, -mu/4)) <= lam <= 1",
+        )
+
+
+class BetaNegativeBinomialRV(RandomVariable): 
+    name: str = "beta_negative_binomial"
+    ndim_supp: int = 0
+    ndims_params = [0, 0, 0]
+    dtype: str = "int64"
+    _print_name = ("BetaNegativeBinomial", "\\operatorname{BetaNegativeBinomial}")
+
+    @classmethod
+    def rng_fn(cls, rng, alpha, beta, r, size) -> np.ndarray:
+        alpha = np.asarray(alpha)
+        beta = np.asarray(beta)
+        r = np.asarray(r)
+
+        if size is not None:
+            dist_size = size
+        else:
+            dist_size = np.broadcast_shapes(alpha.shape, beta.shape, r.shape)
+
+        p = rng.beta(alpha, beta, size=dist_size)
+        return rng.negative_binomial(r, p, size=dist_size)
+    
+
+beta_negative_binomial = BetaNegativeBinomialRV()
+
+class BetaNegativeBinomial(pm.distributions.Discrete): 
+    R"""
+    Beta Negative Binomial distribution.
+
+    The pmf of this distribution is
+
+    .. math:: f(x \mid \alpha, \beta, r) = \frac{B(r + x, \alpha + \beta)}{B(r, \alpha)} \frac{\Gamma(x + \beta)}{x! \Gamma(\beta)}
+    ========  ======================================
+    Support   :math:`x \in \mathbb{N}_0`
+    ========  ======================================
+
+    Parameters
+    ----------
+    alpha : tensor_like of float
+    beta : tensor_like of float
+    r : tensor_like of float
+    """
+    rv_op = beta_negative_binomial
+
+    @classmethod
+    def dist(cls, alpha, beta, r, **kwargs):
+        alpha = pt.as_tensor_variable(alpha)
+        beta = pt.as_tensor_variable(beta)
+        r = pt.as_tensor_variable(r)
+        return super().dist([alpha, beta, r], **kwargs)
+    
+    def moment(rv, size, alpha, beta, r):
+        mean = (r * beta) / (alpha - 1)
+        mean = pt.switch(
+            pt.le(alpha, 1),
+            np.inf,
+            mean,
+        )
+        if not rv_size_is_none(size):
+            mean = pt.full(size, mean)
+
+        return mean
+    
+    def logp(value, alpha, beta, r): 
+        res = (
+            betaln(r + value, alpha + beta) 
+            - betaln(r, alpha) 
+            + pt.gammaln(value + beta) 
+            - factln(value) 
+            - pt.gammaln(beta)
+        )
+        res = pt.switch(
+            pt.lt(value, 0), 
+            -np.inf,
+            res,
+        )
+
+        return check_parameters(
+            res,
+            alpha > 0,
+            beta > 0,
+            r > 0,
+            msg="alpha > 0, beta > 0, r > 0",
         )

@@ -27,7 +27,7 @@ from pymc.testing import (
 )
 from pytensor import config
 
-from pymc_experimental.distributions import GeneralizedPoisson
+from pymc_experimental.distributions import GeneralizedPoisson, BetaNegativeBinomial
 
 
 class TestGeneralizedPoisson:
@@ -118,3 +118,43 @@ class TestGeneralizedPoisson:
         with pm.Model() as model:
             GeneralizedPoisson("x", mu=mu, lam=lam, size=size)
         assert_moment_is_expected(model, expected)
+
+
+class TestBetaNegativeBinomial: 
+    class TestRandomVariable(BaseTestDistributionRandom):
+        pymc_dist = BetaNegativeBinomial
+        pymc_dist_params = {"alpha": 10.0, "beta": 1.0, "r": 1.0}
+        expected_rv_op_params = {"alpha": 10.0, "beta": 1.0, "r": 1.0}
+        tests_to_run = [
+            "check_pymc_params_match_rv_op",
+            "check_rv_size",
+        ]
+
+        @pytest.mark.parametrize("r", (0.5, 1, 2))
+        @pytest.mark.parametrize("alpha", (2.5, 20, 50))
+        def test_random_beta_expected_moments(self, r, alpha):
+            beta = np.array([1, 5, 10])
+            dist = self.pymc_dist.dist(alpha=alpha, beta=beta, r=r, size=(10_000, len(beta)))
+            draws = pm.draw(dist, random_seed=42)
+
+            expected_mean = (r * beta) / (alpha - 1)
+            np.testing.assert_allclose(draws.mean(0), expected_mean, rtol=1e-1)
+
+            with pm.Model(): 
+                BetaNegativeBinomial("x", alpha=alpha, beta=beta, r=r)
+                trace = pm.sample(chains=4, draws=2_500, random_seed=42).posterior
+
+            np.testing.assert_allclose(trace["x"].mean(("chain", "draw")), expected_mean, rtol=0.2)
+
+        @pytest.mark.parametrize(
+            "alpha, beta, r, size, expected",
+            [
+                (11, [1, 5, 10], 1, None, np.round([1 / 10, 5 / 10, 10 / 10])),
+                ([5, 10], 1, 1, (4, 2), np.full((4, 2), np.round(1 / np.array([5, 10])))),
+            ],
+        )
+        def test_moment(self, alpha, beta, r, size, expected):
+            with pm.Model() as model:
+                BetaNegativeBinomial("x", alpha=alpha, beta=beta, r=r, size=size)
+
+            assert_moment_is_expected(model, expected)
