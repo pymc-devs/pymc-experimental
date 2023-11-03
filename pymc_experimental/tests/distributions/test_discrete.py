@@ -27,7 +27,7 @@ from pymc.testing import (
 )
 from pytensor import config
 
-from pymc_experimental.distributions import GeneralizedPoisson, BetaNegativeBinomial
+from pymc_experimental.distributions import BetaNegativeBinomial, GeneralizedPoisson
 
 
 class TestGeneralizedPoisson:
@@ -120,7 +120,7 @@ class TestGeneralizedPoisson:
         assert_moment_is_expected(model, expected)
 
 
-class TestBetaNegativeBinomial: 
+class TestBetaNegativeBinomial:
     class TestRandomVariable(BaseTestDistributionRandom):
         pymc_dist = BetaNegativeBinomial
         pymc_dist_params = {"alpha": 10.0, "beta": 1.0, "r": 1.0}
@@ -140,7 +140,7 @@ class TestBetaNegativeBinomial:
             expected_mean = (r * beta) / (alpha - 1)
             np.testing.assert_allclose(draws.mean(0), expected_mean, rtol=1e-1)
 
-            with pm.Model(): 
+            with pm.Model():
                 BetaNegativeBinomial("x", alpha=alpha, beta=beta, r=r)
                 trace = pm.sample(chains=4, draws=2_500, random_seed=42).posterior
 
