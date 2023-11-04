@@ -173,31 +173,6 @@ class GeneralizedPoisson(pm.distributions.Discrete):
         )
 
 
-class BetaNegativeBinomialRV(RandomVariable):
-    name: str = "beta_negative_binomial"
-    ndim_supp: int = 0
-    ndims_params = [0, 0, 0]
-    dtype: str = "int64"
-    _print_name = ("BetaNegativeBinomial", "\\operatorname{BetaNegativeBinomial}")
-
-    @classmethod
-    def rng_fn(cls, rng, alpha, beta, r, size) -> np.ndarray:
-        alpha = np.asarray(alpha)
-        beta = np.asarray(beta)
-        r = np.asarray(r)
-
-        if size is not None:
-            dist_size = size
-        else:
-            dist_size = np.broadcast_shapes(alpha.shape, beta.shape, r.shape)
-
-        p = rng.beta(alpha, beta, size=dist_size)
-        return rng.negative_binomial(r, p, size=dist_size)
-
-
-beta_negative_binomial = BetaNegativeBinomialRV()
-
-
 class BetaNegativeBinomial(pm.distributions.Discrete):
     R"""
     Beta Negative Binomial distribution.
@@ -215,28 +190,14 @@ class BetaNegativeBinomial(pm.distributions.Discrete):
     beta : tensor_like of float
     r : tensor_like of float
     """
-    rv_op = beta_negative_binomial
 
-    @classmethod
-    def dist(cls, alpha, beta, r, **kwargs):
-        alpha = pt.as_tensor_variable(alpha)
-        beta = pt.as_tensor_variable(beta)
-        r = pt.as_tensor_variable(r)
-        return super().dist([alpha, beta, r], **kwargs)
+    @staticmethod
+    def beta_negative_binomial_dist(alpha, beta, r, size):
+        p = pm.Beta.dist(alpha, beta, size=size)
+        return pm.NegativeBinomial.dist(p, r, size=size)
 
-    def moment(rv, size, alpha, beta, r):
-        mean = (r * beta) / (alpha - 1)
-        mean = pt.switch(
-            pt.le(alpha, 1),
-            np.inf,
-            mean,
-        )
-        if not rv_size_is_none(size):
-            mean = pt.full(size, mean)
-
-        return mean
-
-    def logp(value, alpha, beta, r):
+    @staticmethod
+    def beta_negative_binomial_logp(value, alpha, beta, r):
         res = (
             betaln(r + value, alpha + beta)
             - betaln(r, alpha)
@@ -256,4 +217,28 @@ class BetaNegativeBinomial(pm.distributions.Discrete):
             beta > 0,
             r > 0,
             msg="alpha > 0, beta > 0, r > 0",
+        )
+
+    def __new__(cls, name, alpha, beta, r, **kwargs):
+        return pm.CustomDist(
+            name,
+            alpha,
+            beta,
+            r,
+            dist=cls.beta_negative_binomial_dist,
+            logp=cls.beta_negative_binomial_logp,
+            class_name="BetaNegativeBinomial",
+            **kwargs
+        )
+
+    @classmethod
+    def dist(cls, alpha, beta, r, **kwargs):
+        return pm.CustomDist.dist(
+            alpha,
+            beta,
+            r,
+            dist=cls.beta_negative_binomial_dist,
+            logp=cls.beta_negative_binomial_logp,
+            class_name="BetaNegativeBinomial",
+            **kwargs
         )
