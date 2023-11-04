@@ -179,16 +179,28 @@ class BetaNegativeBinomial(pm.distributions.Discrete):
 
     The pmf of this distribution is
 
-    .. math:: f(x \mid \alpha, \beta, r) = \frac{B(r + x, \alpha + \beta)}{B(r, \alpha)} \frac{\Gamma(x + \beta)}{x! \Gamma(\beta)}
+    .. math::
+
+        f(x \mid \alpha, \beta, r) = \frac{B(r + x, \alpha + \beta)}{B(r, \alpha)} \frac{\Gamma(x + \beta)}{x! \Gamma(\beta)}
+
+    where :math:`B` is the Beta function and :math:`\Gamma` is the Gamma function.
+
+    For more information, see https://en.wikipedia.org/wiki/Beta_negative_binomial_distribution.
+
     ========  ======================================
     Support   :math:`x \in \mathbb{N}_0`
+    Mean      :math:`{\begin{cases}{\frac  {r\beta }{\alpha -1}}&{\text{if}}\ \alpha >1\\\infty &{\text{otherwise}}\ \end{cases}}`
+    Variance  :math:`{\displaystyle {\begin{cases}{\frac {r\beta (r+\alpha -1)(\beta +\alpha -1)}{(\alpha -2){(\alpha -1)}^{2}}}&{\text{if}}\ \alpha >2\\\infty &{\text{otherwise}}\ \end{cases}}}`
     ========  ======================================
 
     Parameters
     ----------
     alpha : tensor_like of float
+        shape of the beta distribution (alpha > 0).
     beta : tensor_like of float
+        shape of the beta distribution (beta > 0).
     r : tensor_like of float
+        number of successes until the experiment is stopped (integer but can be extended to real)
     """
 
     @staticmethod
