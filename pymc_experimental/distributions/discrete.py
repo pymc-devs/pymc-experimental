@@ -185,6 +185,39 @@ class BetaNegativeBinomial(pm.distributions.Discrete):
 
     where :math:`B` is the Beta function and :math:`\Gamma` is the Gamma function.
 
+    .. plot::
+        :context: close-figs
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from scipy.special import betaln, gammaln
+        def factln(x):
+            return gammaln(x + 1)
+        def logp(x, alpha, beta, r):
+            return (
+                betaln(r + x, alpha + beta)
+                - betaln(r, alpha)
+                + gammaln(x + beta)
+                - factln(x)
+                - gammaln(beta)
+            )
+        plt.style.use('arviz-darkgrid')
+        x = np.arange(0, 25)
+        params = [
+            (1, 1, 1),
+            (1, 1, 10),
+            (1, 10, 1),
+            (1, 10, 10),
+            (10, 10, 10),
+        ]
+        for alpha, beta, r in params:
+            pmf = np.exp(logp(x, alpha, beta, r))
+            plt.plot(x, pmf, "-o", label=r'$alpha$ = {}, $beta$ = {}, $r$ = {}'.format(alpha, beta, r))
+        plt.xlabel('x', fontsize=12)
+        plt.ylabel('f(x)', fontsize=12)
+        plt.legend(loc=1)
+        plt.show()
+
     For more information, see https://en.wikipedia.org/wiki/Beta_negative_binomial_distribution.
 
     ========  ======================================
@@ -240,7 +273,7 @@ class BetaNegativeBinomial(pm.distributions.Discrete):
             dist=cls.beta_negative_binomial_dist,
             logp=cls.beta_negative_binomial_logp,
             class_name="BetaNegativeBinomial",
-            **kwargs
+            **kwargs,
         )
 
     @classmethod
@@ -252,5 +285,5 @@ class BetaNegativeBinomial(pm.distributions.Discrete):
             dist=cls.beta_negative_binomial_dist,
             logp=cls.beta_negative_binomial_logp,
             class_name="BetaNegativeBinomial",
-            **kwargs
+            **kwargs,
         )
