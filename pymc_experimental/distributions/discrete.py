@@ -184,9 +184,9 @@ class Skellam:
 
     .. math::
 
-        e^{{-(\mu _{1}\!+\!\mu _{2})}}\left({\frac  {\mu _{1}}{\mu _{2}}}\right)^{{k/2}}\!\!I_{{k}}(2{\sqrt  {\mu _{1}\mu _{2}}})
+        f(x | \mu_1, \mu_2) = e^{{-(\mu _{1}\!+\!\mu _{2})}}\left({\frac  {\mu _{1}}{\mu _{2}}}\right)^{{x/2}}\!\!I_{{x}}(2{\sqrt  {\mu _{1}\mu _{2}}})
 
-    where :math:`I_{k}` is the modified Bessel function of the first kind of order :math:`k`.
+    where :math:`I_{x}` is the modified Bessel function of the first kind of order :math:`x`.
 
     Read more about the Skellam distribution at https://en.wikipedia.org/wiki/Skellam_distribution
 
@@ -213,7 +213,7 @@ class Skellam:
         plt.show()
 
     ========  ======================================
-    Support   :math:`k \in \mathbb{Z}`
+    Support   :math:`x \in \mathbb{Z}`
     Mean      :math:`\mu_{1} - \mu_{2}`
     Variance  :math:`\mu_{1} + \mu_{2}`
     ========  ======================================
@@ -259,5 +259,10 @@ class Skellam:
     @classmethod
     def dist(cls, mu1, mu2, **kwargs):
         return pm.CustomDist.dist(
-            mu1, mu2, dist=cls.skellam_dist, logp=cls.skellam_logp, class_name="Skellam", **kwargs
+            mu1,
+            mu2,
+            dist=cls.skellam_dist,
+            logp=cls.skellam_logp,
+            class_name="Skellam",
+            **kwargs,
         )
