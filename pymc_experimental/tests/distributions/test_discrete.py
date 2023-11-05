@@ -123,7 +123,7 @@ class TestGeneralizedPoisson:
         assert_moment_is_expected(model, expected)
 
 
-class TestBetaNegativeBinomialClass:
+class TestBetaNegativeBinomial:
     """
     Wrapper class so that tests of experimental additions can be dropped into
     PyMC directly on adoption.
