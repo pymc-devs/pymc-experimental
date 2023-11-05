@@ -33,6 +33,7 @@ Distributions
    GeneralizedPoisson
    GenExtreme
    R2D2M2CP
+   Skellam
    histogram_approximation
 
 
