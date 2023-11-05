@@ -173,7 +173,7 @@ class GeneralizedPoisson(pm.distributions.Discrete):
         )
 
 
-class BetaNegativeBinomial(pm.distributions.Discrete):
+class BetaNegativeBinomial:
     R"""
     Beta Negative Binomial distribution.
 
