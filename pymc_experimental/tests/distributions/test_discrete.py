@@ -122,7 +122,7 @@ class TestGeneralizedPoisson:
         assert_moment_is_expected(model, expected)
 
 
-class TestSkellam:
+class TestSkellamClass:
     def test_logp(self):
         check_logp(
             Skellam,
