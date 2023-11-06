@@ -171,3 +171,98 @@ class GeneralizedPoisson(pm.distributions.Discrete):
             (-mu / 4) <= lam,
             msg="0 < mu, max(-1, -mu/4)) <= lam <= 1",
         )
+
+
+class Skellam:
+    R"""
+    Skellam distribution.
+
+    The Skellam distribution is the distribution of the difference of two
+    Poisson random variables.
+
+    The pmf of this distribution is
+
+    .. math::
+
+        f(x | \mu_1, \mu_2) = e^{{-(\mu _{1}\!+\!\mu _{2})}}\left({\frac  {\mu _{1}}{\mu _{2}}}\right)^{{x/2}}\!\!I_{{x}}(2{\sqrt  {\mu _{1}\mu _{2}}})
+
+    where :math:`I_{x}` is the modified Bessel function of the first kind of order :math:`x`.
+
+    Read more about the Skellam distribution at https://en.wikipedia.org/wiki/Skellam_distribution
+
+    .. plot::
+        :context: close-figs
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import scipy.stats as st
+        import arviz as az
+        plt.style.use('arviz-darkgrid')
+        x = np.arange(-15, 15)
+        params = [
+            (1, 1),
+            (5, 5),
+            (5, 1),
+        ]
+        for mu1, mu2 in params:
+            pmf = st.skellam.pmf(x, mu1, mu2)
+            plt.plot(x, pmf, "-o", label=r'$\mu_1$ = {}, $\mu_2$ = {}'.format(mu1, mu2))
+        plt.xlabel('x', fontsize=12)
+        plt.ylabel('f(x)', fontsize=12)
+        plt.legend(loc=1)
+        plt.show()
+
+    ========  ======================================
+    Support   :math:`x \in \mathbb{Z}`
+    Mean      :math:`\mu_{1} - \mu_{2}`
+    Variance  :math:`\mu_{1} + \mu_{2}`
+    ========  ======================================
+
+    Parameters
+    ----------
+    mu1 : tensor_like of float
+        Mean parameter (mu1 >= 0).
+    mu2 : tensor_like of float
+        Mean parameter (mu2 >= 0).
+    """
+
+    @staticmethod
+    def skellam_dist(mu1, mu2, size):
+        return pm.Poisson.dist(mu=mu1, size=size) - pm.Poisson.dist(mu=mu2, size=size)
+
+    @staticmethod
+    def skellam_logp(value, mu1, mu2):
+        res = (
+            -mu1
+            - mu2
+            + 0.5 * value * (pt.log(mu1) - pt.log(mu2))
+            + pt.log(pt.iv(value, 2 * pt.sqrt(mu1 * mu2)))
+        )
+        return check_parameters(
+            res,
+            mu1 >= 0,
+            mu2 >= 0,
+            msg="mu1 >= 0, mu2 >= 0",
+        )
+
+    def __new__(cls, name, mu1, mu2, **kwargs):
+        return pm.CustomDist(
+            name,
+            mu1,
+            mu2,
+            dist=cls.skellam_dist,
+            logp=cls.skellam_logp,
+            class_name="Skellam",
+            **kwargs,
+        )
+
+    @classmethod
+    def dist(cls, mu1, mu2, **kwargs):
+        return pm.CustomDist.dist(
+            mu1,
+            mu2,
+            dist=cls.skellam_dist,
+            logp=cls.skellam_logp,
+            class_name="Skellam",
+            **kwargs,
+        )
