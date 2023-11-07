@@ -280,3 +280,109 @@ class Chi:
     @classmethod
     def dist(cls, nu, **kwargs):
         return CustomDist.dist(nu, dist=cls.chi_dist, class_name="Chi", **kwargs)
+
+
+class Maxwell:
+    R"""
+    The Maxwell-Boltzmann distribution
+
+    The pdf of this distribution is
+
+    .. math::
+
+       f(x \mid a) = {\displaystyle {\sqrt {\frac {2}{\pi }}}\,{\frac {x^{2}}{a^{3}}}\,\exp \left({\frac {-x^{2}}{2a^{2}}}\right)}
+
+    Read more about it on `Wikipedia <https://en.wikipedia.org/wiki/Maxwell%E2%80%93Boltzmann_distribution>`_
+
+    .. plot::
+        :context: close-figs
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import scipy.stats as st
+        import arviz as az
+        plt.style.use('arviz-darkgrid')
+        x = np.linspace(0, 20, 200)
+        for a in [1, 2, 5]:
+            pdf = st.maxwell.pdf(x, scale=a)
+            plt.plot(x, pdf, label=r'$a$ = {}'.format(a))
+        plt.xlabel('x', fontsize=12)
+        plt.ylabel('f(x)', fontsize=12)
+        plt.legend(loc=1)
+        plt.show()
+
+    ========  =========================================================================
+    Support   :math:`x \in (0, \infty)`
+    Mean      :math:`2a \sqrt{\frac{2}{\pi}}`
+    Variance  :math:`\frac{a^2(3 \pi - 8)}{\pi}`
+    ========  =========================================================================
+
+    Parameters
+    ----------
+    a : tensor_like of float
+        Scale parameter (a > 0).
+
+    """
+
+    @staticmethod
+    def maxwell_dist(a: TensorVariable, size: TensorVariable) -> TensorVariable:
+        return Chi.dist(nu=3, size=size) * a
+
+    @staticmethod
+    def maxwell_logp(value, a):
+        res = (
+            pt.log(pt.sqrt(2.0 / pt.pi))
+            + 2 * pt.log(value)
+            - 3 * pt.log(a)
+            - pt.sqr(value) / (2 * pt.sqr(a))
+        )
+        res = pt.switch(
+            value > 0,
+            res,
+            -pt.inf,
+        )
+        return check_parameters(
+            res,
+            a > 0,
+            msg="a > 0",
+        )
+
+    @staticmethod
+    def maxwell_logcdf(value, a):
+        res = pt.erf(value / (pt.sqrt(2) * a)) - pt.sqrt(2.0 / pt.pi) * (value / a) * pt.exp(
+            -pt.sqr(value) / (2 * pt.sqr(a))
+        )
+        res = pt.log(res)
+
+        res = pt.switch(
+            value > 0,
+            res,
+            -pt.inf,
+        )
+        return check_parameters(
+            res,
+            a > 0,
+            msg="a > 0",
+        )
+
+    def __new__(cls, name, a, **kwargs):
+        return CustomDist(
+            name,
+            a,
+            dist=cls.maxwell_dist,
+            logp=cls.maxwell_logp,
+            logcdf=cls.maxwell_logcdf,
+            class_name="Maxwell",
+            **kwargs,
+        )
+
+    @classmethod
+    def dist(cls, a, **kwargs):
+        return CustomDist.dist(
+            a,
+            dist=cls.maxwell_dist,
+            logp=cls.maxwell_logp,
+            logcdf=cls.maxwell_logcdf,
+            class_name="Maxwell",
+            **kwargs,
+        )
