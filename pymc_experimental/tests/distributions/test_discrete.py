@@ -21,13 +21,15 @@ from pymc.logprob.utils import ParameterValueError
 from pymc.testing import (
     BaseTestDistributionRandom,
     Domain,
+    I,
     Rplus,
     assert_moment_is_expected,
+    check_logp,
     discrete_random_tester,
 )
 from pytensor import config
 
-from pymc_experimental.distributions import BetaNegativeBinomial, GeneralizedPoisson
+from pymc_experimental.distributions import BetaNegativeBinomial, GeneralizedPoisson, Skellam
 
 
 class TestGeneralizedPoisson:
@@ -119,7 +121,7 @@ class TestGeneralizedPoisson:
             GeneralizedPoisson("x", mu=mu, lam=lam, size=size)
         assert_moment_is_expected(model, expected)
 
-
+        
 class TestBetaNegativeBinomial:
     """
     Wrapper class so that tests of experimental additions can be dropped into
@@ -187,3 +189,13 @@ class TestBetaNegativeBinomial:
             np.testing.assert_allclose(
                 logp_fn(test_value, test_alpha, test_beta, test_r), expected_logp
             )
+           
+          
+class TestSkellam:
+    def test_logp(self):
+        check_logp(
+            Skellam,
+            I,
+            {"mu1": Rplus, "mu2": Rplus},
+            lambda value, mu1, mu2: scipy.stats.skellam.logpmf(value, mu1, mu2),
+        )
