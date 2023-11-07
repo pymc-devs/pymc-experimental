@@ -185,6 +185,8 @@ class BetaNegativeBinomial:
 
     where :math:`B` is the Beta function and :math:`\Gamma` is the Gamma function.
 
+    For more information, see https://en.wikipedia.org/wiki/Beta_negative_binomial_distribution.
+
     .. plot::
         :context: close-figs
 
@@ -218,14 +220,11 @@ class BetaNegativeBinomial:
         plt.legend(loc=1)
         plt.show()
 
-    For more information, see https://en.wikipedia.org/wiki/Beta_negative_binomial_distribution.
-
     ========  ======================================
     Support   :math:`x \in \mathbb{N}_0`
     Mean      :math:`{\begin{cases}{\frac  {r\beta }{\alpha -1}}&{\text{if}}\ \alpha >1\\\infty &{\text{otherwise}}\ \end{cases}}`
     Variance  :math:`{\displaystyle {\begin{cases}{\frac {r\beta (r+\alpha -1)(\beta +\alpha -1)}{(\alpha -2){(\alpha -1)}^{2}}}&{\text{if}}\ \alpha >2\\\infty &{\text{otherwise}}\ \end{cases}}}`
     ========  ======================================
-
 
     Parameters
     ----------
