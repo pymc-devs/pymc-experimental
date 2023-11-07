@@ -29,7 +29,11 @@ from pymc.testing import (
 )
 from pytensor import config
 
-from pymc_experimental.distributions import BetaNegativeBinomial, GeneralizedPoisson, Skellam
+from pymc_experimental.distributions import (
+    BetaNegativeBinomial,
+    GeneralizedPoisson,
+    Skellam,
+)
 
 
 class TestGeneralizedPoisson:
@@ -121,7 +125,7 @@ class TestGeneralizedPoisson:
             GeneralizedPoisson("x", mu=mu, lam=lam, size=size)
         assert_moment_is_expected(model, expected)
 
-        
+
 class TestBetaNegativeBinomial:
     """
     Wrapper class so that tests of experimental additions can be dropped into
@@ -189,8 +193,8 @@ class TestBetaNegativeBinomial:
             np.testing.assert_allclose(
                 logp_fn(test_value, test_alpha, test_beta, test_r), expected_logp
             )
-           
-          
+
+
 class TestSkellam:
     def test_logp(self):
         check_logp(

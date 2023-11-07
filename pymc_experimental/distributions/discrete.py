@@ -171,11 +171,12 @@ class GeneralizedPoisson(pm.distributions.Discrete):
             (-mu / 4) <= lam,
             msg="0 < mu, max(-1, -mu/4)) <= lam <= 1",
         )
-      
+
+
 class BetaNegativeBinomial:
     R"""
     Beta Negative Binomial distribution.
-    
+
     The pmf of this distribution is
 
     .. math::
@@ -183,7 +184,7 @@ class BetaNegativeBinomial:
         f(x \mid \alpha, \beta, r) = \frac{B(r + x, \alpha + \beta)}{B(r, \alpha)} \frac{\Gamma(x + \beta)}{x! \Gamma(\beta)}
 
     where :math:`B` is the Beta function and :math:`\Gamma` is the Gamma function.
-    
+
     .. plot::
         :context: close-figs
 
@@ -216,7 +217,7 @@ class BetaNegativeBinomial:
         plt.ylabel('f(x)', fontsize=12)
         plt.legend(loc=1)
         plt.show()
-        
+
     For more information, see https://en.wikipedia.org/wiki/Beta_negative_binomial_distribution.
 
     ========  ======================================
@@ -273,9 +274,9 @@ class BetaNegativeBinomial:
             dist=cls.beta_negative_binomial_dist,
             logp=cls.beta_negative_binomial_logp,
             class_name="BetaNegativeBinomial",
-            **kwargs 
+            **kwargs,
         )
-      
+
     @classmethod
     def dist(cls, alpha, beta, r, **kwargs):
         return pm.CustomDist.dist(
@@ -285,10 +286,10 @@ class BetaNegativeBinomial:
             dist=cls.beta_negative_binomial_dist,
             logp=cls.beta_negative_binomial_logp,
             class_name="BetaNegativeBinomial",
-          **kwargs
+            **kwargs,
         )
 
-          
+
 class Skellam:
     R"""
     Skellam distribution.
