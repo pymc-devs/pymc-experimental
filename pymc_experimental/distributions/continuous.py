@@ -328,50 +328,11 @@ class Maxwell:
     def maxwell_dist(a: TensorVariable, size: TensorVariable) -> TensorVariable:
         return Chi.dist(nu=3, size=size) * a
 
-    @staticmethod
-    def maxwell_logp(value, a):
-        res = (
-            pt.log(pt.sqrt(2.0 / pt.pi))
-            + 2 * pt.log(value)
-            - 3 * pt.log(a)
-            - pt.sqr(value) / (2 * pt.sqr(a))
-        )
-        res = pt.switch(
-            value > 0,
-            res,
-            -pt.inf,
-        )
-        return check_parameters(
-            res,
-            a > 0,
-            msg="a > 0",
-        )
-
-    @staticmethod
-    def maxwell_logcdf(value, a):
-        res = pt.erf(value / (pt.sqrt(2) * a)) - pt.sqrt(2.0 / pt.pi) * (value / a) * pt.exp(
-            -pt.sqr(value) / (2 * pt.sqr(a))
-        )
-        res = pt.log(res)
-
-        res = pt.switch(
-            value > 0,
-            res,
-            -pt.inf,
-        )
-        return check_parameters(
-            res,
-            a > 0,
-            msg="a > 0",
-        )
-
     def __new__(cls, name, a, **kwargs):
         return CustomDist(
             name,
             a,
             dist=cls.maxwell_dist,
-            logp=cls.maxwell_logp,
-            logcdf=cls.maxwell_logcdf,
             class_name="Maxwell",
             **kwargs,
         )
@@ -381,8 +342,6 @@ class Maxwell:
         return CustomDist.dist(
             a,
             dist=cls.maxwell_dist,
-            logp=cls.maxwell_logp,
-            logcdf=cls.maxwell_logcdf,
             class_name="Maxwell",
             **kwargs,
         )
