@@ -595,7 +595,7 @@ class ModelBuilder:
             Prior predictive samples for each input X_pred
         """
         if y_pred is None:
-            y_pred = np.zeros(len(X_pred))
+            y_pred = pd.Series(np.zeros(len(X_pred)), name=self.output_var)
         if samples is None:
             samples = self.sampler_config.get("draws", 500)
 
