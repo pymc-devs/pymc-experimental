@@ -28,10 +28,12 @@ from pymc_experimental.distributions.multivariate import R2D2M2CP
 from pymc_experimental.distributions.timeseries import DiscreteMarkovChain
 
 __all__ = [
+    "BetaNegativeBinomial",
     "DiscreteMarkovChain",
     "GeneralizedPoisson",
     "GenExtreme",
     "R2D2M2CP",
+    "Skellam",
     "histogram_approximation",
     "Chi",
 ]
