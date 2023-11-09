@@ -238,6 +238,9 @@ class BetaNegativeBinomial:
 
     @staticmethod
     def beta_negative_binomial_dist(alpha, beta, r, size):
+        if rv_size_is_none(size):
+            alpha, beta, r = pt.broadcast_arrays(alpha, beta, r)
+
         p = pm.Beta.dist(alpha, beta, size=size)
         return pm.NegativeBinomial.dist(p, r, size=size)
 
@@ -344,6 +347,9 @@ class Skellam:
 
     @staticmethod
     def skellam_dist(mu1, mu2, size):
+        if rv_size_is_none(size):
+            mu1, mu2 = pt.broadcast_arrays(mu1, mu2)
+
         return pm.Poisson.dist(mu=mu1, size=size) - pm.Poisson.dist(mu=mu2, size=size)
 
     @staticmethod
