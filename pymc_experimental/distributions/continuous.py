@@ -28,6 +28,7 @@ from pymc.distributions import transforms
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous
 from pymc.distributions.shape_utils import rv_size_is_none
+from pymc.logprob.utils import CheckParameterValue
 from pymc.pytensorf import floatX
 from pytensor.tensor.random.op import RandomVariable
 from pytensor.tensor.variable import TensorVariable
@@ -328,6 +329,8 @@ class Maxwell:
     def maxwell_dist(a: TensorVariable, size: TensorVariable) -> TensorVariable:
         if rv_size_is_none(size):
             size = a.shape
+
+        a = CheckParameterValue("a > 0")(a, pt.all(pt.gt(a, 0)))
 
         return Chi.dist(nu=3, size=size) * a
 
