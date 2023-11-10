@@ -127,7 +127,7 @@ class KarhunenLoeveExpansion(pm.gp.Latent):
         Kxxpinv = U @ pt.diag(1.0 / s) @ U.T
         mus = Kxs.T @ Kxxpinv @ f
         K = Kss - Kxs.T @ Kxxpinv @ Kxs
-        L = pm.gp.util.cholesky(pm.gp.util.stabilize(K, jitter))
+        L = cholesky(stabilize(K, jitter))
         return mus, L
 
     def conditional(self, name, Xnew, jitter=1e-6, **kwargs):
