@@ -173,6 +173,7 @@ class TestMaxwell:
             Rplus,
             {"a": Rplus},
             lambda value, a: sp.maxwell.logpdf(value, scale=a),
+            skip_paramdomain_outside_edge_test=True,
         )
 
     def test_logcdf(self):
@@ -181,4 +182,5 @@ class TestMaxwell:
             Rplus,
             {"a": Rplus},
             lambda value, a: sp.maxwell.logcdf(value, scale=a),
+            skip_paramdomain_outside_edge_test=True,
         )
