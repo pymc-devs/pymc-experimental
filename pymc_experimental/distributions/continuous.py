@@ -326,6 +326,8 @@ class Maxwell:
 
     @staticmethod
     def maxwell_dist(a: TensorVariable, size: TensorVariable) -> TensorVariable:
+        if rv_size_is_none(size):
+            size = a.shape
         return Chi.dist(nu=3, size=size) * a
 
     def __new__(cls, name, a, **kwargs):
