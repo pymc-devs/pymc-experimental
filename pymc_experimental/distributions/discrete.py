@@ -14,7 +14,7 @@
 
 import numpy as np
 import pymc as pm
-from pymc.distributions.dist_math import check_parameters, factln, logpow
+from pymc.distributions.dist_math import betaln, check_parameters, factln, logpow
 from pymc.distributions.shape_utils import rv_size_is_none
 from pytensor import tensor as pt
 from pytensor.tensor.random.op import RandomVariable
@@ -173,6 +173,125 @@ class GeneralizedPoisson(pm.distributions.Discrete):
         )
 
 
+class BetaNegativeBinomial:
+    R"""
+    Beta Negative Binomial distribution.
+
+    The pmf of this distribution is
+
+    .. math::
+
+        f(x \mid \alpha, \beta, r) = \frac{B(r + x, \alpha + \beta)}{B(r, \alpha)} \frac{\Gamma(x + \beta)}{x! \Gamma(\beta)}
+
+    where :math:`B` is the Beta function and :math:`\Gamma` is the Gamma function.
+
+    For more information, see https://en.wikipedia.org/wiki/Beta_negative_binomial_distribution.
+
+    .. plot::
+        :context: close-figs
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from scipy.special import betaln, gammaln
+        def factln(x):
+            return gammaln(x + 1)
+        def logp(x, alpha, beta, r):
+            return (
+                betaln(r + x, alpha + beta)
+                - betaln(r, alpha)
+                + gammaln(x + beta)
+                - factln(x)
+                - gammaln(beta)
+            )
+        plt.style.use('arviz-darkgrid')
+        x = np.arange(0, 25)
+        params = [
+            (1, 1, 1),
+            (1, 1, 10),
+            (1, 10, 1),
+            (1, 10, 10),
+            (10, 10, 10),
+        ]
+        for alpha, beta, r in params:
+            pmf = np.exp(logp(x, alpha, beta, r))
+            plt.plot(x, pmf, "-o", label=r'$alpha$ = {}, $beta$ = {}, $r$ = {}'.format(alpha, beta, r))
+        plt.xlabel('x', fontsize=12)
+        plt.ylabel('f(x)', fontsize=12)
+        plt.legend(loc=1)
+        plt.show()
+
+    ========  ======================================
+    Support   :math:`x \in \mathbb{N}_0`
+    Mean      :math:`{\begin{cases}{\frac  {r\beta }{\alpha -1}}&{\text{if}}\ \alpha >1\\\infty &{\text{otherwise}}\ \end{cases}}`
+    Variance  :math:`{\displaystyle {\begin{cases}{\frac {r\beta (r+\alpha -1)(\beta +\alpha -1)}{(\alpha -2){(\alpha -1)}^{2}}}&{\text{if}}\ \alpha >2\\\infty &{\text{otherwise}}\ \end{cases}}}`
+    ========  ======================================
+
+    Parameters
+    ----------
+    alpha : tensor_like of float
+        shape of the beta distribution (alpha > 0).
+    beta : tensor_like of float
+        shape of the beta distribution (beta > 0).
+    r : tensor_like of float
+        number of successes until the experiment is stopped (integer but can be extended to real)
+    """
+
+    @staticmethod
+    def beta_negative_binomial_dist(alpha, beta, r, size):
+        if rv_size_is_none(size):
+            alpha, beta, r = pt.broadcast_arrays(alpha, beta, r)
+
+        p = pm.Beta.dist(alpha, beta, size=size)
+        return pm.NegativeBinomial.dist(p, r, size=size)
+
+    @staticmethod
+    def beta_negative_binomial_logp(value, alpha, beta, r):
+        res = (
+            betaln(r + value, alpha + beta)
+            - betaln(r, alpha)
+            + pt.gammaln(value + beta)
+            - factln(value)
+            - pt.gammaln(beta)
+        )
+        res = pt.switch(
+            pt.lt(value, 0),
+            -np.inf,
+            res,
+        )
+
+        return check_parameters(
+            res,
+            alpha > 0,
+            beta > 0,
+            r > 0,
+            msg="alpha > 0, beta > 0, r > 0",
+        )
+
+    def __new__(cls, name, alpha, beta, r, **kwargs):
+        return pm.CustomDist(
+            name,
+            alpha,
+            beta,
+            r,
+            dist=cls.beta_negative_binomial_dist,
+            logp=cls.beta_negative_binomial_logp,
+            class_name="BetaNegativeBinomial",
+            **kwargs,
+        )
+
+    @classmethod
+    def dist(cls, alpha, beta, r, **kwargs):
+        return pm.CustomDist.dist(
+            alpha,
+            beta,
+            r,
+            dist=cls.beta_negative_binomial_dist,
+            logp=cls.beta_negative_binomial_logp,
+            class_name="BetaNegativeBinomial",
+            **kwargs,
+        )
+
+
 class Skellam:
     R"""
     Skellam distribution.
@@ -228,6 +347,9 @@ class Skellam:
 
     @staticmethod
     def skellam_dist(mu1, mu2, size):
+        if rv_size_is_none(size):
+            mu1, mu2 = pt.broadcast_arrays(mu1, mu2)
+
         return pm.Poisson.dist(mu=mu1, size=size) - pm.Poisson.dist(mu=mu2, size=size)
 
     @staticmethod

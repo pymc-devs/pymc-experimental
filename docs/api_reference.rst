@@ -32,6 +32,7 @@ Distributions
    Maxwell
    DiscreteMarkovChain
    GeneralizedPoisson
+   BetaNegativeBinomial
    GenExtreme
    R2D2M2CP
    Skellam

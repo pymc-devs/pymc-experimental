@@ -29,7 +29,11 @@ from pymc.testing import (
 )
 from pytensor import config
 
-from pymc_experimental.distributions import GeneralizedPoisson, Skellam
+from pymc_experimental.distributions import (
+    BetaNegativeBinomial,
+    GeneralizedPoisson,
+    Skellam,
+)
 
 
 class TestGeneralizedPoisson:
@@ -120,6 +124,75 @@ class TestGeneralizedPoisson:
         with pm.Model() as model:
             GeneralizedPoisson("x", mu=mu, lam=lam, size=size)
         assert_moment_is_expected(model, expected)
+
+
+class TestBetaNegativeBinomial:
+    """
+    Wrapper class so that tests of experimental additions can be dropped into
+    PyMC directly on adoption.
+    """
+
+    def test_logp(self):
+        """
+
+        Beta Negative Binomial logp function test values taken from R package as
+        there is currently no implementation in scipy.
+        https://github.com/scipy/scipy/issues/17330
+
+        The test values can be generated in R with the following code:
+
+        .. code-block:: r
+
+            library(extraDistr)
+
+            create.test.rows <- function(alpha, beta, r, x) {
+                logp <- dbnbinom(x, alpha, beta, r, log=TRUE)
+                paste0("(", paste(alpha, beta, r, x, logp, sep=", "), ")")
+            }
+
+            x <- c(0, 1, 250, 5000)
+            print(create.test.rows(1, 1, 1, x), quote=FALSE)
+            print(create.test.rows(1, 1, 10, x), quote=FALSE)
+            print(create.test.rows(1, 10, 1, x), quote=FALSE)
+            print(create.test.rows(10, 1, 1, x), quote=FALSE)
+            print(create.test.rows(10, 10, 10, x), quote=FALSE)
+
+        """
+        alpha, beta, r, value = pt.scalars("alpha", "beta", "r", "value")
+        logp = pm.logp(BetaNegativeBinomial.dist(alpha, beta, r), value)
+        logp_fn = pytensor.function([value, alpha, beta, r], logp)
+
+        tests = [
+            # 1, 1, 1
+            (1, 1, 1, 0, -0.693147180559945),
+            (1, 1, 1, 1, -1.79175946922805),
+            (1, 1, 1, 250, -11.0548820266432),
+            (1, 1, 1, 5000, -17.0349862828565),
+            # 1, 1, 10
+            (1, 1, 10, 0, -2.39789527279837),
+            (1, 1, 10, 1, -2.58021682959232),
+            (1, 1, 10, 250, -8.82261694534392),
+            (1, 1, 10, 5000, -14.7359968760473),
+            # 1, 10, 1
+            (1, 10, 1, 0, -2.39789527279837),
+            (1, 10, 1, 1, -2.58021682959232),
+            (1, 10, 1, 250, -8.82261694534418),
+            (1, 10, 1, 5000, -14.7359968760446),
+            # 10, 1, 1
+            (10, 1, 1, 0, -0.0953101798043248),
+            (10, 1, 1, 1, -2.58021682959232),
+            (10, 1, 1, 250, -43.5891148758123),
+            (10, 1, 1, 5000, -76.2953173311091),
+            # 10, 10, 10
+            (10, 10, 10, 0, -5.37909807285049),
+            (10, 10, 10, 1, -4.17512526852455),
+            (10, 10, 10, 250, -21.781591505836),
+            (10, 10, 10, 5000, -53.4836799634603),
+        ]
+        for test_alpha, test_beta, test_r, test_value, expected_logp in tests:
+            np.testing.assert_allclose(
+                logp_fn(test_value, test_alpha, test_beta, test_r), expected_logp
+            )
 
 
 class TestSkellam:
