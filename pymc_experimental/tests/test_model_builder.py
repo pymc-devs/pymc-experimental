@@ -12,6 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import copy
 import hashlib
 import json
 import sys
@@ -42,10 +43,13 @@ def toy_y(toy_X):
 
 
 @pytest.fixture(scope="module")
-def fitted_model_instance(toy_X, toy_y):
+def fitted_model_instance_base(toy_X, toy_y):
+    """Because fitting takes a relatively long time, this is intended to
+    be used only once and then have copies returned to tests that use a fitted
+    model instance. Tests should use `fitted_model_instance` instead of this."""
     sampler_config = {
-        "draws": 100,
-        "tune": 100,
+        "draws": 20,
+        "tune": 10,
         "chains": 2,
         "target_accept": 0.95,
     }
@@ -59,6 +63,14 @@ def fitted_model_instance(toy_X, toy_y):
     )
     model.fit(toy_X)
     return model
+
+
+@pytest.fixture
+def fitted_model_instance(fitted_model_instance_base):
+    """Get a fitted model instance. The instance is copied after being fit,
+    so tests using this fixture can modify the model object without affecting
+    other tests."""
+    return copy.deepcopy(fitted_model_instance_base)
 
 
 class test_ModelBuilder(ModelBuilder):
@@ -131,8 +143,8 @@ class test_ModelBuilder(ModelBuilder):
     @staticmethod
     def get_default_sampler_config() -> Dict:
         return {
-            "draws": 1_000,
-            "tune": 1_000,
+            "draws": 10,
+            "tune": 10,
             "chains": 3,
             "target_accept": 0.95,
         }
@@ -220,53 +232,26 @@ def test_sample_posterior_predictive(fitted_model_instance, combined):
     assert np.issubdtype(pred[fitted_model_instance.output_var].dtype, np.floating)
 
 
+@pytest.mark.parametrize("group", ["prior_predictive", "posterior_predictive"])
 @pytest.mark.parametrize("extend_idata", [True, False])
-def test_sample_prior_extend_idata_param(fitted_model_instance, extend_idata):
+def test_sample_xxx_extend_idata_param(fitted_model_instance, group, extend_idata):
     output_var = fitted_model_instance.output_var
-    idata_prev = fitted_model_instance.idata.prior_predictive[output_var]
+    idata_prev = fitted_model_instance.idata[group][output_var]
 
     # Since coordinates are provided, the dimension must match
     n_pred = 100  # Must match toy_x
     x_pred = np.random.uniform(0, 1, n_pred)
 
     prediction_data = pd.DataFrame({"input": x_pred})
-    pred = fitted_model_instance.sample_prior_predictive(
-        prediction_data["input"], combined=False, extend_idata=extend_idata
-    )
+    if group == "prior_predictive":
+        prediction_method = fitted_model_instance.sample_prior_predictive
+    else:  # group == "posterior_predictive":
+        prediction_method = fitted_model_instance.sample_posterior_predictive
+
+    pred = prediction_method(prediction_data["input"], combined=False, extend_idata=extend_idata)
 
     pred_unstacked = pred[output_var].values
-    idata_now = fitted_model_instance.idata.prior_predictive[output_var].values
-
-    if extend_idata:
-        # After sampling, data in the model should be the same as the predictions
-        np.testing.assert_array_equal(idata_now, pred_unstacked)
-        # Data in the model should NOT be the same as before
-        if idata_now.shape == idata_prev.values.shape:
-            assert np.sum(np.abs(idata_now - idata_prev.values) < 1e-5) <= 2
-    else:
-        # After sampling, data in the model should be the same as it was before
-        np.testing.assert_array_equal(idata_now, idata_prev.values)
-        # Data in the model should NOT be the same as the predictions
-        if idata_now.shape == pred_unstacked.shape:
-            assert np.sum(np.abs(idata_now - pred_unstacked) < 1e-5) <= 2
-
-
-@pytest.mark.parametrize("extend_idata", [True, False])
-def test_sample_posterior_extend_idata_param(fitted_model_instance, extend_idata):
-    output_var = fitted_model_instance.output_var
-    idata_prev = fitted_model_instance.idata.posterior_predictive[output_var]
-
-    # Since coordinates are provided, the dimension must match
-    n_pred = 100  # Must match toy_x
-    x_pred = np.random.uniform(0, 1, n_pred)
-
-    prediction_data = pd.DataFrame({"input": x_pred})
-    pred = fitted_model_instance.sample_posterior_predictive(
-        prediction_data["input"], combined=False, extend_idata=extend_idata
-    )
-
-    pred_unstacked = pred[output_var].values
-    idata_now = fitted_model_instance.idata.posterior_predictive[output_var].values
+    idata_now = fitted_model_instance.idata[group][output_var].values
 
     if extend_idata:
         # After sampling, data in the model should be the same as the predictions
