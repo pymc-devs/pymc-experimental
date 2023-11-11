@@ -12,7 +12,6 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import copy
 import hashlib
 import json
 import sys
@@ -42,11 +41,10 @@ def toy_y(toy_X):
     return y
 
 
-@pytest.fixture(scope="module")
-def fitted_model_instance_base(toy_X, toy_y):
-    """Because fitting takes a relatively long time, this is intended to
-    be used only once and then have copies returned to tests that use a fitted
-    model instance. Tests should use `fitted_model_instance` instead of this."""
+def get_unfitted_model_instance(X, y):
+    """Creates an unfitted model instance to which idata can be copied in
+    and then used as a fitted model instance. That way a fitted model
+    can be used multiple times without having to run `fit` multiple times."""
     sampler_config = {
         "draws": 20,
         "tune": 10,
@@ -61,16 +59,31 @@ def fitted_model_instance_base(toy_X, toy_y):
     model = test_ModelBuilder(
         model_config=model_config, sampler_config=sampler_config, test_parameter="test_paramter"
     )
-    model.fit(toy_X)
+    # Do the things that `model.fit` does except sample to create idata.
+    model._generate_and_preprocess_model_data(X, y.values.flatten())
+    model.build_model(X, y)
+    return model
+
+
+@pytest.fixture(scope="module")
+def fitted_model_instance_base(toy_X, toy_y):
+    """Because fitting takes a relatively long time, this is intended to
+    be used only once and then have new instances created and fit data patched in
+    for tests that use a fitted model instance. Tests should use
+    `fitted_model_instance` instead of this."""
+    model = get_unfitted_model_instance(toy_X, toy_y)
+    model.fit(toy_X, toy_y)
     return model
 
 
 @pytest.fixture
-def fitted_model_instance(fitted_model_instance_base):
-    """Get a fitted model instance. The instance is copied after being fit,
-    so tests using this fixture can modify the model object without affecting
-    other tests."""
-    return copy.deepcopy(fitted_model_instance_base)
+def fitted_model_instance(toy_X, toy_y, fitted_model_instance_base):
+    """Get a fitted model instance. A new instance is created and fit data is
+    patched in, so tests using this fixture can modify the model object without
+    affecting other tests."""
+    model = get_unfitted_model_instance(toy_X, toy_y)
+    model.idata = fitted_model_instance_base.idata.copy()
+    return model
 
 
 class test_ModelBuilder(ModelBuilder):
