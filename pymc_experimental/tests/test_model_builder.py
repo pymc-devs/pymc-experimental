@@ -167,6 +167,9 @@ def test_save_input_params(fitted_model_instance):
     assert fitted_model_instance.idata.attrs["test_paramter"] == '"test_paramter"'
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
+)
 def test_save_load(fitted_model_instance):
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
     fitted_model_instance.save(temp.name)
@@ -218,9 +221,6 @@ def test_fit_no_y(toy_X):
     assert "posterior" in model_builder.idata.groups()
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
-)
 def test_predict(fitted_model_instance):
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
