@@ -29,6 +29,7 @@ Distributions
    :toctree: generated/
 
    Chi
+   Maxwell
    DiscreteMarkovChain
    GeneralizedPoisson
    BetaNegativeBinomial
