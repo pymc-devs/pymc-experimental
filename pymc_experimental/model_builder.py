@@ -299,8 +299,8 @@ class ModelBuilder:
         with self.model:
             sampler_args = {**self.sampler_config, **kwargs}
             idata = pm.sample(**sampler_args)
-            idata.extend(pm.sample_prior_predictive())
-            idata.extend(pm.sample_posterior_predictive(idata))
+            idata.extend(pm.sample_prior_predictive(), join="right")
+            idata.extend(pm.sample_posterior_predictive(idata), join="right")
 
         idata = self.set_idata_attrs(idata)
         return idata
@@ -595,23 +595,22 @@ class ModelBuilder:
             Prior predictive samples for each input X_pred
         """
         if y_pred is None:
-            y_pred = np.zeros(len(X_pred))
+            y_pred = pd.Series(np.zeros(len(X_pred)), name=self.output_var)
         if samples is None:
             samples = self.sampler_config.get("draws", 500)
 
         if self.model is None:
             self.build_model(X_pred, y_pred)
-
-        self._data_setter(X_pred, y_pred)
-        if self.model is not None:
-            with self.model:  # sample with new input data
-                prior_pred: az.InferenceData = pm.sample_prior_predictive(samples, **kwargs)
-                self.set_idata_attrs(prior_pred)
-                if extend_idata:
-                    if self.idata is not None:
-                        self.idata.extend(prior_pred)
-                    else:
-                        self.idata = prior_pred
+        else:
+            self._data_setter(X_pred, y_pred)
+        with self.model:  # sample with new input data
+            prior_pred: az.InferenceData = pm.sample_prior_predictive(samples, **kwargs)
+            self.set_idata_attrs(prior_pred)
+            if extend_idata:
+                if self.idata is not None:
+                    self.idata.extend(prior_pred, join="right")
+                else:
+                    self.idata = prior_pred
 
         prior_predictive_samples = az.extract(prior_pred, "prior_predictive", combined=combined)
 
@@ -641,7 +640,7 @@ class ModelBuilder:
         with self.model:  # sample with new input data
             post_pred = pm.sample_posterior_predictive(self.idata, **kwargs)
             if extend_idata:
-                self.idata.extend(post_pred)
+                self.idata.extend(post_pred, join="right")
 
         posterior_predictive_samples = az.extract(
             post_pred, "posterior_predictive", combined=combined

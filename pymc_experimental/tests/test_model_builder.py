@@ -41,11 +41,13 @@ def toy_y(toy_X):
     return y
 
 
-@pytest.fixture(scope="module")
-def fitted_model_instance(toy_X, toy_y):
+def get_unfitted_model_instance(X, y):
+    """Creates an unfitted model instance to which idata can be copied in
+    and then used as a fitted model instance. That way a fitted model
+    can be used multiple times without having to run `fit` multiple times."""
     sampler_config = {
-        "draws": 100,
-        "tune": 100,
+        "draws": 20,
+        "tune": 10,
         "chains": 2,
         "target_accept": 0.95,
     }
@@ -57,7 +59,30 @@ def fitted_model_instance(toy_X, toy_y):
     model = test_ModelBuilder(
         model_config=model_config, sampler_config=sampler_config, test_parameter="test_paramter"
     )
-    model.fit(toy_X)
+    # Do the things that `model.fit` does except sample to create idata.
+    model._generate_and_preprocess_model_data(X, y.values.flatten())
+    model.build_model(X, y)
+    return model
+
+
+@pytest.fixture(scope="module")
+def fitted_model_instance_base(toy_X, toy_y):
+    """Because fitting takes a relatively long time, this is intended to
+    be used only once and then have new instances created and fit data patched in
+    for tests that use a fitted model instance. Tests should use
+    `fitted_model_instance` instead of this."""
+    model = get_unfitted_model_instance(toy_X, toy_y)
+    model.fit(toy_X, toy_y)
+    return model
+
+
+@pytest.fixture
+def fitted_model_instance(toy_X, toy_y, fitted_model_instance_base):
+    """Get a fitted model instance. A new instance is created and fit data is
+    patched in, so tests using this fixture can modify the model object without
+    affecting other tests."""
+    model = get_unfitted_model_instance(toy_X, toy_y)
+    model.idata = fitted_model_instance_base.idata.copy()
     return model
 
 
@@ -131,8 +156,8 @@ class test_ModelBuilder(ModelBuilder):
     @staticmethod
     def get_default_sampler_config() -> Dict:
         return {
-            "draws": 1_000,
-            "tune": 1_000,
+            "draws": 10,
+            "tune": 10,
             "chains": 3,
             "target_accept": 0.95,
         }
@@ -142,6 +167,9 @@ def test_save_input_params(fitted_model_instance):
     assert fitted_model_instance.idata.attrs["test_paramter"] == '"test_paramter"'
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
+)
 def test_save_load(fitted_model_instance):
     temp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False)
     fitted_model_instance.save(temp.name)
@@ -193,9 +221,6 @@ def test_fit_no_y(toy_X):
     assert "posterior" in model_builder.idata.groups()
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="Permissions for temp files not granted on windows CI."
-)
 def test_predict(fitted_model_instance):
     x_pred = np.random.uniform(low=0, high=1, size=100)
     prediction_data = pd.DataFrame({"input": x_pred})
@@ -218,6 +243,41 @@ def test_sample_posterior_predictive(fitted_model_instance, combined):
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
     assert pred[fitted_model_instance.output_var].shape == expected_shape
     assert np.issubdtype(pred[fitted_model_instance.output_var].dtype, np.floating)
+
+
+@pytest.mark.parametrize("group", ["prior_predictive", "posterior_predictive"])
+@pytest.mark.parametrize("extend_idata", [True, False])
+def test_sample_xxx_extend_idata_param(fitted_model_instance, group, extend_idata):
+    output_var = fitted_model_instance.output_var
+    idata_prev = fitted_model_instance.idata[group][output_var]
+
+    # Since coordinates are provided, the dimension must match
+    n_pred = 100  # Must match toy_x
+    x_pred = np.random.uniform(0, 1, n_pred)
+
+    prediction_data = pd.DataFrame({"input": x_pred})
+    if group == "prior_predictive":
+        prediction_method = fitted_model_instance.sample_prior_predictive
+    else:  # group == "posterior_predictive":
+        prediction_method = fitted_model_instance.sample_posterior_predictive
+
+    pred = prediction_method(prediction_data["input"], combined=False, extend_idata=extend_idata)
+
+    pred_unstacked = pred[output_var].values
+    idata_now = fitted_model_instance.idata[group][output_var].values
+
+    if extend_idata:
+        # After sampling, data in the model should be the same as the predictions
+        np.testing.assert_array_equal(idata_now, pred_unstacked)
+        # Data in the model should NOT be the same as before
+        if idata_now.shape == idata_prev.values.shape:
+            assert np.sum(np.abs(idata_now - idata_prev.values) < 1e-5) <= 2
+    else:
+        # After sampling, data in the model should be the same as it was before
+        np.testing.assert_array_equal(idata_now, idata_prev.values)
+        # Data in the model should NOT be the same as the predictions
+        if idata_now.shape == pred_unstacked.shape:
+            assert np.sum(np.abs(idata_now - pred_unstacked) < 1e-5) <= 2
 
 
 def test_model_config_formatting():
