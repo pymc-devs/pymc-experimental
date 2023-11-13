@@ -17,25 +17,25 @@
 import logging
 import time
 import warnings
-
-from typing import Callable, NamedTuple, Optional, cast, Dict
+from typing import Callable, Dict, NamedTuple, Optional, cast
 
 import arviz as az
 import jax
 import jax.numpy as jnp
 import numpy as np
-
-from pymc import modelcontext, to_inference_data, draw
+from pymc import draw, modelcontext, to_inference_data
 from pymc.backends import NDArray
 from pymc.backends.base import MultiTrace
 from pymc.initial_point import make_initial_point_expression
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import RandomState, _get_seeds_per_chain
 
-from pymc_experimental.inference.from_blackjax.kernels import build_smc_with_hmc_kernel, build_smc_with_nuts_kernel
+from pymc_experimental.inference.from_blackjax.kernels import (
+    build_smc_with_hmc_kernel,
+    build_smc_with_nuts_kernel,
+)
 
 log = logging.getLogger(__name__)
-
 
 
 def sample_with_blackjax_smc(
@@ -115,7 +115,7 @@ def sample_with_blackjax_smc(
     sampler = build_sampler(
         prior_log_prob=get_jaxified_logprior(model),
         loglikelihood=get_jaxified_loglikelihood(model),
-        posterior_dimensions=sum([var_map[k][1] for k in var_map]),
+        posterior_dimensions=sum(var_map[k][1] for k in var_map),
         target_ess=target_ess,
         num_mcmc_steps=num_mcmc_steps,
         kernel_parameters=inner_kernel_params,
@@ -362,6 +362,7 @@ def get_jaxified_particles_fn(model, graph_outputs):
         return logp_fn(*[p.squeeze() for p in particles])[0]
 
     return logp_fn_wrap
+
 
 def initialize_population(model, draws, random_seed) -> Dict[str, np.ndarray]:
     with warnings.catch_warnings():

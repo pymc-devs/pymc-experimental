@@ -14,16 +14,20 @@
 import chex
 import jax
 import numpy as np
+import pymc as pm
+import pytensor.tensor as pt
 import pytest
 import scipy
-
 from numpy import dtype
 from xarray.core.utils import Frozen
-import pytensor.tensor as pt
-import pymc as pm
 
-from pymc_experimental.inference.from_blackjax.sampling import sample_with_blackjax_smc, \
-    blackjax_particles_from_pymc_population, arviz_from_particles, get_jaxified_logprior, get_jaxified_loglikelihood
+from pymc_experimental.inference.from_blackjax.sampling import (
+    arviz_from_particles,
+    blackjax_particles_from_pymc_population,
+    get_jaxified_loglikelihood,
+    get_jaxified_logprior,
+    sample_with_blackjax_smc,
+)
 
 
 def two_gaussians_model():
@@ -67,6 +71,7 @@ def fast_model():
         x = pm.Normal("x", 0, 1)
         y = pm.Normal("y", x, 1, observed=0)
     return m
+
 
 @pytest.mark.parametrize(
     "kernel, check_for_integration_steps, inner_kernel_params",
