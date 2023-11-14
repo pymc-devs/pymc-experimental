@@ -20,20 +20,17 @@ import warnings
 from typing import Callable, Dict, NamedTuple, Optional, cast
 
 import arviz as az
+import blackjax
 import jax
 import jax.numpy as jnp
 import numpy as np
+from blackjax.smc.resampling import systematic
 from pymc import draw, modelcontext, to_inference_data
 from pymc.backends import NDArray
 from pymc.backends.base import MultiTrace
 from pymc.initial_point import make_initial_point_expression
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import RandomState, _get_seeds_per_chain
-
-from pymc_experimental.inference.from_blackjax.kernels import (
-    build_smc_with_hmc_kernel,
-    build_smc_with_nuts_kernel,
-)
 
 log = logging.getLogger(__name__)
 
@@ -87,12 +84,6 @@ def sample_with_blackjax_smc(
 
     if inner_kernel_params is None:
         inner_kernel_params = {}
-    if kernel == "HMC":
-        build_sampler = build_smc_with_hmc_kernel
-    elif kernel == "NUTS":
-        build_sampler = build_smc_with_nuts_kernel
-    else:
-        raise ValueError(f"Valid kernels are 'HMC' and 'NUTS'")
 
     log.info(
         f"Will only diagnose the first {iterations_to_diagnose} SMC iterations,"
@@ -112,13 +103,31 @@ def sample_with_blackjax_smc(
         model, model.initial_point(random_seed=random_seed.integers(2**30))
     )
 
-    sampler = build_sampler(
+    posterior_dimensions = sum(var_map[k][1] for k in var_map)
+
+    if kernel == "HMC":
+        mcmc_kernel = blackjax.mcmc.hmc
+        mcmc_parameters = dict(
+            step_size=inner_kernel_params["step_size"],
+            inverse_mass_matrix=jnp.eye(posterior_dimensions),
+            num_integration_steps=inner_kernel_params["integration_steps"],
+        )
+    elif kernel == "NUTS":
+        mcmc_kernel = blackjax.mcmc.nuts
+        mcmc_parameters = dict(
+            step_size=inner_kernel_params["step_size"],
+            inverse_mass_matrix=jnp.eye(posterior_dimensions),
+        )
+    else:
+        raise ValueError(f"Invalid kernel {kernel}, valid options are 'HMC' and 'NUTS'")
+
+    sampler = build_smc_with_kernel(
         prior_log_prob=get_jaxified_logprior(model),
         loglikelihood=get_jaxified_loglikelihood(model),
-        posterior_dimensions=sum(var_map[k][1] for k in var_map),
         target_ess=target_ess,
         num_mcmc_steps=num_mcmc_steps,
-        kernel_parameters=inner_kernel_params,
+        kernel_parameters=mcmc_parameters,
+        mcmc_kernel=mcmc_kernel,
     )
 
     start = time.time()
@@ -392,3 +401,23 @@ def var_map_from_model(model, initial_point) -> dict:
     for v in model.value_vars:
         var_info[v.name] = (initial_point[v.name].shape, initial_point[v.name].size)
     return var_info
+
+
+def build_smc_with_kernel(
+    prior_log_prob,
+    loglikelihood,
+    target_ess,
+    num_mcmc_steps,
+    kernel_parameters,
+    mcmc_kernel,
+):
+    return blackjax.smc.adaptive_tempered.adaptive_tempered_smc(
+        prior_log_prob,
+        loglikelihood,
+        mcmc_kernel.build_kernel(),
+        mcmc_kernel.init,
+        mcmc_parameters=kernel_parameters,
+        resampling_fn=systematic,
+        target_ess=target_ess,
+        num_mcmc_steps=num_mcmc_steps,
+    )

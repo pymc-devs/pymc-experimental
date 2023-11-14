@@ -11,7 +11,6 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-import chex
 import jax
 import numpy as np
 import pymc as pm
@@ -21,7 +20,7 @@ import scipy
 from numpy import dtype
 from xarray.core.utils import Frozen
 
-from pymc_experimental.inference.from_blackjax.sampling import (
+from pymc_experimental.inference.smc.sampling import (
     arviz_from_particles,
     blackjax_particles_from_pymc_population,
     get_jaxified_loglikelihood,
@@ -134,7 +133,7 @@ def test_blackjax_particles_from_pymc_population_univariate():
     model = fast_model()
     population = {"x": np.array([2, 3, 4])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    chex.assert_trees_all_close(blackjax_particles, [np.array([[2], [3], [4]])])
+    jax.tree_map(np.testing.assert_allclose, blackjax_particles, [np.array([[2], [3], [4]])])
 
 
 def test_blackjax_particles_from_pymc_population_multivariate():
@@ -145,7 +144,8 @@ def test_blackjax_particles_from_pymc_population_multivariate():
 
     population = {"x": np.array([0.34614613, 1.09163261, -0.44526825]), "z": np.array([1, 2, 3])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    chex.assert_trees_all_close(
+    jax.tree_map(
+        np.testing.assert_allclose,
         blackjax_particles,
         [np.array([[0.34614613], [1.09163261], [-0.44526825]]), np.array([[1], [2], [3]])],
     )
@@ -167,8 +167,11 @@ def test_blackjax_particles_from_pymc_population_multivariable():
     model = simple_multivariable_model()
     population = {"x": np.array([[2, 3], [5, 6], [7, 9]]), "z": np.array([11, 12, 13])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    chex.assert_trees_all_close(
-        blackjax_particles, [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11], [12], [13]])]
+
+    jax.tree_map(
+        np.testing.assert_allclose,
+        blackjax_particles,
+        [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11], [12], [13]])],
     )
 
 
@@ -193,8 +196,10 @@ def test_get_jaxified_logprior():
     """
     logprior = get_jaxified_logprior(fast_model())
     for point in [-0.5, 0.0, 0.5]:
-        chex.assert_trees_all_equal(
-            jax.vmap(logprior)([np.array([point])]), np.log(scipy.stats.norm(0, 1).pdf(point))
+        jax.tree_map(
+            np.testing.assert_allclose,
+            jax.vmap(logprior)([np.array([point])]),
+            np.log(scipy.stats.norm(0, 1).pdf(point)),
         )
 
 
@@ -207,6 +212,8 @@ def test_get_jaxified_loglikelihood():
     """
     loglikelihood = get_jaxified_loglikelihood(fast_model())
     for point in [-0.5, 0.0, 0.5]:
-        chex.assert_trees_all_equal(
-            jax.vmap(loglikelihood)([np.array([point])]), np.log(scipy.stats.norm(point, 1).pdf(0))
+        jax.tree_map(
+            np.testing.assert_allclose,
+            jax.vmap(loglikelihood)([np.array([point])]),
+            np.log(scipy.stats.norm(point, 1).pdf(0)),
         )
