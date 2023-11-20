@@ -8,7 +8,7 @@ methods in the current release of PyMC experimental.
 .. autosummary::
    :toctree: generated/
 
-   model
+   as_model
    MarginalModel
    model_builder.ModelBuilder
 

@@ -3,7 +3,7 @@ from functools import wraps
 import pymc as pm
 
 
-def model(*model_args, **model_kwargs):
+def as_model(*model_args, **model_kwargs):
     R"""
     Decorator to provide context to PyMC models declared in a function.
     This removes all need to think about context managers and lets you separate creating a generative model from using the model.
@@ -25,7 +25,7 @@ def model(*model_args, **model_kwargs):
             pm.sample()
 
         # functional API using decorator
-        @pmx.model(coords={"obs": ["a", "b"]})
+        @pmx.as_model(coords={"obs": ["a", "b"]})
         def basic_model():
             pm.Normal("x", 0., 1., dims="obs")
 

@@ -13,7 +13,7 @@ def test_logp():
     with pm.Model(coords=coords) as model:
         pm.Normal("x", 0.0, 1.0, dims="obs")
 
-    @pmx.model(coords=coords)
+    @pmx.as_model(coords=coords)
     def model_wrapped():
         pm.Normal("x", 0.0, 1.0, dims="obs")
 
