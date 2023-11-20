@@ -8,11 +8,14 @@ def model(*model_args, **model_kwargs):
     Decorator to provide context to PyMC models declared in a function.
     This removes all need to think about context managers and lets you separate creating a generative model from using the model.
 
-    Inspired by the [sampled](https://github.com/colcarroll/sampled) decorator for PyMC3.
+    Inspired by the `sampled <https://github.com/colcarroll/sampled>`_ decorator for PyMC3.
 
     Examples
     --------
     .. code:: python
+
+        import pymc as pm
+        import pymc_experimental as pmx
 
         # The following are equivalent
 
