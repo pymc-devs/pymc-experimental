@@ -29,8 +29,6 @@ def model(*model_args, **model_kwargs):
         m = basic_model()
         pm.sample(model=m)
 
-        ...
-
     """
 
     def decorator(f):
