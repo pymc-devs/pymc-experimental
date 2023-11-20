@@ -25,4 +25,5 @@ if not logging.root.handlers:
 
 from pymc_experimental import distributions, gp, utils
 from pymc_experimental.inference.fit import fit
-from pymc_experimental.marginal_model import MarginalModel
+from pymc_experimental.model.marginal_model import MarginalModel
+from pymc_experimental.model.model_api import model
