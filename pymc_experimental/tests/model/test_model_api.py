@@ -19,4 +19,4 @@ def test_logp():
 
     mw = model_wrapped()
 
-    np.testing.assert_array_equal(model.point_logps(), mw.point_logps())
+    np.testing.assert_equal(model.point_logps(), mw.point_logps())
