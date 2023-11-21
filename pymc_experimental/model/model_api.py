@@ -8,7 +8,7 @@ def as_model(*model_args, **model_kwargs):
     Decorator to provide context to PyMC models declared in a function.
     This removes all need to think about context managers and lets you separate creating a generative model from using the model.
 
-    Inspired by the `sampled <https://github.com/colcarroll/sampled>`_ decorator for PyMC3.
+    Adapted from `Rob Zinkov's blog post <https://www.zinkov.com/posts/2023-alternative-frontends-pymc/>`_ and inspired by the `sampled <https://github.com/colcarroll/sampled>`_ decorator for PyMC3.
 
     Examples
     --------
