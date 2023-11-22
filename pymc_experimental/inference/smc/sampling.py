@@ -33,18 +33,47 @@ from pymc.util import RandomState, _get_seeds_per_chain
 log = logging.getLogger(__name__)
 
 
-def sample_with_blackjax_smc(
-    n_particles,
+def sample_smc_blackjax(
+    n_particles:int = 2000,
     random_seed: RandomState = None,
     kernel: str = "HMC",
-    target_ess: float = 0.8,
+    target_essn: float = 0.5,
     num_mcmc_steps: int = 10,
     inner_kernel_params: Optional[dict] = None,
     model=None,
     iterations_to_diagnose: int = 100,
 ):
     """Samples using BlackJax's implementation of Sequential Monte Carlo.
-       A summary of the algorithm is:
+    Parameters
+    ----------
+    n_particles: int
+     number of particles used to sample from the posterior. This is also the number of draws. Defaults to 2000.
+    random_seed: RandomState
+     seed used for random number generator, set for reproducibility. Otherwise a random one will be used (default).
+    kernel: str
+     Either 'HMC' (default) or 'NUTS'. The kernel to be used to mutate the particles in each SMC iteration.
+    target_essn: float
+     Proportion (0 < target_essn < 1) of the total number of particles, to be used for incrementing the exponent
+     of the tempered posterior between iterations. The higher the number, each increment is going to be smaller,
+     leading to more steps and computational cost. Defaults to 0.5
+    num_mcmc_steps: int
+      fixed number of steps of each inner kernel markov chain for each SMC mutation step.
+    inner_kernel_params: Optional[dict]
+     a dictionary with parameters for the inner kernel.
+        For HMC it must have 'step_size' and 'integration_steps'
+        For NUTS it must have 'step_size'
+     these parameters are fixed for all iterations.
+    model:
+     PyMC model to sample from
+    iterations_to_diagnose: int
+     Number of iterations to generate diagnosis for. By default, will diagnose the first 100 iterations. Increase
+     this number for further diagnosis (it can be bigger than the actual number of iterations executed by the algorithm,
+     at the expense of allocating memory to store the diagnosis).
+    Returns
+    -------
+    An Arviz Inference data.
+
+    A summary of the algorithm is:
 
      1. Initialize :math:`\beta` at zero and stage at zero.
      2. Generate N samples :math:`S_{\beta}` from the prior (because when :math `\beta = 0` the
@@ -59,21 +88,6 @@ def sample_with_blackjax_smc(
      7. The N chains are run for num_mcmc_steps each.
      8. Repeat from step 3 until :math:`\beta \\ge 1`.
      9. The final result is a collection of N samples from the posterior
-
-    Parameters
-    ----------
-    n_particles
-    random_seed
-    kernel
-    target_ess
-    num_mcmc_steps
-    inner_kernel_params:
-    model: PyMC model to sample from
-    iterations_to_diagnose: Number of iterations to generate diagnosis for.
-
-    Returns
-    -------
-    An Arviz Inference data.
 
     """
 
@@ -122,7 +136,7 @@ def sample_with_blackjax_smc(
     sampler = build_smc_with_kernel(
         prior_log_prob=get_jaxified_logprior(model),
         loglikelihood=get_jaxified_loglikelihood(model),
-        target_ess=target_ess,
+        target_ess=target_essn,
         num_mcmc_steps=num_mcmc_steps,
         kernel_parameters=mcmc_parameters,
         mcmc_kernel=mcmc_kernel,
@@ -144,7 +158,7 @@ def sample_with_blackjax_smc(
     add_to_inference_data(
         inference_data,
         n_particles,
-        target_ess,
+        target_essn,
         num_mcmc_steps,
         kernel,
         diagnosis,

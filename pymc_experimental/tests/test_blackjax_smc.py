@@ -25,7 +25,7 @@ from pymc_experimental.inference.smc.sampling import (
     blackjax_particles_from_pymc_population,
     get_jaxified_loglikelihood,
     get_jaxified_logprior,
-    sample_with_blackjax_smc,
+    sample_smc_blackjax,
 )
 
 
@@ -79,7 +79,7 @@ def fast_model():
         ("NUTS", False, {"step_size": 0.1}),
     ],
 )
-def test_blackjax_smc(kernel, check_for_integration_steps, inner_kernel_params):
+def test_sample_smc_blackjax(kernel, check_for_integration_steps, inner_kernel_params):
     """
     When running the two gaussians model
     with BlackJax SMC, we sample them correctly,
@@ -91,7 +91,7 @@ def test_blackjax_smc(kernel, check_for_integration_steps, inner_kernel_params):
     iterations_to_diagnose = 2
     n_particles = 1000
     with model:
-        inference_data = sample_with_blackjax_smc(
+        inference_data = sample_smc_blackjax(
             n_particles=n_particles,
             kernel=kernel,
             inner_kernel_params=inner_kernel_params,
