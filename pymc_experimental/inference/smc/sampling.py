@@ -44,6 +44,7 @@ def sample_smc_blackjax(
     iterations_to_diagnose: int = 100,
 ):
     """Samples using BlackJax's implementation of Sequential Monte Carlo.
+    
     Parameters
     ----------
     n_particles: int
@@ -69,17 +70,20 @@ def sample_smc_blackjax(
      Number of iterations to generate diagnosis for. By default, will diagnose the first 100 iterations. Increase
      this number for further diagnosis (it can be bigger than the actual number of iterations executed by the algorithm,
      at the expense of allocating memory to store the diagnosis).
+    
     Returns
     -------
     An Arviz Inference data.
 
+    Note
+    ----
     A summary of the algorithm is:
 
      1. Initialize :math:`\beta` at zero and stage at zero.
      2. Generate N samples :math:`S_{\beta}` from the prior (because when :math `\beta = 0` the
         tempered posterior is the prior).
      3. Increase :math:`\beta` in order to make the effective sample size equal some predefined
-        value (target_ess)
+        value (target_essn)
      4. Compute a set of N importance weights W. The weights are computed as the ratio of the
         likelihoods of a sample at stage i+1 and stage i.
      5. Obtain :math:`S_{w}` by re-sampling according to W.
