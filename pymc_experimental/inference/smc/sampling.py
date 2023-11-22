@@ -55,7 +55,7 @@ def sample_smc_blackjax(
     target_essn: float
      Proportion (0 < target_essn < 1) of the total number of particles, to be used for incrementing the exponent
      of the tempered posterior between iterations. The higher the number, each increment is going to be smaller,
-     leading to more steps and computational cost. Defaults to 0.5
+     leading to more steps and computational cost. Defaults to 0.5. See https://arxiv.org/abs/1602.03572
     num_mcmc_steps: int
       fixed number of steps of each inner kernel markov chain for each SMC mutation step.
     inner_kernel_params: Optional[dict]
