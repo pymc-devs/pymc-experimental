@@ -1,6 +1,6 @@
 from functools import wraps
 
-import pymc as pm
+from pymc import Model
 
 
 def as_model(*model_args, **model_kwargs):
@@ -37,7 +37,7 @@ def as_model(*model_args, **model_kwargs):
     def decorator(f):
         @wraps(f)
         def make_model(*args, **kwargs):
-            with pm.Model(*model_args, **model_kwargs) as m:
+            with Model(*model_args, **model_kwargs) as m:
                 f(*args, **kwargs)
             return m
 
