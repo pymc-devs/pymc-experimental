@@ -193,8 +193,7 @@ def _phi(
             raise TypeError("Can't use variance explained with less than two variables")
         phi = pt.as_tensor(variance_explained)
     else:
-        phi = 1 / len(model.coords[dim])
-        phi = _broadcast_as_dims(phi, dims=dims)
+        phi = _broadcast_as_dims(1.0, dims=dims)
     if importance_concentration is not None:
         return pm.Dirichlet("phi", importance_concentration * phi, dims=broadcast_dims + [dim])
     else:
