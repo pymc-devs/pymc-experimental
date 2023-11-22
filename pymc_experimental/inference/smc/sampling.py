@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 
 
 def sample_smc_blackjax(
-    n_particles:int = 2000,
+    n_particles: int = 2000,
     random_seed: RandomState = None,
     kernel: str = "HMC",
     target_essn: float = 0.5,
@@ -44,7 +44,7 @@ def sample_smc_blackjax(
     iterations_to_diagnose: int = 100,
 ):
     """Samples using BlackJax's implementation of Sequential Monte Carlo.
-    
+
     Parameters
     ----------
     n_particles: int
@@ -70,7 +70,7 @@ def sample_smc_blackjax(
      Number of iterations to generate diagnosis for. By default, will diagnose the first 100 iterations. Increase
      this number for further diagnosis (it can be bigger than the actual number of iterations executed by the algorithm,
      at the expense of allocating memory to store the diagnosis).
-    
+
     Returns
     -------
     An Arviz Inference data.
