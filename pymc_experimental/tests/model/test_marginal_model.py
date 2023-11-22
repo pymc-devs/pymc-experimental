@@ -12,7 +12,7 @@ from pymc.logprob.abstract import _logprob
 from pymc.util import UNSET
 from scipy.special import logsumexp
 
-from pymc_experimental.marginal_model import (
+from pymc_experimental.model.marginal_model import (
     FiniteDiscreteMarginalRV,
     MarginalModel,
     is_conditional_dependent,
