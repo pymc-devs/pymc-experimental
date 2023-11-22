@@ -11,4 +11,5 @@ dependencies:
 - statsmodels
 - pip:
   - pymc>=5.9.0  # CI was failing to resolve
+  - blackjax
   - scikit-learn
