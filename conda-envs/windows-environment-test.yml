@@ -1,15 +1,16 @@
 name: pymc-experimental-test
 channels:
-- conda-forge
-- defaults
+  - conda-forge
+  - defaults
 dependencies:
-- pip
-- pytest-cov>=2.5
-- pytest>=3.0
-- dask
-- xhistogram
-- statsmodels
-- pip:
-  - pymc>=5.9.0  # CI was failing to resolve
-  - blackjax
-  - scikit-learn
+  - pip
+  - pytest-cov>=2.5
+  - pytest>=3.0
+  - dask
+  - xhistogram
+  - statsmodels
+  - formulae
+  - pip:
+      - pymc>=5.9.0 # CI was failing to resolve
+      - blackjax
+      - scikit-learn
