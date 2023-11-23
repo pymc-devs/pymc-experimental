@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Dict, List, Optional, Tuple, cast
 
 import formulae.terms
 import numpy as np
@@ -22,9 +22,9 @@ def is_simple_formula(formula: formulae.terms.terms.Model) -> bool:
 
 def zerosum_hierarchy(
     formula_string: str,
-    dims: tuple[str, ...],
+    dims: Tuple[str, ...],
     named: bool = True,
-    importance: dict[str, pt.TensorLike] | None = None,
+    importance: Optional[Dict[str, pt.TensorLike]] = None,
     default_importance: pt.TensorLike = 1.0,
 ) -> pt.TensorVariable:
     """Zero Sum Hierarchy.
@@ -67,8 +67,8 @@ def zerosum_hierarchy(
         raise ValueError("Named Response should not be in dims")
     if set(dims) != formula.var_names - {out_name}:
         raise ValueError("Dims should match set of formula Variables")
-    base_names: list[str] = []
-    interactions: list[tuple[str, ...]] = []
+    base_names: List[str] = []
+    interactions: List[Tuple[str, ...]] = []
     for term in formula.terms:
         if isinstance(term, formulae.terms.terms.Intercept):
             continue
@@ -82,8 +82,8 @@ def zerosum_hierarchy(
     if not interactions:
         raise ValueError("Formula should have at least one Term")
     with pm.Model(name=out_name) as model:
-        zed: list[pt.TensorVariable] = []
-        alphas: list[pt.TensorLike] = []
+        zed: List[pt.TensorVariable] = []
+        alphas: List[pt.TensorLike] = []
         for name, zs_dims in zip(base_names, interactions):
             lengths = pt.prod([model.dim_lengths[c] for c in zs_dims])
             z = pm.ZeroSumNormal(

@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Literal, Sequence, Tuple, Union
 
 import pytensor
 from pymc import SymbolicRandomVariable
@@ -61,8 +61,9 @@ def rvs_in_graph(vars: Sequence[Variable]) -> bool:
 
 
 def named_shuffle_pattern(
-    input_dims: tuple[int | str, ...], output_dims: tuple[int | str | None, ...]
-) -> tuple[int | str, ...]:
+    input_dims: Tuple[Union[int, str], ...],
+    output_dims: Tuple[Union[int, str, None], ...],
+) -> Tuple[Union[int, Literal["x"]], ...]:
     if not (set(output_dims) - {None}).issuperset(input_dims):
         raise ValueError(f"Can't arrange {input_dims} to {output_dims}")
     else:
@@ -73,8 +74,8 @@ def named_shuffle_pattern(
 
 def shuffle_named_tensor(
     tensor: TensorVariable,
-    input_dims: tuple[str, ...],
-    output_dims: tuple[str, ...],
+    input_dims: Tuple[str, ...],
+    output_dims: Tuple[str, ...],
 ) -> TensorVariable:
     """Shuffle tensor using annotated dims.
 
