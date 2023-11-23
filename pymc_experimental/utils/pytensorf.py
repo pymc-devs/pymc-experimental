@@ -6,6 +6,7 @@ from pytensor import Variable
 from pytensor.graph import Constant, Type
 from pytensor.graph.basic import walk
 from pytensor.graph.op import HasInnerGraph
+from pytensor.tensor import TensorVariable
 from pytensor.tensor.random.op import RandomVariable
 
 
@@ -36,7 +37,6 @@ class StringConstant(Constant):
 
 @pytensor._as_symbolic.register(str)
 def as_symbolic_string(x, **kwargs):
-
     return StringConstant(stringtype, x)
 
 
@@ -58,3 +58,38 @@ def rvs_in_graph(vars: Sequence[Variable]) -> bool:
         for node in walk(vars, expand, False)
         if node.owner and isinstance(node.owner.op, (RandomVariable, SymbolicRandomVariable))
     )
+
+
+def named_shuffle_pattern(
+    input_dims: tuple[int | str, ...], output_dims: tuple[int | str | None, ...]
+) -> tuple[int | str, ...]:
+    if not (set(output_dims) - {None}).issuperset(input_dims):
+        raise ValueError(f"Can't arrange {input_dims} to {output_dims}")
+    else:
+        # mypy complains about None type so I just added it to annotations
+        maps: dict[int | str | None, int] = dict(zip(input_dims, range(len(input_dims))))
+        return tuple(maps.get(d, "x") for d in output_dims)
+
+
+def shuffle_named_tensor(
+    tensor: TensorVariable,
+    input_dims: tuple[str, ...],
+    output_dims: tuple[str, ...],
+) -> TensorVariable:
+    """Shuffle tensor using annotated dims.
+
+    Parameters
+    ----------
+    tensor : pt.TensorVariable
+    input_dims : tuple[str, ...]
+    output_dims : tuple[str, ...]
+
+    Returns
+    -------
+    pt.TensorVariable
+    """
+    int_dims = tuple(range(0, tensor.ndim - len(input_dims)))
+    in_dims = int_dims + input_dims
+    out_dims = int_dims + output_dims
+    pattern = named_shuffle_pattern(in_dims, out_dims)
+    return tensor.dimshuffle(*pattern)
