@@ -53,6 +53,17 @@ def zerosum_hierarchy(
     -------
     TensorVariable
         Resulting ZeroSum structured tensor with unit variance.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        with pm.Model(coords=dict(groups=range(10), stages=range(3))):
+            mean = pm.Normal("mu")
+            sigma = pm.Exponential("sigma")
+            z = zerosum_hierarchy("z ~ groups + stages", importance=dict(groups=10), named=False)
+            group_param = mean + z * sigma
     """
     formula = cast(formulae.terms.terms.Model, formulae.model_description(formula_string))
     if formula.group_terms:
