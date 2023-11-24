@@ -461,8 +461,6 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
             for i in range(len(marginalized_rv_domain))
         ]
     else:
-        # Make sure this rewrite is registered
-        from pymc.pytensorf import local_remove_check_parameter
 
         def logp_fn(marginalized_rv_const, *non_sequences):
             return joint_logp_op(marginalized_rv_const, *non_sequences)
