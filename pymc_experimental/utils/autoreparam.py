@@ -60,11 +60,12 @@ class VIP:
             )
             shared.set_value(fill)
 
-    def fit(self, *args, **kwargs):
-        kwargs.setdefault(obj_optimizer=pm.adagrad_window(learning_rate=0.1))
+    def fit(self, *args, **kwargs) -> pm.MeanField:
+        kwargs.setdefault("obj_optimizer", pm.adagrad_window(learning_rate=0.1))
         return pm.fit(
             *args,
-            more_obj_params=list(self._logit_lambda_.values()),
+            more_obj_params=list(self._logit_lambda.values()),
+            method="advi",
             **kwargs,
         )
 
@@ -144,7 +145,7 @@ def vip_reparametrize(
             "The model seems to be already auto-reparametrized. This action is done once."
         )
     fmodel, memo = fgraph_from_model(model)
-    lambda_ = {}
+    lambda_names = []
     replacements = []
     eps_ = pytensor.shared(np.array(1e-2, dtype=float), name="_vip::eps")
     eps = model_named(eps_)
@@ -154,6 +155,9 @@ def vip_reparametrize(
         old = memo[model.named_vars[name]]
         new, lam = vip_reparam_node(old.owner, eps=eps, round=round)
         replacements.append((old, new))
-        lambda_[name] = lam
+        lambda_names.append(lam.name)
     toposort_replace(fmodel, replacements)
-    return model_from_fgraph(fmodel), VIP(lambda_, eps_, round_)
+    reparam_model = model_from_fgraph(fmodel)
+    model_lambdas = {n: reparam_model[n] for n in lambda_names}
+    vip = VIP(model_lambdas, reparam_model[eps.name], reparam_model[round.name])
+    return reparam_model, vip
