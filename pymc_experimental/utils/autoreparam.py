@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+from typing import Dict
 
 import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
+import scipy.special
 from pymc.model.fgraph import (
     ModelNamed,
     fgraph_from_model,
@@ -17,7 +19,7 @@ from pytensor.graph.basic import Apply
 
 @dataclass
 class VIP:
-    lambda_: list[pytensor.tensor.sharedvar.TensorSharedVariable]
+    _logit_lambda: Dict[str, pytensor.tensor.sharedvar.TensorSharedVariable]
     eps: pytensor.tensor.sharedvar.TensorSharedVariable
     round: pytensor.tensor.sharedvar.TensorSharedVariable
 
@@ -32,6 +34,39 @@ class VIP:
 
     def get_round(self):
         return self.round.get_value()
+
+    def get_lambda(self) -> Dict[str, np.ndarray]:
+        return {
+            name: scipy.special.expit(shared.get_value())
+            for name, shared in self._logit_lambda.items()
+        }
+
+    def set_lambda(self, **kwargs: Dict[str, np.ndarray]):
+        for key, value in kwargs.items():
+            logit_lam = scipy.special.logit(value)
+            shared = self._logit_lambda[key]
+            fill = np.full(
+                shared.get_value(True).shape,
+                logit_lam,
+            )
+            shared.set_value(fill)
+
+    def set_all_lambda(self, value: float):
+        logit_lam = scipy.special.logit(value)
+        for shared in self._logit_lambda.values():
+            fill = np.full(
+                shared.get_value(True).shape,
+                logit_lam,
+            )
+            shared.set_value(fill)
+
+    def fit(self, *args, **kwargs):
+        kwargs.setdefault(obj_optimizer=pm.adagrad_window(learning_rate=0.1))
+        return pm.fit(
+            *args,
+            more_obj_params=list(self._logit_lambda_.values()),
+            **kwargs,
+        )
 
 
 def vip_reparam_node(
@@ -109,7 +144,7 @@ def vip_reparametrize(
             "The model seems to be already auto-reparametrized. This action is done once."
         )
     fmodel, memo = fgraph_from_model(model)
-    lambda_list = []
+    lambda_ = {}
     replacements = []
     eps_ = pytensor.shared(np.array(1e-2, dtype=float), name="_vip::eps")
     eps = model_named(eps_)
@@ -119,6 +154,6 @@ def vip_reparametrize(
         old = memo[model.named_vars[name]]
         new, lam = vip_reparam_node(old.owner, eps=eps, round=round)
         replacements.append((old, new))
-        lambda_list.append(lam)
+        lambda_[name] = lam
     toposort_replace(fmodel, replacements)
-    return model_from_fgraph(fmodel), VIP(lambda_list, eps_, round_)
+    return model_from_fgraph(fmodel), VIP(lambda_, eps_, round_)
