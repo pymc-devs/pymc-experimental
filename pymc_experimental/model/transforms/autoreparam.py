@@ -46,7 +46,7 @@ class VIP:
             logit_lam = scipy.special.logit(value)
             shared = self._logit_lambda[key]
             fill = np.full(
-                shared.get_value(True).shape,
+                shared.type.shape,
                 logit_lam,
             )
             shared.set_value(fill)
@@ -55,7 +55,7 @@ class VIP:
         logit_lam = scipy.special.logit(value)
         for shared in self._logit_lambda.values():
             fill = np.full(
-                shared.get_value(True).shape,
+                shared.type.shape,
                 logit_lam,
             )
             shared.set_value(fill)
