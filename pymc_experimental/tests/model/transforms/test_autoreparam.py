@@ -56,3 +56,10 @@ def test_random_draw(model_c: pm.Model, model_nc):
     np.testing.assert_allclose(c.std(), v_0.std())
     np.testing.assert_allclose(v_05.std(), v_1.std())
     np.testing.assert_allclose(v_1.std(), nc.std())
+
+
+def test_reparam_fit(model_c):
+    model_v, vip = vip_reparametrize(model_c, ["g"])
+    with model_v:
+        vip.fit(random_seed=42)
+    np.testing.assert_allclose(vip.get_lambda()["g"], 0, atol=0.01)
