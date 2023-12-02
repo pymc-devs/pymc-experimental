@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Sequence, Tuple
 
 import numpy as np
 import pymc as pm
@@ -74,7 +74,7 @@ def vip_reparam_node(
     node: Apply,
     eps: ModelNamed,
     round: ModelNamed,
-) -> tuple[ModelNamed, pytensor.tensor.sharedvar.TensorSharedVariable]:
+) -> Tuple[ModelNamed, pytensor.tensor.sharedvar.TensorSharedVariable]:
     rv, _, *dims = node.inputs
     rng, size, _, loc, scale = rv.owner.inputs
     if not isinstance(size, pt.TensorConstant):
@@ -138,8 +138,8 @@ def vip_reparam_node(
 
 def vip_reparametrize(
     model: pm.Model,
-    var_names: list[str],
-) -> tuple[pm.Model, VIP]:
+    var_names: Sequence[str],
+) -> Tuple[pm.Model, VIP]:
     if "_vip::eps" in model.named_vars:
         raise ValueError(
             "The model seems to be already auto-reparametrized. This action is done once."
@@ -158,6 +158,6 @@ def vip_reparametrize(
         lambda_names.append(lam.name)
     toposort_replace(fmodel, replacements)
     reparam_model = model_from_fgraph(fmodel)
-    model_lambdas = {n: reparam_model[n] for n in lambda_names}
+    model_lambdas = {n: reparam_model[l] for l, n in zip(lambda_names, var_names)}
     vip = VIP(model_lambdas, reparam_model[eps.name], reparam_model[round.name])
     return reparam_model, vip
