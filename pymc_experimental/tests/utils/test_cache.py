@@ -17,8 +17,13 @@ def test_cache_sampling(tmpdir):
         assert len(os.listdir(tmpdir)) == 0
 
         prior1, prior2 = (cache_prior(samples=5) for _ in range(2))
+        prior3 = cache_sampling(pm.sample_prior_predictive, dir=tmpdir, force_sample=True)(
+            samples=5
+        )
         assert len(os.listdir(tmpdir)) == 1
         assert prior1.prior["x"].mean() == prior2.prior["x"].mean()
+        assert prior2.prior["x"].mean() != prior3.prior["x"].mean()
+        assert prior2.prior_predictive["y"].mean() != prior3.prior_predictive["y"].mean()
 
         post1, post2 = (cache_post(tune=5, draws=5, progressbar=False) for _ in range(2))
         assert len(os.listdir(tmpdir)) == 2

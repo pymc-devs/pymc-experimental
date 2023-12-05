@@ -76,6 +76,7 @@ def cache_sampling(
     sampling_fn: Literal[sample, sample_prior_predictive, sample_posterior_predictive],
     dir: str = "",
     force_sample: bool = False,
+    force_load: bool = True,
 ) -> Callable:
     """Cache the result of PyMC sampling.
 
@@ -88,6 +89,7 @@ def cache_sampling(
         The directory where the results should be saved or retrieved from. Defaults to working directory.
     force_sample: bool, Optional
         Whether to force sampling even if cache is found. Defaults to False.
+    force_load:
 
     Returns
     -------
@@ -163,7 +165,9 @@ def cache_sampling(
 
         if not force_sample and os.path.exists(file_path):
             print("Cache hit! Returning stored result", file=sys.stdout)
-            idata_out = az.from_netcdf(file_path)
+            idata_out: az.InferenceData = az.from_netcdf(file_path)
+            if force_load:
+                idata_out.load()
 
         else:
             idata_out = sampling_fn(*args, **kwargs, model=model, random_seed=random_seed)
