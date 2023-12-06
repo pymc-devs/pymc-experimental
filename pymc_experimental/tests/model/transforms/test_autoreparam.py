@@ -63,3 +63,20 @@ def test_reparam_fit(model_c):
     with model_v:
         vip.fit(random_seed=42)
     np.testing.assert_allclose(vip.get_lambda()["g"], 0, atol=0.01)
+
+
+def test_multilevel():
+    with pm.Model(
+        coords=dict(level=["Basement", "Floor"], county=[1, 2]),
+    ) as model:
+        # multilevel modelling
+        a = pm.Normal("a")
+        s = pm.HalfNormal("s")
+        a_g = pm.Normal("a_g", a, s, dims="level")
+        s_g = pm.HalfNormal("s_g")
+        a_ig = pm.Normal("a_ig", a_g, s_g, dims=("county", "level"))
+
+    model_r, vip = vip_reparametrize(model, ["a_g", "a_ig"])
+    assert "a_g" in vip.get_lambda()
+    assert "a_ig" in vip.get_lambda()
+    assert {v.name for v in model_r.free_RVs} == {"a", "s", "a_g::tau_", "s_g", "a_ig::tau_"}

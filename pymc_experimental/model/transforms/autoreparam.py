@@ -156,7 +156,7 @@ def vip_reparametrize(
         new, lam = vip_reparam_node(old.owner, eps=eps, round=round)
         replacements.append((old, new))
         lambda_names.append(lam.name)
-    toposort_replace(fmodel, replacements)
+    toposort_replace(fmodel, replacements, reverse=True)
     reparam_model = model_from_fgraph(fmodel)
     model_lambdas = {n: reparam_model[l] for l, n in zip(lambda_names, var_names)}
     vip = VIP(model_lambdas, reparam_model[eps.name], reparam_model[round.name])
