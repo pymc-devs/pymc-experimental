@@ -75,8 +75,33 @@ class VIP:
         )
 
 
-@singledispatch
 def vip_reparam_node(
+    op: RandomVariable,
+    node: Apply,
+    name: str,
+    dims: List[Variable],
+    transform: Transform,
+    eps: ModelNamed,
+    round: ModelNamed,
+) -> Tuple[ModelDeterministic, ModelNamed]:
+    if not isinstance(node.op, RandomVariable):
+        raise TypeError("Op should be RandomVariable type")
+    size = node.inputs[1]
+    if not isinstance(size, pt.TensorConstant):
+        raise ValueError("Size should be static for autoreparameterization.")
+    return _vip_reparam_node(
+        op,
+        node=node,
+        name=name,
+        dims=dims,
+        transform=transform,
+        eps=eps,
+        round=round,
+    )
+
+
+@singledispatch
+def _vip_reparam_node(
     op: RandomVariable,
     node: Apply,
     name: str,
@@ -88,7 +113,7 @@ def vip_reparam_node(
     raise NotImplementedError
 
 
-@vip_reparam_node.register
+@_vip_reparam_node.register
 def _(
     op: pm.Normal,
     node: Apply,
@@ -99,8 +124,6 @@ def _(
     round: ModelNamed,
 ) -> Tuple[ModelDeterministic, ModelNamed]:
     rng, size, _, loc, scale = node.inputs
-    if not isinstance(size, pt.TensorConstant):
-        raise ValueError("Size should be static for autoreparameterization.")
     logit_lam_ = pytensor.shared(
         np.zeros(size.data),
         shape=size.data,
