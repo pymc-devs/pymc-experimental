@@ -38,7 +38,7 @@ def test_random_draw(model_c: pm.Model, model_nc):
     model_c = pm.do(model_c, {"m": 3, "s": 2})
     model_nc = pm.do(model_nc, {"m": 3, "s": 2})
     model_v, vip = vip_reparametrize(model_c, ["g"])
-    assert "g" in model_v.deterministics
+    assert "g" in [v.name for v in model_v.deterministics]
     c = pm.draw(model_c["g"], random_seed=42, draws=1000)
     nc = pm.draw(model_nc["g"], random_seed=42, draws=1000)
     vip.set_all_lambda(1)
@@ -80,4 +80,4 @@ def test_multilevel():
     assert "a_g" in vip.get_lambda()
     assert "a_ig" in vip.get_lambda()
     assert {v.name for v in model_r.free_RVs} == {"a", "s", "a_g::tau_", "s_g", "a_ig::tau_"}
-    assert "a_g" in model_r.deterministics
+    assert "a_g" in [v.name for v in model_r.deterministics]

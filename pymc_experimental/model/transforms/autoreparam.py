@@ -9,6 +9,7 @@ import scipy.special
 from pymc.model.fgraph import (
     ModelNamed,
     fgraph_from_model,
+    model_deterministic,
     model_free_rv,
     model_from_fgraph,
     model_named,
@@ -132,7 +133,7 @@ def vip_reparam_node(
     )
     vip_rep_.name = rv.name
 
-    vip_rep = model_named(vip_rep_, *dims)
+    vip_rep = model_deterministic(vip_rep_, *dims)
     return vip_rep, logit_lam_
 
 
