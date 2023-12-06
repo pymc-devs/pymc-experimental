@@ -1,12 +1,15 @@
 from dataclasses import dataclass
-from typing import Dict, Sequence, Tuple
+from functools import singledispatch
+from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 import scipy.special
+from pymc.logprob.transforms import Transform
 from pymc.model.fgraph import (
+    ModelDeterministic,
     ModelNamed,
     fgraph_from_model,
     model_deterministic,
@@ -15,7 +18,8 @@ from pymc.model.fgraph import (
     model_named,
 )
 from pymc.pytensorf import toposort_replace
-from pytensor.graph.basic import Apply
+from pytensor.graph.basic import Apply, Variable
+from pytensor.tensor.random.op import RandomVariable
 
 
 @dataclass
@@ -71,21 +75,36 @@ class VIP:
         )
 
 
+@singledispatch
 def vip_reparam_node(
+    op: RandomVariable,
     node: Apply,
+    name: str,
+    dims: List[Variable],
+    transform: Transform,
     eps: ModelNamed,
     round: ModelNamed,
-) -> Tuple[ModelNamed, pytensor.tensor.sharedvar.TensorSharedVariable]:
-    rv, _, *dims = node.inputs
-    rng, size, _, loc, scale = rv.owner.inputs
+) -> Tuple[ModelDeterministic, ModelNamed]:
+    raise NotImplementedError
+
+
+@vip_reparam_node.register
+def _(
+    op: pm.Normal,
+    node: Apply,
+    name: str,
+    dims: List[Variable],
+    transform: Transform,
+    eps: ModelNamed,
+    round: ModelNamed,
+) -> Tuple[ModelDeterministic, ModelNamed]:
+    rng, size, _, loc, scale = node.inputs
     if not isinstance(size, pt.TensorConstant):
         raise ValueError("Size should be static for autoreparameterization.")
-    if not isinstance(rv.owner.op, pm.Normal):
-        raise ValueError("RV should be follow a Normal distribution.")
     logit_lam_ = pytensor.shared(
         np.zeros(size.data),
         shape=size.data,
-        name=f"{rv.name}::lam_logit__",
+        name=f"{name}::lam_logit__",
     )
     logit_lam = model_named(logit_lam_, *dims)
     lam = pt.sigmoid(logit_lam)
@@ -117,12 +136,12 @@ def vip_reparam_node(
         size=size,
         rng=rng,
     )
-    vip_rv_.name = f"{rv.name}::tau_"
+    vip_rv_.name = f"{name}::tau_"
 
     vip_rv = model_free_rv(
         vip_rv_,
         vip_rv_.clone(),
-        node.op.transform,
+        transform,
         *dims,
     )
 
@@ -131,10 +150,10 @@ def vip_reparam_node(
         loc + vip_rv * scale,
         pt.switch(c_cond, vip_rv, loc + scale ** (1 - lam) * (vip_rv - lam * loc)),
     )
-    vip_rep_.name = rv.name
+    vip_rep_.name = name
 
     vip_rep = model_deterministic(vip_rep_, *dims)
-    return vip_rep, logit_lam_
+    return vip_rep, logit_lam
 
 
 def vip_reparametrize(
@@ -154,7 +173,16 @@ def vip_reparametrize(
     round = model_named(round_)
     for name in var_names:
         old = memo[model.named_vars[name]]
-        new, lam = vip_reparam_node(old.owner, eps=eps, round=round)
+        rv, _, *dims = old.owner.inputs
+        new, lam = vip_reparam_node(
+            rv.owner.op,
+            rv.owner,
+            name=rv.name,
+            dims=dims,
+            transform=old.owner.op.transform,
+            eps=eps,
+            round=round,
+        )
         replacements.append((old, new))
         lambda_names.append(lam.name)
     toposort_replace(fmodel, replacements, reverse=True)
