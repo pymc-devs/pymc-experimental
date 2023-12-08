@@ -26,8 +26,6 @@ def model_nc():
 def test_reparametrize_created(model_c: pm.Model):
     model_reparam, vip = vip_reparametrize(model_c, ["g"])
     assert "g" in vip.get_lambda()
-    assert "_vip::eps" in model_reparam.named_vars
-    assert "_vip::round" in model_reparam.named_vars
     assert "g::lam_logit__" in model_reparam.named_vars
     assert "g::tau_" in model_reparam.named_vars
     vip.set_all_lambda(1)
@@ -81,3 +79,20 @@ def test_multilevel():
     assert "a_ig" in vip.get_lambda()
     assert {v.name for v in model_r.free_RVs} == {"a", "s", "a_g::tau_", "s_g", "a_ig::tau_"}
     assert "a_g" in [v.name for v in model_r.deterministics]
+
+
+def test_set_truncate(model_c):
+    model_v, vip = vip_reparametrize(model_c, ["m", "g"])
+    vip.set_all_lambda(0.93)
+    np.testing.assert_allclose(vip.get_lambda()["g"], 0.93)
+    np.testing.assert_allclose(vip.get_lambda()["m"], 0.93)
+    vip.truncate_all_lambda(0.1)
+    np.testing.assert_allclose(vip.get_lambda()["g"], 1)
+    np.testing.assert_allclose(vip.get_lambda()["m"], 1)
+
+    vip.set_lambda(g=0.93, m=0.9)
+    np.testing.assert_allclose(vip.get_lambda()["g"], 0.93)
+    np.testing.assert_allclose(vip.get_lambda()["m"], 0.9)
+    vip.truncate_lambda(g=0.2)
+    np.testing.assert_allclose(vip.get_lambda()["g"], 1)
+    np.testing.assert_allclose(vip.get_lambda()["m"], 0.9)
