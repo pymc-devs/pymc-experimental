@@ -81,7 +81,7 @@ def test_multilevel():
     assert "a_g" in [v.name for v in model_r.deterministics]
 
 
-def test_set_truncate(model_c):
+def test_set_truncate(model_c: pm.Model):
     model_v, vip = vip_reparametrize(model_c, ["m", "g"])
     vip.set_all_lambda(0.93)
     np.testing.assert_allclose(vip.get_lambda()["g"], 0.93)
