@@ -60,3 +60,13 @@ Statespace Models
    statespace/core
    statespace/filters
    statespace/models
+
+
+Model Transforms
+================
+.. automodule:: pymc_experimental.model.transforms
+.. autosummary::
+   :toctree: generated/
+
+   autoreparam.vip_reparametrize
+   autoreparam.VIP
