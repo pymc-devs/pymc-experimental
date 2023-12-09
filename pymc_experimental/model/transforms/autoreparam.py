@@ -217,7 +217,8 @@ def _(
     lam: pt.TensorVariable,
 ) -> ModelDeterministic:
     rng, size, _, loc, scale = node.inputs
-
+    if transform is not None:
+        raise NotImplementedError("Reparametrization with Transform is not implemented")
     vip_rv_ = pm.Normal.dist(
         lam * loc,
         scale**lam,
