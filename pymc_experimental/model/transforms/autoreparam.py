@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Dict, List, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pymc as pm
@@ -168,7 +168,7 @@ def vip_reparam_node(
     node: Apply,
     name: str,
     dims: List[Variable],
-    transform: Transform,
+    transform: Optional[Transform],
 ) -> Tuple[ModelDeterministic, ModelNamed]:
     if not isinstance(node.op, RandomVariable):
         raise TypeError("Op should be RandomVariable type")
@@ -201,7 +201,7 @@ def _vip_reparam_node(
     node: Apply,
     name: str,
     dims: List[Variable],
-    transform: Transform,
+    transform: Optional[Transform],
     lam: pt.TensorVariable,
 ) -> ModelDeterministic:
     raise NotImplementedError
@@ -213,7 +213,7 @@ def _(
     node: Apply,
     name: str,
     dims: List[Variable],
-    transform: Transform,
+    transform: Optional[Transform],
     lam: pt.TensorVariable,
 ) -> ModelDeterministic:
     rng, size, _, loc, scale = node.inputs
@@ -230,7 +230,7 @@ def _(
     vip_rv = model_free_rv(
         vip_rv_,
         vip_rv_.clone(),
-        transform,
+        None,
         *dims,
     )
 
