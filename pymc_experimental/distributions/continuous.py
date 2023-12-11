@@ -470,7 +470,7 @@ class GeneralizedNormal(Continuous):
 
     # moment here returns the mean
     def moment(rv, size, mu, alpha, beta):
-        moment, _ = pt.broadcast_arrays(mu, alpha, beta)
+        moment, *_ = pt.broadcast_arrays(mu, alpha, beta)
         if not rv_size_is_none(size):
             moment = pt.full(size, moment)
         return moment
