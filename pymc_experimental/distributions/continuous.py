@@ -478,7 +478,7 @@ class GeneralizedNormal(Continuous):
     def logp(value, mu, alpha, beta):
 
         z = (value-mu)/alpha
-        lp = pt.log(0.5*beta) - pt.log(2.0*alpha) - pt.gammaln(1.0/beta) - pt.pow(pt.abs(z), beta)
+        lp = pt.log(0.5*beta) - pt.log(alpha) - pt.gammaln(1.0/beta) - pt.pow(pt.abs(z), beta)
 
         return check_parameters(
             lp,
@@ -512,8 +512,8 @@ class GeneralizedNormal(Continuous):
         # opted for a slightly different version using gammaincc instead.
         # Note that on the Wikipedia page the unnormalised \gamma function
         # is used, while gammainc is a normalised function
-        cdf = 0.5 + pt.sign(value-mu)*pt.gammainc(1.0/beta, pt.pow(z, beta))
-        
+        cdf = 0.5 + 0.5*pt.sign(value-mu)*pt.gammainc(1.0/beta, pt.pow(z, beta))
+
         return pt.log(cdf)
         
         
