@@ -218,7 +218,7 @@ def _(
 ) -> ModelDeterministic:
     rng, size, _, loc, scale = node.inputs
     if transform is not None:
-        raise NotImplementedError("Reparametrization with Transform is not implemented")
+        raise NotImplementedError("Reparametrization of Normal with Transform is not implemented")
     vip_rv_ = pm.Normal.dist(
         lam * loc,
         scale**lam,
