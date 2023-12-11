@@ -507,9 +507,12 @@ class GeneralizedNormal(Continuous):
         
         z = pt.abs((value-mu)/alpha)
         c =  pt.sign(value-mu)
-        cdf = 0.5 + pt.sign(value-mu)*pt.gammaincc(1.0/beta, pt.pow(z, beta))
 
-        print("CDF={0}".format(cdf))
+        # This follows the Wikipedia entry for the function - scipy has
+        # opted for a slightly different version using gammaincc instead.
+        # Note that on the Wikipedia page the unnormalised \gamma function
+        # is used, while gammainc is a normalised function
+        cdf = 0.5 + pt.sign(value-mu)*pt.gammainc(1.0/beta, pt.pow(z, beta))
         
         return pt.log(cdf)
         
