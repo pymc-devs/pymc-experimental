@@ -207,6 +207,13 @@ class TestGeneralizedNormal:
         )
 
 
+    def test_gennorm_moment(self, mu, alpha, beta, size, expected):
+        with pm.Model() as model:
+            GeneralizedNormal("x", mu=mu, alpha=alpha, beta=beta, size=size)
+        assert_moment_is_expected(model, expected)
+
+
+
 class TestGeneralizedNormal(BaseTestDistributionRandom):
     pymc_dist = GeneralizedNormal
     pymc_dist_params = {"mu": 0, "alpha": 1, "beta": 2.0}
