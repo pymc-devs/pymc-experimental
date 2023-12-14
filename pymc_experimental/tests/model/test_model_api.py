@@ -19,4 +19,11 @@ def test_logp():
 
     mw = model_wrapped()
 
+    @pmx.as_model()
+    def model_wrapped2():
+        pm.Normal("x", 0.0, 1.0, dims="obs")
+
+    mw2 = model_wrapped2(coords=coords)
+
     np.testing.assert_equal(model.point_logps(), mw.point_logps())
+    np.testing.assert_equal(mw.point_logps(), mw2.point_logps())
