@@ -154,7 +154,7 @@ class TestR2D2M2CP:
         assert ("beta::phi" in model.named_vars) == (
             "variables_importance" in phi_args or "importance_concentration" in phi_args
         ), set(model.named_vars)
-        assert np.isfinite(sum(model.point_logps().values()))
+        assert np.isfinite(model.compile_logp()(model.initial_point()))
 
     def test_init_positive_probs(
         self,
