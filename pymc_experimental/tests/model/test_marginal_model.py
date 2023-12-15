@@ -6,11 +6,13 @@ import pandas as pd
 import pymc as pm
 import pytensor.tensor as pt
 import pytest
+from arviz import InferenceData, dict_to_dataset
 from pymc import ImputationWarning, inputvars
 from pymc.distributions import transforms
 from pymc.logprob.abstract import _logprob
 from pymc.util import UNSET
-from scipy.special import logsumexp
+from scipy.special import log_softmax, logsumexp
+from scipy.stats import halfnorm, norm
 
 from pymc_experimental.model.marginal_model import (
     FiniteDiscreteMarginalRV,
@@ -166,6 +168,21 @@ def test_multiple_dependent_marginalized_rvs():
     np.testing.assert_array_almost_equal(logp_x_y, ref_logp_x_y)
 
 
+def test_rv_dependent_multiple_marginalized_rvs():
+    """Test when random variables depend on multiple marginalized variables"""
+    with MarginalModel() as m:
+        x = pm.Bernoulli("x", 0.1)
+        y = pm.Bernoulli("y", 0.3)
+        z = pm.DiracDelta("z", c=x + y)
+
+    m.marginalize([x, y])
+    logp = m.compile_logp()
+
+    np.testing.assert_allclose(np.exp(logp({"z": 0})), 0.9 * 0.7)
+    np.testing.assert_allclose(np.exp(logp({"z": 1})), 0.9 * 0.3 + 0.1 * 0.7)
+    np.testing.assert_allclose(np.exp(logp({"z": 2})), 0.1 * 0.3)
+
+
 @pytest.mark.filterwarnings("error")
 def test_nested_marginalized_rvs():
     """Test that marginalization works when there are nested marginalized RVs"""
@@ -248,6 +265,125 @@ def test_marginalized_change_point_model_sampling(disaster_model):
         before_marg["disasters_unobserved"].mean(),
         after_marg["disasters_unobserved"].mean(),
         rtol=1e-2,
+    )
+
+
+def test_recover_marginals_basic():
+    with MarginalModel() as m:
+        sigma = pm.HalfNormal("sigma")
+        p = np.array([0.5, 0.2, 0.3])
+        k = pm.Categorical("k", p=p)
+        mu = np.array([-3.0, 0.0, 3.0])
+        mu_ = pt.as_tensor_variable(mu)
+        y = pm.Normal("y", mu=mu_[k], sigma=sigma)
+
+    m.marginalize([k])
+
+    rng = np.random.default_rng(211)
+
+    with m:
+        prior = pm.sample_prior_predictive(
+            samples=20,
+            random_seed=rng,
+            return_inferencedata=False,
+        )
+        idata = InferenceData(posterior=dict_to_dataset(prior))
+
+    idata = m.recover_marginals(idata, return_samples=True)
+    assert "k" in idata
+    assert "lp_k" in idata
+    assert idata.k.shape == idata.y.shape
+    assert idata.lp_k.shape == idata.k.shape + (len(p),)
+
+    def true_logp(y, sigma):
+        y = y.repeat(len(p)).reshape(len(y), -1)
+        sigma = sigma.repeat(len(p)).reshape(len(sigma), -1)
+        return log_softmax(
+            np.log(p)
+            + norm.logpdf(y, loc=mu, scale=sigma)
+            + halfnorm.logpdf(sigma)
+            + np.log(sigma),
+            axis=1,
+        )
+
+    np.testing.assert_almost_equal(
+        true_logp(idata.y.values.flatten(), idata.sigma.values.flatten()),
+        idata.lp_k[0].values,
+    )
+
+
+def test_recover_batched_marginal():
+    """Test that marginalization works for batched random variables"""
+    with MarginalModel() as m:
+        sigma = pm.HalfNormal("sigma")
+        idx = pm.Bernoulli("idx", p=0.7, shape=(2, 3))
+        y = pm.Normal("y", mu=idx, sigma=sigma, shape=(2, 3))
+
+    m.marginalize([idx])
+
+    rng = np.random.default_rng(211)
+
+    with m:
+        prior = pm.sample_prior_predictive(
+            samples=20,
+            random_seed=rng,
+            return_inferencedata=False,
+        )
+        idata = InferenceData(
+            posterior=dict_to_dataset({k: np.expand_dims(prior[k], axis=0) for k in prior})
+        )
+
+    idata = m.recover_marginals(idata, return_samples=True)
+
+
+def test_nested_recover_marginals():
+    """Test that marginalization works when there are nested marginalized RVs"""
+
+    with MarginalModel() as m:
+        idx = pm.Bernoulli("idx", p=0.75)
+        sub_idx = pm.Bernoulli("sub_idx", p=pt.switch(pt.eq(idx, 0), 0.15, 0.95))
+        sub_dep = pm.Normal("y", mu=idx + sub_idx, sigma=1.0)
+
+    m.marginalize([idx, sub_idx])
+
+    rng = np.random.default_rng(211)
+
+    with m:
+        prior = pm.sample_prior_predictive(
+            samples=20,
+            random_seed=rng,
+            return_inferencedata=False,
+        )
+        idata = InferenceData(posterior=dict_to_dataset(prior))
+
+    idata = m.recover_marginals(idata, return_samples=True)
+    assert "idx" in idata
+    assert "lp_idx" in idata
+    assert idata.idx.shape == idata.y.shape
+    assert idata.lp_idx.shape == idata.idx.shape + (2,)
+    assert "sub_idx" in idata
+    assert "lp_sub_idx" in idata
+    assert idata.sub_idx.shape == idata.y.shape
+    assert idata.lp_sub_idx.shape == idata.sub_idx.shape + (2,)
+
+    def true_idx_logp(y):
+        idx_0 = np.log(0.85 * 0.25 * norm.pdf(y, loc=0) + 0.15 * 0.25 * norm.pdf(y, loc=1))
+        idx_1 = np.log(0.05 * 0.75 * norm.pdf(y, loc=1) + 0.95 * 0.75 * norm.pdf(y, loc=2))
+        return log_softmax(np.stack([idx_0, idx_1]).T, axis=1)
+
+    np.testing.assert_almost_equal(
+        true_idx_logp(idata.y.values.flatten()),
+        idata.lp_idx[0].values,
+    )
+
+    def true_sub_idx_logp(y):
+        sub_idx_0 = np.log(0.85 * 0.25 * norm.pdf(y, loc=0) + 0.05 * 0.75 * norm.pdf(y, loc=1))
+        sub_idx_1 = np.log(0.15 * 0.25 * norm.pdf(y, loc=1) + 0.95 * 0.75 * norm.pdf(y, loc=2))
+        return log_softmax(np.stack([sub_idx_0, sub_idx_1]).T, axis=1)
+
+    np.testing.assert_almost_equal(
+        true_sub_idx_logp(idata.y.values.flatten()),
+        idata.lp_sub_idx[0].values,
     )
 
 
