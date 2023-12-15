@@ -125,7 +125,7 @@ class TestR2D2M2CP:
         assert "beta" in model.named_vars
         assert ("beta::r2" in model.named_vars) == (r2_std is not None), set(model.named_vars)
         # phi is only created if variable importance is not None and there is more than one var
-        assert np.isfinite(sum(model.point_logps().values()))
+        assert np.isfinite(model.compile_logp()(model.initial_point()))
 
     def test_init_importance(
         self,
