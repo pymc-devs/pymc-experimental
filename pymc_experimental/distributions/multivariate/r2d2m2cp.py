@@ -243,26 +243,26 @@ def R2D2M2CP(
     ----------
     name : str
         Name for the distribution
-    output_sigma : tensor
+    output_sigma : Tensor
         Output standard deviation
-    input_sigma : tensor
+    input_sigma : Tensor
         Input standard deviation
     dims : Union[str, Sequence[str]]
         Dims for the distribution
     r2 : Tensor
         :math:`R^2` estimate
-    variables_importance : tensor, optional
+    variables_importance : Tensor, optional
         Optional estimate for variables importance, positive, by default None
-    variance_explained : tensor, optional
+    variance_explained : Tensor, optional
         Alternative estimate for variables importance which is point estimate of
         variance explained, should sum up to one, by default None
-    importance_concentration : tensor, optional
+    importance_concentration : Tensor, optional
         Confidence around variance explained or variable importance estimate
-    r2_std : tensor, optional
+    r2_std : Tensor, optional
         Optional uncertainty over :math:`R^2`, by default None
-    positive_probs : tensor, optional
+    positive_probs : Tensor, optional
         Optional probability of variables contribution to be positive, by default 0.5
-    positive_probs_std : tensor, optional
+    positive_probs_std : Tensor, optional
         Optional uncertainty over effect direction probability, by default None
     centered : bool, optional
         Centered or Non-Centered parametrization of the distribution, by default Non-Centered. Advised to check both
