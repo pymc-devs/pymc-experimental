@@ -133,7 +133,10 @@ class TestR2D2M2CP:
         assert ("beta::psi" in model.named_vars) == (
             positive_probs_std is not None and positive_probs_std.any()
         ), set(model.named_vars)
-        assert np.isfinite(sum(model.point_logps().values()))
+        # Initial point runs in Python mode and there's some prod with both 0 and -inf
+        with np.errstate(invalid="ignore"):
+            ip = model.initial_point()
+        assert np.isfinite(model.compile_logp()(ip))
 
     def test_failing_importance(self, dims, input_shape, output_std, input_std):
         if input_shape[-1] < 2:
