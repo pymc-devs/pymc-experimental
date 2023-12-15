@@ -13,7 +13,7 @@
 #   limitations under the License.
 
 
-from typing import Sequence, Union
+from typing import Sequence, Tuple, Union
 
 import numpy as np
 import pymc as pm
@@ -22,14 +22,23 @@ import pytensor.tensor as pt
 __all__ = ["R2D2M2CP"]
 
 
-def _psivar2musigma(psi: pt.TensorVariable, explained_var: pt.TensorVariable, psi_mask):
+def _psivar2musigma(
+    psi: pt.TensorVariable,
+    explained_var: pt.TensorVariable,
+    psi_mask: Union[pt.TensorLike, None],
+) -> Tuple[pt.TensorVariable, pt.TensorVariable]:
+    sign = pt.sign(psi - 0.5)
+    if psi_mask is not None:
+        # any computation might be ignored for ~psi_mask
+        # sign and explained_var are used
+        psi = pt.where(psi_mask, psi, 0.5)
     pi = pt.erfinv(2 * psi - 1)
     f = (1 / (2 * pi**2 + 1)) ** 0.5
     sigma = explained_var**0.5 * f
     mu = sigma * pi * 2**0.5
     if psi_mask is not None:
         return (
-            pt.where(psi_mask, mu, pt.sign(pi) * explained_var**0.5),
+            pt.where(psi_mask, mu, sign * explained_var**0.5),
             pt.where(psi_mask, sigma, 0),
         )
     else:
@@ -47,7 +56,7 @@ def _R2D2M2CP_beta(
     psi_mask,
     dims: Union[str, Sequence[str]],
     centered=False,
-):
+) -> pt.TensorVariable:
     """R2D2M2CP beta prior.
 
     Parameters
@@ -65,7 +74,7 @@ def _R2D2M2CP_beta(
     psi: tensor
         probability of a coefficients to be positive
     """
-    explained_variance = phi * pt.expand_dims(r2 * output_sigma**2, -1)
+    explained_variance = phi * pt.expand_dims(r2 * output_sigma**2, (-1,))
     mu_param, std_param = _psivar2musigma(psi, explained_variance, psi_mask=psi_mask)
     if not centered:
         with pm.Model(name):
@@ -107,7 +116,10 @@ def _R2D2M2CP_beta(
     return beta
 
 
-def _broadcast_as_dims(*values, dims):
+def _broadcast_as_dims(
+    *values: np.ndarray,
+    dims: Sequence[str],
+) -> Union[Tuple[np.ndarray, ...], np.ndarray]:
     model = pm.modelcontext(None)
     shape = [len(model.coords[d]) for d in dims]
     ret = tuple(np.broadcast_to(v, shape) for v in values)
@@ -117,7 +129,12 @@ def _broadcast_as_dims(*values, dims):
     return ret
 
 
-def _psi_masked(positive_probs, positive_probs_std, *, dims):
+def _psi_masked(
+    positive_probs: pt.TensorLike,
+    positive_probs_std: pt.TensorLike,
+    *,
+    dims: Sequence[str],
+) -> Tuple[Union[pt.TensorLike, None], pt.TensorVariable]:
     if not (
         isinstance(positive_probs, pt.Constant) and isinstance(positive_probs_std, pt.Constant)
     ):
@@ -152,7 +169,12 @@ def _psi_masked(positive_probs, positive_probs_std, *, dims):
     return mask, psi
 
 
-def _psi(positive_probs, positive_probs_std, *, dims):
+def _psi(
+    positive_probs: pt.TensorLike,
+    positive_probs_std: Union[pt.TensorLike, None],
+    *,
+    dims: Sequence[str],
+) -> Tuple[Union[pt.TensorLike, None], pt.TensorVariable]:
     if positive_probs_std is not None:
         mask, psi = _psi_masked(
             positive_probs=pt.as_tensor(positive_probs),
@@ -171,12 +193,12 @@ def _psi(positive_probs, positive_probs_std, *, dims):
 
 
 def _phi(
-    variables_importance,
-    variance_explained,
-    importance_concentration,
+    variables_importance: Union[pt.TensorLike, None],
+    variance_explained: Union[pt.TensorLike, None],
+    importance_concentration: Union[pt.TensorLike, None],
     *,
-    dims,
-):
+    dims: Sequence[str],
+) -> pt.TensorVariable:
     *broadcast_dims, dim = dims
     model = pm.modelcontext(None)
     if variables_importance is not None:
@@ -201,20 +223,20 @@ def _phi(
 
 
 def R2D2M2CP(
-    name,
-    output_sigma,
-    input_sigma,
+    name: str,
+    output_sigma: pt.TensorLike,
+    input_sigma: pt.TensorLike,
     *,
-    dims,
-    r2,
-    variables_importance=None,
-    variance_explained=None,
-    importance_concentration=None,
-    r2_std=None,
-    positive_probs=0.5,
-    positive_probs_std=None,
-    centered=False,
-):
+    dims: Sequence[str],
+    r2: pt.TensorLike,
+    variables_importance: Union[pt.TensorLike, None] = None,
+    variance_explained: Union[pt.TensorLike, None] = None,
+    importance_concentration: Union[pt.TensorLike, None] = None,
+    r2_std: Union[pt.TensorLike, None] = None,
+    positive_probs: Union[pt.TensorLike, None] = 0.5,
+    positive_probs_std: Union[pt.TensorLike, None] = None,
+    centered: bool = False,
+) -> tuple[pt.TensorVariable, pt.TensorVariable]:
     """R2D2M2CP Prior.
 
     Parameters

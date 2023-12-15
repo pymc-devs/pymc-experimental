@@ -1,11 +1,17 @@
 import numpy as np
 import pymc as pm
+import pytensor
 import pytest
 
 import pymc_experimental as pmx
 
 
 class TestR2D2M2CP:
+    @pytest.fixture(autouse=True)
+    def fast_compile(self):
+        with pytensor.config.change_flags(mode="FAST_COMPILE", exception_verbosity="high"):
+            yield
+
     @pytest.fixture(autouse=True)
     def model(self):
         # every method is within a model
@@ -95,17 +101,13 @@ class TestR2D2M2CP:
             phi_args_base["importance_concentration"] = 10
         return phi_args_base
 
-    def test_init(
+    def test_init_r2(
         self,
         dims,
-        centered,
         input_std,
         output_std,
         r2,
         r2_std,
-        positive_probs,
-        positive_probs_std,
-        phi_args,
         model: pm.Model,
     ):
         eps, beta = pmx.distributions.R2D2M2CP(
@@ -115,10 +117,6 @@ class TestR2D2M2CP:
             dims=dims,
             r2=r2,
             r2_std=r2_std,
-            centered=centered,
-            positive_probs_std=positive_probs_std,
-            positive_probs=positive_probs,
-            **phi_args
         )
         assert not np.isnan(beta.eval()).any()
         assert eps.eval().shape == output_std.shape
@@ -127,9 +125,63 @@ class TestR2D2M2CP:
         assert "beta" in model.named_vars
         assert ("beta::r2" in model.named_vars) == (r2_std is not None), set(model.named_vars)
         # phi is only created if variable importance is not None and there is more than one var
+        assert np.isfinite(sum(model.point_logps().values()))
+
+    def test_init_importance(
+        self,
+        dims,
+        centered,
+        input_std,
+        output_std,
+        phi_args,
+        model: pm.Model,
+    ):
+        eps, beta = pmx.distributions.R2D2M2CP(
+            "beta",
+            output_std,
+            input_std,
+            dims=dims,
+            r2=1,
+            centered=centered,
+            **phi_args,
+        )
+        assert not np.isnan(beta.eval()).any()
+        assert eps.eval().shape == output_std.shape
+        assert beta.eval().shape == input_std.shape
+        # r2 rv is only created if r2 std is not None
+        assert "beta" in model.named_vars
+        # phi is only created if variable importance is not None and there is more than one var
         assert ("beta::phi" in model.named_vars) == (
             "variables_importance" in phi_args or "importance_concentration" in phi_args
         ), set(model.named_vars)
+        assert np.isfinite(sum(model.point_logps().values()))
+
+    def test_init_positive_probs(
+        self,
+        dims,
+        centered,
+        input_std,
+        output_std,
+        positive_probs,
+        positive_probs_std,
+        model: pm.Model,
+    ):
+        eps, beta = pmx.distributions.R2D2M2CP(
+            "beta",
+            output_std,
+            input_std,
+            dims=dims,
+            r2=1.0,
+            centered=centered,
+            positive_probs_std=positive_probs_std,
+            positive_probs=positive_probs,
+        )
+        assert not np.isnan(beta.eval()).any()
+        assert eps.eval().shape == output_std.shape
+        assert beta.eval().shape == input_std.shape
+        # r2 rv is only created if r2 std is not None
+        assert "beta" in model.named_vars
+        # phi is only created if variable importance is not None and there is more than one var
         assert ("beta::psi" in model.named_vars) == (
             positive_probs_std is not None and positive_probs_std.any()
         ), set(model.named_vars)
