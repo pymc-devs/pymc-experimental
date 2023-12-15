@@ -13,6 +13,7 @@
 #   limitations under the License.
 
 
+from collections import namedtuple
 from typing import Sequence, Tuple, Union
 
 import numpy as np
@@ -222,6 +223,9 @@ def _phi(
         return phi
 
 
+R2D2M2CPOut = namedtuple("R2D2M2CPOut", ["eps", "beta"])
+
+
 def R2D2M2CP(
     name: str,
     output_sigma: pt.TensorLike,
@@ -236,7 +240,7 @@ def R2D2M2CP(
     positive_probs: Union[pt.TensorLike, None] = 0.5,
     positive_probs_std: Union[pt.TensorLike, None] = None,
     centered: bool = False,
-) -> tuple[pt.TensorVariable, pt.TensorVariable]:
+) -> R2D2M2CPOut:
     """R2D2M2CP Prior.
 
     Parameters
@@ -441,4 +445,4 @@ def R2D2M2CP(
         psi_mask=mask,
     )
     resid_sigma = (1 - r2) ** 0.5 * output_sigma
-    return resid_sigma, beta
+    return R2D2M2CPOut(resid_sigma, beta)
