@@ -249,7 +249,7 @@ def R2D2M2CP(
         Input standard deviation
     dims : Union[str, Sequence[str]]
         Dims for the distribution
-    r2 : tensor
+    r2 : Tensor
         :math:`R^2` estimate
     variables_importance : tensor, optional
         Optional estimate for variables importance, positive, by default None
