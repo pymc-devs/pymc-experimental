@@ -44,6 +44,26 @@ def _assert_all_statespace_matrices_match(mod, params, sm_mod):
         )
 
 
+def _assert_coord_shapes_match_matrices(mod, params):
+    if "initial_state_cov" not in params:
+        params["initial_state_cov"] = np.eye(mod.k_states)
+
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
+    n_states = len(mod.coords["state"])
+    n_shocks = len(mod.coords["shock"])
+    n_obs = len(mod.coords["observed_state"])
+
+    assert x0.shape[-1:] == (n_states,)
+    assert P0.shape[-2:] == (n_states, n_states)
+    assert c.shape[-1:] == (n_states,)
+    assert d.shape[-1:] == (n_obs,)
+    assert T.shape[-2:] == (n_states, n_states)
+    assert Z.shape[-2:] == (n_obs, n_states)
+    assert R.shape[-2:] == (n_states, n_shocks)
+    assert H.shape[-2:] == (n_obs, n_obs)
+    assert Q.shape[-2:] == (n_shocks, n_shocks)
+
+
 def _assert_basic_coords_correct(mod):
     assert mod.coords["state"] == mod.state_names
     assert mod.coords["state_aux"] == mod.state_names
@@ -185,7 +205,7 @@ def create_structural_model_and_equivalent_statsmodel(
         # Statsmodels takes the frequency not the cycle length, so convert it.
         sm_params["frequency.cycle"] = 2.0 * np.pi / cycle_length
         params["cycle_cycle_length"] = np.atleast_1d(cycle_length)
-        params["initial_cycle"] = np.ones((1,))
+        params["cycle"] = np.ones((1,))
 
         if stochastic_cycle:
             sigma = np.abs(rng.normal(size=(1,)))
@@ -305,6 +325,9 @@ def test_structural_model_against_statsmodels(
 
     _assert_all_statespace_matrices_match(mod, params, sm_mod)
 
+    mod.build(verbose=False)
+    _assert_coord_shapes_match_matrices(mod, params)
+
 
 def test_level_trend_model(rng):
     mod = st.LevelTrendComponent(order=2, innovations_order=0)
@@ -413,7 +436,7 @@ def test_cycle_component_deterministic(rng):
     cycle = st.CycleComponent(
         name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False
     )
-    params = {"initial_cycle": np.array([1.0], dtype=floatX)}
+    params = {"cycle": np.array([1.0], dtype=floatX)}
     x, y = simulate_from_numpy_model(cycle, rng, params, steps=12 * 12)
 
     assert_pattern_repeats(y, 12, atol=ATOL, rtol=RTOL)
@@ -424,7 +447,7 @@ def test_cycle_component_with_dampening(rng):
         name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False, dampen=True
     )
     params = {
-        "initial_cycle": np.array([10.0], dtype=floatX),
+        "cycle": np.array([10.0], dtype=floatX),
         "cycle_dampening_factor": np.array([0.75], dtype=floatX),
     }
     x, y = simulate_from_numpy_model(cycle, rng, params, steps=100)
@@ -438,7 +461,7 @@ def test_cycle_component_with_innovations_and_cycle_length(rng):
         name="cycle", estimate_cycle_length=True, innovations=True, dampen=True
     )
     params = {
-        "initial_cycle": np.array([1.0], dtype=floatX),
+        "cycle": np.array([1.0], dtype=floatX),
         "cycle_cycle_length": np.array([12], dtype=floatX),
         "cycle_dampening_factor": np.array([0.95], dtype=floatX),
         "sigma_cycle": np.array([1.0], dtype=floatX),
@@ -448,7 +471,6 @@ def test_cycle_component_with_innovations_and_cycle_length(rng):
 
     cycle.build(verbose=False)
     _assert_basic_coords_correct(cycle)
-    assert cycle.coords["cycle_initial_state"] == ["cycle_Sin", "cycle_Cos"]
 
 
 def test_exogenous_component(rng):

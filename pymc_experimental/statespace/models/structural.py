@@ -1341,7 +1341,7 @@ class CycleComponent(Component):
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
         self.ssm["selection", :, :] = np.eye(self.k_states)
 
-        init_state = self.make_and_register_variable(f"initial_{self.name}", shape=(1,))
+        init_state = self.make_and_register_variable(f"{self.name}", shape=(1,))
 
         self.ssm["initial_state", 0] = init_state
 
@@ -1364,17 +1364,15 @@ class CycleComponent(Component):
 
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}" for f in ["Sin", "Cos"]]
-        self.param_names = [f"initial_{self.name}"]
+        self.param_names = [f"{self.name}"]
 
-        self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
             f"{self.name}": {
                 "shape": (1,),
                 "constraints": "None",
-                "dims": f"({self.name}_initial_state, )",
+                "dims": None,
             }
         }
-        self.coords = {f"{self.name}_initial_state": self.state_names}
 
         if self.estimate_cycle_length:
             self.param_names += [f"{self.name}_cycle_length"]
@@ -1399,7 +1397,7 @@ class CycleComponent(Component):
                 "constraints": "Positive",
                 "dims": "None",
             }
-            self.shock_names = [f"{self.name}"]
+            self.shock_names = self.state_names.copy()
 
 
 class RegressionComponent(Component):
