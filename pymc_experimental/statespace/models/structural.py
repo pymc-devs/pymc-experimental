@@ -1053,9 +1053,10 @@ class TimeSeasonality(Component):
     And so on. So for interpretation, the ``season_length - 1`` initial states are, when reversed, the coefficients
     associated with ``state_names[1:]``.
 
-    .. warning:: Although the ``season_names`` argument expects a list of length ``season_length``, only
-                ``season_names[1:]`` will be saved as model dimensions, since the 1st coefficient is not estimated (it is the sum
-                of the other 11).
+    .. warning::
+        Although the ``state_names`` argument expects a list of length ``season_length``, only ``state_names[1:]``
+        will be saved as model dimensions, since the 1st coefficient is not identified (it is defined as
+        :math:`-\sum_{i=1}^{s} \gamma_{t-i}`).
 
     Examples
     --------
@@ -1295,16 +1296,96 @@ class FrequencySeasonality(Component):
 
 class CycleComponent(Component):
     r"""
-    # TODO: WRITEME
+    A component for modeling longer-term cyclical effects
+
+    Parameters
+    ----------
+    name: str
+        Name of the component. Used in generated coordinates and state names. If None, a descriptive name will be
+        used.
+
+    cycle_length: int, optional
+        The length of the cycle, in the calendar units of your data. For example, if your data is monthly, and you
+        want to model a 12-month cycle, use ``cycle_length=12``. You cannot specify both ``cycle_length`` and
+        ``estimate_cycle_length``.
+
+    estimate_cycle_length: bool, default False
+        Whether to estimate the cycle length. If True, an additional parameter, ``cycle_length`` will be added to the
+        model. You cannot specify both ``cycle_length`` and ``estimate_cycle_length``.
+
+    dampen: bool, default False
+        Whether to dampen the cycle by multiplying by a dampening factor :math:`\rho` at every timestep. If true,
+        an additional parameter, ``dampening_factor`` will be added to the model.
+
+    innovations: bool, default True
+        Whether to include stochastic innovations in the strength of the seasonal effect. If True, an additional
+        parameter, ``sigma_{name}`` will be added to the model.
+
+    Notes
+    -----
+    The cycle component is very similar in implementation to the frequency domain seasonal component, expect that it
+    is restricted to n=1. The cycle component can be expressed:
+
+    .. math::
+        \begin{align}
+            \gamma_t &= \rho \gamma_{t-1} \cos \lambda + \rho \gamma_{t-1}^\star \sin \lambda + \omega_{t} \\
+            \gamma_{t}^\star &= -\rho \gamma_{t-1} \sin \lambda + \rho \gamma_{t-1}^\star \cos \lambda + \omega_{t}^\star
+            \lambda &= \frac{2\pi}{s}
+        \end{align}
+
+    Where :math:`s` is the ``cycle_length``. [1] recommend that this component be used for longer term cyclical
+    effects, such as business cycles, and that the seasonal component be used for shorter term effects, such as
+    weekly or monthly seasonality.
+
+    Unlike a FrequencySeasonality component, the length of a CycleComponent can be estimated.
+
+    Examples
+    --------
+    Estimate a business cycle with length between 6 and 12 years:
+
+    .. code:: python
+
+        from pymc_experimental.statespace import structural as st
+        import pymc as pm
+        import pytensor.tensor as pt
+        import pandas as pd
+        import numpy as np
+
+        data = np.random.normal(size=(100, 1))
+
+        # Build the structural model
+        grw = st.LevelTrendComponent(order=1, innovations_order=1)
+        cycle = st.CycleComponent('business_cycle', estimate_cycle_length=True, dampen=False)
+        ss_mod = (grw + cycle).build()
+
+        # Estimate with PyMC
+        with pm.Model(coords=ss_mod.coords) as model:
+            P0 = pm.Deterministic('P0', pt.eye(ss_mod.k_states), dims=ss_mod.param_dims['P0'])
+            intitial_trend = pm.Normal('initial_trend', dims=ss_mod.param_dims['initial_trend'])
+            sigma_trend = pm.HalfNormal('sigma_trend', dims=ss_mod.param_dims['sigma_trend'])
+
+            cycle_strength = pm.Normal('business_cycle')
+            cycle_length = pm.Uniform('business_cycle_length', lower=6, upper=12)
+
+            sigma_cycle = pm.HalfNormal('sigma_business_cycle', sigma=1)
+            ss_mod.build_statespace_graph(data, mode='JAX')
+
+            idata = pm.sample(nuts_sampler='numpyro')
+
+    References
+    ----------
+    .. [1] Durbin, James, and Siem Jan Koopman. 2012.
+        Time Series Analysis by State Space Methods: Second Edition.
+        Oxford University Press.
     """
 
     def __init__(
         self,
-        name=None,
-        cycle_length=None,
-        estimate_cycle_length=False,
-        dampen=False,
-        innovations=True,
+        name: str = None,
+        cycle_length: int = None,
+        estimate_cycle_length: bool = False,
+        dampen: bool = False,
+        innovations: bool = True,
     ):
         if cycle_length is None and not estimate_cycle_length:
             raise ValueError("Must specify cycle_length if estimate_cycle_length is False")
@@ -1346,7 +1427,7 @@ class CycleComponent(Component):
         self.ssm["initial_state", 0] = init_state
 
         if self.estimate_cycle_length:
-            lamb = self.make_and_register_variable(f"{self.name}_cycle_length", shape=(1,))
+            lamb = self.make_and_register_variable(f"{self.name}_length", shape=(1,))
         else:
             lamb = self.cycle_length
 
@@ -1375,8 +1456,8 @@ class CycleComponent(Component):
         }
 
         if self.estimate_cycle_length:
-            self.param_names += [f"{self.name}_cycle_length"]
-            self.param_info[f"{self.name}_cycle_length"] = {
+            self.param_names += [f"{self.name}_length"]
+            self.param_info[f"{self.name}_length"] = {
                 "shape": (1,),
                 "constraints": "Positive, non-zero",
                 "dims": None,

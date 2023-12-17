@@ -116,7 +116,7 @@ def create_structural_model_and_equivalent_statsmodel(
     components = []
 
     if irregular:
-        sigma = np.abs(rng.normal(size=(1,)))
+        sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
         params["sigma_irregular"] = sigma
         sm_params["sigma2.irregular"] = sigma.item()
         comp = st.MeasurementError("irregular")
@@ -140,10 +140,8 @@ def create_structural_model_and_equivalent_statsmodel(
             level_trend_order,
             rng.normal(
                 size=2,
-            ),
-            np.zeros(
-                2,
-            ),
+            ).astype(floatX),
+            np.zeros(2, dtype=floatX),
         )
         sigma_level_value = np.abs(rng.normal(size=(2,)))[
             np.array(level_trend_innov_order, dtype="bool")
@@ -169,10 +167,10 @@ def create_structural_model_and_equivalent_statsmodel(
         components.append(comp)
 
     if seasonal is not None:
-        params["seasonal_coefs"] = rng.normal(size=(seasonal - 1,))
+        params["seasonal_coefs"] = rng.normal(size=(seasonal - 1,)).astype(floatX)
 
         if stochastic_seasonal:
-            sigma = np.abs(rng.normal(size=(1,)))
+            sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
             params["sigma_seasonal"] = sigma
             sm_params["sigma2.seasonal"] = sigma
 
@@ -188,9 +186,11 @@ def create_structural_model_and_equivalent_statsmodel(
 
             last_state_not_identified = s / n == 2.0
 
-            params[f"seasonal_{s}"] = rng.normal(size=(2 * n - int(last_state_not_identified)))
+            params[f"seasonal_{s}"] = rng.normal(
+                size=(2 * n - int(last_state_not_identified))
+            ).astype(floatX)
             if has_innov:
-                sigma = np.abs(rng.normal(size=(1,)))
+                sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
                 params[f"sigma_seasonal_{s}"] = sigma
                 sm_params[f"sigma2.freq_seasonal_{s}({n})"] = sigma
 
@@ -200,20 +200,20 @@ def create_structural_model_and_equivalent_statsmodel(
             components.append(comp)
 
     if cycle:
-        cycle_length = pm.math.floatX(np.random.choice(np.arange(2, 12)))
+        cycle_length = np.random.choice(np.arange(2, 12)).astype(floatX)
 
         # Statsmodels takes the frequency not the cycle length, so convert it.
         sm_params["frequency.cycle"] = 2.0 * np.pi / cycle_length
-        params["cycle_cycle_length"] = np.atleast_1d(cycle_length)
-        params["cycle"] = np.ones((1,))
+        params["cycle_length"] = np.atleast_1d(cycle_length)
+        params["cycle"] = np.ones((1,), dtype=floatX)
 
         if stochastic_cycle:
-            sigma = np.abs(rng.normal(size=(1,)))
+            sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
             params["sigma_cycle"] = sigma
             sm_params["sigma2.cycle"] = sigma
 
         if damped_cycle:
-            rho = rng.beta(1, 1, size=(1,))
+            rho = rng.beta(1, 1, size=(1,)).astype(floatX)
             params["cycle_dampening_factor"] = rho
             sm_params["damping.cycle"] = rho
 
@@ -227,8 +227,8 @@ def create_structural_model_and_equivalent_statsmodel(
         components.append(comp)
 
     if autoregressive is not None:
-        ar_params = rng.normal(size=(autoregressive,))
-        sigma = np.abs(rng.normal(size=(1,)))
+        ar_params = rng.normal(size=(autoregressive,)).astype(floatX)
+        sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
         params["ar_params"] = ar_params
         params["sigma_ar"] = sigma
 
@@ -241,7 +241,7 @@ def create_structural_model_and_equivalent_statsmodel(
 
     if exog is not None:
         names = [f"x{i + 1}" for i in range(exog.shape[1])]
-        betas = rng.normal(size=(exog.shape[1],))
+        betas = rng.normal(size=(exog.shape[1],)).astype(floatX)
         params["beta_exog"] = betas
         params["data_exog"] = exog
 
@@ -313,7 +313,7 @@ def test_structural_model_against_statsmodels(
         stochastic_cycle=stochastic_cycle,
     )
 
-    data = rng.normal(size=(100,))
+    data = rng.normal(size=(100,)).astype(floatX)
     sm_mod = f_sm_mod(data)
     sm_mod.initialize_default()
 
@@ -462,7 +462,7 @@ def test_cycle_component_with_innovations_and_cycle_length(rng):
     )
     params = {
         "cycle": np.array([1.0], dtype=floatX),
-        "cycle_cycle_length": np.array([12], dtype=floatX),
+        "cycle_length": np.array([12], dtype=floatX),
         "cycle_dampening_factor": np.array([0.95], dtype=floatX),
         "sigma_cycle": np.array([1.0], dtype=floatX),
     }
