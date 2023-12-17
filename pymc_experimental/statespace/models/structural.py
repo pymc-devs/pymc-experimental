@@ -738,7 +738,7 @@ class LevelTrendComponent(Component):
 
     def __init__(
         self,
-        order: Union[int | list[int]] = 2,
+        order: Union[int, list[int]] = 2,
         innovations_order: Optional[Union[int, list[int]]] = None,
         name: str = "LevelTrend",
     ):
