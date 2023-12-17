@@ -1137,7 +1137,7 @@ class TimeSeasonality(Component):
             }
         }
         self.param_dims = {f"{self.name}_coefs": (f"{self.name}_periods",)}
-        self.coords = {f"{self.name}_periods": self.state_names}
+        self.coords = {f"{self.name}_state": self.state_names}
 
         if self.innovations:
             self.param_names += [f"sigma_{self.name}"]
