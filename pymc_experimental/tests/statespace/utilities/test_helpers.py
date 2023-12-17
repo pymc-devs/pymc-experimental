@@ -207,9 +207,12 @@ def unpack_statespace(ssm):
     return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
 
 
-def unpack_symbolic_matrices_with_params(mod, param_dict):
+def unpack_symbolic_matrices_with_params(mod, param_dict, mode="FAST_COMPILE"):
     f_matrices = pytensor.function(
-        list(mod._name_to_variable.values()), unpack_statespace(mod.ssm), on_unused_input="ignore"
+        list(mod._name_to_variable.values()),
+        unpack_statespace(mod.ssm),
+        on_unused_input="raise",
+        mode=mode,
     )
     x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict)
     return x0, P0, c, d, T, Z, R, H, Q

@@ -1,3 +1,7 @@
+import functools as ft
+import warnings
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import pymc as pm
@@ -22,6 +26,275 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 floatX = pytensor.config.floatX
 ATOL = 1e-8 if floatX.endswith("64") else 1e-4
 RTOL = 0 if floatX.endswith("64") else 1e-6
+
+
+def _assert_all_statespace_matrices_match(mod, params, sm_mod):
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
+
+    for name, matrix in zip(["T", "R", "Z", "Q"], [T, R, Z, Q]):
+        long_name = SHORT_NAME_TO_LONG[name]
+        if np.any([x == 0 for x in matrix.shape]):
+            continue
+        assert_allclose(
+            sm_mod.ssm[long_name],
+            matrix,
+            err_msg=f"matrix {name} does not match statsmodels",
+            atol=ATOL,
+            rtol=RTOL,
+        )
+
+
+def create_structural_model_and_equivalent_statsmodel(
+    rng,
+    level: Optional[bool] = False,
+    trend: Optional[bool] = False,
+    seasonal: Optional[int] = None,
+    freq_seasonal: Optional[list[dict]] = None,
+    cycle: bool = False,
+    autoregressive: Optional[int] = None,
+    exog: Optional[np.ndarray] = None,
+    irregular: Optional[bool] = False,
+    stochastic_level: Optional[bool] = True,
+    stochastic_trend: Optional[bool] = False,
+    stochastic_seasonal: Optional[bool] = True,
+    stochastic_freq_seasonal: Optional[list[bool]] = None,
+    stochastic_cycle: Optional[bool] = False,
+    damped_cycle: Optional[bool] = False,
+):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mod = ft.partial(
+            sm.tsa.UnobservedComponents,
+            level=level,
+            trend=trend,
+            seasonal=seasonal,
+            freq_seasonal=freq_seasonal,
+            cycle=cycle,
+            autoregressive=autoregressive,
+            exog=exog,
+            irregular=irregular,
+            stochastic_level=stochastic_level,
+            stochastic_trend=stochastic_trend,
+            stochastic_seasonal=stochastic_seasonal,
+            stochastic_freq_seasonal=stochastic_freq_seasonal,
+            stochastic_cycle=stochastic_cycle,
+            damped_cycle=damped_cycle,
+            mle_regression=False,
+        )
+
+    params = {}
+    sm_params = {}
+    components = []
+
+    if irregular:
+        sigma = np.abs(rng.normal(size=(1,)))
+        params["sigma_irregular"] = sigma
+        sm_params["sigma2.irregular"] = sigma.item()
+        comp = st.MeasurementError("irregular")
+        components.append(comp)
+
+    level_trend_order = [0, 0]
+    level_trend_innov_order = [0, 0]
+
+    if level:
+        level_trend_order[0] = 1
+        if stochastic_level:
+            level_trend_innov_order[0] = 1
+
+    if trend:
+        level_trend_order[1] = 1
+        if stochastic_trend:
+            level_trend_innov_order[1] = 1
+
+    if level or trend:
+        level_value = np.where(
+            level_trend_order,
+            rng.normal(
+                size=2,
+            ),
+            np.zeros(
+                2,
+            ),
+        )
+        sigma_level_value = np.abs(rng.normal(size=(2,)))[
+            np.array(level_trend_innov_order, dtype="bool")
+        ]
+        max_order = np.flatnonzero(level_value)[-1].item() + 1
+        level_trend_order = level_trend_order[:max_order]
+
+        params["initial_trend"] = level_value[:max_order]
+        if sum(level_trend_innov_order) > 0:
+            params["sigma_trend"] = sigma_level_value
+
+        sigma_level_value = sigma_level_value.tolist()
+        if stochastic_level:
+            sigma = sigma_level_value.pop(0)
+            sm_params["sigma2.level"] = sigma
+        if stochastic_trend:
+            sigma = sigma_level_value.pop(0)
+            sm_params[f"sigma2.trend"] = sigma
+
+        comp = st.LevelTrendComponent(
+            name="level", order=level_trend_order, innovations_order=level_trend_innov_order
+        )
+        components.append(comp)
+
+    if seasonal is not None:
+        params["seasonal_coefs"] = rng.normal(size=(seasonal - 1,))
+
+        if stochastic_seasonal:
+            sigma = np.abs(rng.normal(size=(1,)))
+            params["sigma_seasonal"] = sigma
+            sm_params["sigma2.seasonal"] = sigma
+
+        comp = st.TimeSeasonality(
+            name="seasonal", season_length=seasonal, innovations=stochastic_seasonal
+        )
+        components.append(comp)
+
+    if freq_seasonal is not None:
+        for d, has_innov in zip(freq_seasonal, stochastic_freq_seasonal):
+            n = d["harmonics"]
+            s = d["period"]
+
+            last_state_not_identified = s / n == 2.0
+
+            params[f"seasonal_{s}"] = rng.normal(size=(2 * n - int(last_state_not_identified)))
+            if has_innov:
+                sigma = np.abs(rng.normal(size=(1,)))
+                params[f"sigma_seasonal_{s}"] = sigma
+                sm_params[f"sigma2.freq_seasonal_{s}({n})"] = sigma
+
+            comp = st.FrequencySeasonality(
+                name=f"seasonal_{s}", season_length=s, n=n, innovations=has_innov
+            )
+            components.append(comp)
+
+    if cycle:
+        cycle_length = pm.math.floatX(np.random.choice(np.arange(2, 12)))
+
+        # Statsmodels takes the frequency not the cycle length, so convert it.
+        sm_params["frequency.cycle"] = 2.0 * np.pi / cycle_length
+        params["cycle_cycle_length"] = np.atleast_1d(cycle_length)
+        params["initial_cycle"] = np.ones((1,))
+
+        if stochastic_cycle:
+            sigma = np.abs(rng.normal(size=(1,)))
+            params["sigma_cycle"] = sigma
+            sm_params["sigma2.cycle"] = sigma
+
+        if damped_cycle:
+            rho = rng.beta(1, 1, size=(1,))
+            params["cycle_dampening_factor"] = rho
+            sm_params["damping.cycle"] = rho
+
+        comp = st.CycleComponent(
+            name="cycle",
+            dampen=damped_cycle,
+            innovations=stochastic_cycle,
+            estimate_cycle_length=True,
+        )
+
+        components.append(comp)
+
+    if autoregressive is not None:
+        ar_params = rng.normal(size=(autoregressive,))
+        sigma = np.abs(rng.normal(size=(1,)))
+        params["ar_params"] = ar_params
+        params["sigma_ar"] = sigma
+
+        sm_params["sigma2.ar"] = sigma
+        for i, rho in enumerate(ar_params):
+            sm_params[f"ar.L{i + 1}"] = rho
+
+        comp = st.AutoregressiveComponent(name="ar", order=autoregressive)
+        components.append(comp)
+
+    if exog is not None:
+        names = [f"x{i + 1}" for i in range(exog.shape[1])]
+        betas = rng.normal(size=(exog.shape[1],))
+        params["beta_exog"] = betas
+        params["data_exog"] = exog
+
+        for i, beta in enumerate(betas):
+            sm_params[f"beta.x{i + 1}"] = beta
+        comp = st.RegressionComponent(name="exog", state_names=names)
+        components.append(comp)
+
+    st_mod = components.pop(0)
+    for comp in components:
+        st_mod += comp
+    return mod, st_mod, params, sm_params
+
+
+@pytest.mark.parametrize(
+    "level, trend, stochastic_level, stochastic_trend, irregular",
+    [
+        (False, False, False, False, True),
+        (True, True, True, True, True),
+        (True, True, False, True, False),
+    ],
+)
+@pytest.mark.parametrize("autoregressive", [None, 3])
+@pytest.mark.parametrize("seasonal, stochastic_seasonal", [(None, False), (12, False), (12, True)])
+@pytest.mark.parametrize(
+    "freq_seasonal, stochastic_freq_seasonal",
+    [
+        (None, None),
+        ([{"period": 12, "harmonics": 2}], [False]),
+        ([{"period": 12, "harmonics": 6}], [True]),
+    ],
+)
+@pytest.mark.parametrize(
+    "cycle, damped_cycle, stochastic_cycle",
+    [(False, False, False), (True, False, True), (True, True, True)],
+)
+@pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.ConvergenceWarning")
+@pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.SpecificationWarning")
+def test_structural_model_against_statsmodels(
+    level,
+    trend,
+    stochastic_level,
+    stochastic_trend,
+    irregular,
+    autoregressive,
+    seasonal,
+    stochastic_seasonal,
+    freq_seasonal,
+    stochastic_freq_seasonal,
+    cycle,
+    damped_cycle,
+    stochastic_cycle,
+    rng,
+):
+    f_sm_mod, mod, params, sm_params = create_structural_model_and_equivalent_statsmodel(
+        rng,
+        level=level,
+        trend=trend,
+        seasonal=seasonal,
+        freq_seasonal=freq_seasonal,
+        cycle=cycle,
+        damped_cycle=damped_cycle,
+        autoregressive=autoregressive,
+        irregular=irregular,
+        stochastic_level=stochastic_level,
+        stochastic_trend=stochastic_trend,
+        stochastic_seasonal=stochastic_seasonal,
+        stochastic_freq_seasonal=stochastic_freq_seasonal,
+        stochastic_cycle=stochastic_cycle,
+    )
+
+    data = rng.normal(size=(100,))
+    sm_mod = f_sm_mod(data)
+    sm_mod.initialize_default()
+
+    if len(sm_params) > 0:
+        param_array = np.concatenate(
+            [np.atleast_1d(sm_params[k]).ravel() for k in sm_mod.param_names]
+        )
+        sm_mod.update(param_array, transformed=True)
+
+    _assert_all_statespace_matrices_match(mod, params, sm_mod)
 
 
 def test_deterministic_constant_model(rng):
@@ -66,25 +339,6 @@ def test_time_seasonality(s, innovations, rng):
     if not innovations:
         assert_pattern_repeats(y, s, atol=ATOL, rtol=RTOL)
 
-    mod2 = sm.tsa.UnobservedComponents(
-        endog=rng.normal(size=100),
-        seasonal=s,
-        stochastic_seasonal=innovations,
-        # Silence a warning about no innovations when innovations = False
-        irregular=True,
-    )
-    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
-
-    for name, matrix in zip(["T", "R", "Z", "Q"], [T, R, Z, Q]):
-        long_name = SHORT_NAME_TO_LONG[name]
-        assert_allclose(
-            mod2.ssm[long_name],
-            matrix,
-            err_msg=f"matrix {name} does not match statsmodels",
-            atol=ATOL,
-            rtol=RTOL,
-        )
-
 
 def get_shift_factor(s):
     s_str = str(s)
@@ -105,26 +359,6 @@ def test_frequency_seasonality(n, s, rng):
 
     x, y = simulate_from_numpy_model(mod, rng, params, 2 * T)
     assert_pattern_repeats(y, T, atol=ATOL, rtol=RTOL)
-
-    init_dict = {"period": s}
-    if n is not None:
-        init_dict["harmonics"] = n
-
-    mod2 = sm.tsa.UnobservedComponents(endog=rng.normal(size=100), freq_seasonal=[init_dict])
-    mod2.initialize_default()
-    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
-
-    for name, matrix in zip(["T", "Z", "R", "Q"], [T, Z, R, Q]):
-        name = SHORT_NAME_TO_LONG[name]
-        assert_allclose(
-            mod2.ssm[name],
-            matrix,
-            err_msg=f"matrix {name} does not match statsmodels",
-            rtol=RTOL,
-            atol=ATOL,
-        )
-
-    assert mod2.initialization.constant.shape == mod.ssm["initial_state"].type.shape
 
 
 @pytest.mark.parametrize("s,n", [(10, 5), pytest.param(10.2, 5, marks=pytest.mark.xfail)])
@@ -175,7 +409,7 @@ def test_cycle_component(innovations, dampen, cycle_length, estimate_cycle_lengt
             innovations=innovations,
         )
 
-        params = {"cycle": rng.normal(size=(1,)).astype(floatX)}
+        params = {"initial_cycle": rng.normal(size=(1,)).astype(floatX)}
 
         if estimate_cycle_length:
             params["cycle_cycle_length"] = np.array([7], dtype=floatX)

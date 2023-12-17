@@ -23,6 +23,7 @@ from pymc_experimental.statespace.filters import (
 )
 from pymc_experimental.statespace.filters.distributions import (
     LinearGaussianStateSpace,
+    LinearGaussianStateSpaceRV,
     SequenceMvNormal,
 )
 from pymc_experimental.statespace.filters.utilities import stabilize
@@ -636,6 +637,37 @@ class PyMCStateSpace:
         }
         self.subbed_ssm = graph_replace(matrices, replace=replacement_dict, strict=True)
 
+    def _register_matrices_with_pymc_model(self) -> List[pt.TensorVariable]:
+        """
+        Add all statespace matrices to the PyMC model currently on the context stack as pm.Deterministic nodes, and
+        adds named dimensions if they are found.
+
+        Returns
+        -------
+        registered_matrices: list of pt.TensorVariable
+            List of statespace matrices, wrapped in pm.Deterministic
+        """
+
+        pm_mod = modelcontext(None)
+        matrices = self.unpack_statespace()
+
+        registered_matrices = []
+        for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
+            time_varying_ndim = 2 if name in VECTOR_VALUED else 3
+            if not getattr(pm_mod, name, None):
+                shape, dims = self._get_matrix_shape_and_dims(name)
+                has_dims = dims is not None
+
+                if matrix.ndim == time_varying_ndim and has_dims:
+                    dims = (TIME_DIM,) + dims
+
+                x = pm.Deterministic(name, matrix, dims=dims)
+                registered_matrices.append(x)
+            else:
+                registered_matrices.append(matrices[i])
+
+        return registered_matrices
+
     def add_exogenous(self, exog: pt.TensorVariable) -> None:
         """
         Add an exogenous process to the statespace model
@@ -746,7 +778,6 @@ class PyMCStateSpace:
         pm_mod = modelcontext(None)
 
         self._insert_random_variables()
-        matrices = self.unpack_statespace()
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
 
         self.data_len = data.shape[0]
@@ -758,20 +789,7 @@ class PyMCStateSpace:
             missing_fill_value=missing_fill_value,
         )
 
-        registered_matrices = []
-        for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
-            time_varying_ndim = 2 if name in VECTOR_VALUED else 3
-            if not getattr(pm_mod, name, None):
-                shape, dims = self._get_matrix_shape_and_dims(name)
-                has_dims = dims is not None
-
-                if matrix.ndim == time_varying_ndim and has_dims:
-                    dims = (TIME_DIM,) + dims
-
-                x = pm.Deterministic(name, matrix, dims=dims)
-                registered_matrices.append(x)
-            else:
-                registered_matrices.append(matrices[i])
+        registered_matrices = self._register_matrices_with_pymc_model()
 
         filter_outputs = self.kalman_filter.build_graph(
             pt.as_tensor_variable(data),
@@ -832,6 +850,54 @@ class PyMCStateSpace:
 
         if return_updates:
             return updates
+
+    def build_as_prior(
+        self,
+        name: str,
+        n_steps: int,
+        register_statespace_matrices: Optional[bool] = False,
+        k_endog: Optional[int] = None,
+        mode: Optional[str] = None,
+        **kwargs,
+    ) -> LinearGaussianStateSpaceRV:
+        """
+        Construct a random variable over
+
+        Parameters
+        ----------
+        name: str
+            Name of the random variable
+        n_steps: int
+            Length of the prior sequence, in time steps
+        register_statespace_matrices: bool
+            If True, statespace matrices used to construct the prior sequence will be wrapped in pm.Deterministic and
+            saved to the active model.
+        k_endog: int, optional
+            The number of observed states in the statespace. For debugging purposes only, should be automatically
+            inferred in most cases.
+        mode: str, optional
+            Pytensor compile mode.
+        kwargs:
+            PyMC distribution arguments, passed to LinearGaussianStateSpace
+
+        Returns
+        -------
+        obs_states: LinearGaussianStateSpaceRV
+            A random variable representing realizations of the observation equations of the statespace.
+        """
+
+        pm_mod = modelcontext(None)
+        self._insert_random_variables()
+
+        if register_statespace_matrices:
+            matrices = self._register_matrices_with_pymc_model()
+        else:
+            matrices = self.unpack_statespace()
+
+        latent_states, obs_states = LinearGaussianStateSpace(
+            name, *matrices, steps=n_steps, k_endog=k_endog, mode=mode, **kwargs
+        )
+        return obs_states
 
     def _build_smoother_graph(
         self,

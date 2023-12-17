@@ -1,7 +1,7 @@
 import functools as ft
 import logging
 from abc import ABC
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 import pytensor
@@ -737,13 +737,25 @@ class LevelTrendComponent(Component):
     """
 
     def __init__(
-        self, order: int = 2, innovations_order: Optional[int] = None, name: str = "LevelTrend"
+        self,
+        order: Union[int | list[int]] = 2,
+        innovations_order: Optional[Union[int, list[int]]] = None,
+        name: str = "LevelTrend",
     ):
         if innovations_order is None:
             innovations_order = order
 
-        order = order_to_mask(order)
-        k_states = int(sum(order))
+        self._order_mask = order_to_mask(order)
+        max_state = np.flatnonzero(self._order_mask)[-1].item() + 1
+
+        # If the user passes excess zeros, raise an error. The alternative is to prune them, but this would cause
+        # the shape of the state to be different to what the user expects.
+        if len(self._order_mask) > max_state:
+            raise ValueError(
+                f"order={order} is invalid. The highest derivative should not be set to zero. If you want a "
+                f"lower order model, explicitly omit the zeros."
+            )
+        k_states = max_state
 
         if isinstance(innovations_order, int):
             n = innovations_order
@@ -755,29 +767,32 @@ class LevelTrendComponent(Component):
         else:
             innovations_order = order_to_mask(innovations_order)
 
-        self.innovations_order = innovations_order
+        self.innovations_order = innovations_order[:max_state]
         k_posdef = int(sum(innovations_order))
 
         super().__init__(
             name,
-            1,
-            k_states,
-            k_posdef,
+            k_endog=1,
+            k_states=k_states,
+            k_posdef=k_posdef,
             measurement_error=False,
             combine_hidden_states=False,
             obs_state_idxs=np.array([1.0] + [0.0] * (k_states - 1)),
         )
 
     def populate_component_properties(self):
+        name_slice = POSITION_DERIVATIVE_NAMES[: self.k_states]
         self.param_names = ["initial_trend"]
-        self.state_names = POSITION_DERIVATIVE_NAMES[: self.k_states]
+        self.state_names = [name for name, mask in zip(name_slice, self._order_mask) if mask]
         self.param_dims = {"initial_trend": ("trend_state",)}
         self.coords = {"trend_state": self.state_names}
         self.param_info = {"initial_trend": {"shape": (self.k_states,), "constraints": "None"}}
 
         if self.k_posdef > 0:
             self.param_names += ["sigma_trend"]
-            self.shock_names = list(np.array(self.state_names)[self.innovations_order])
+            self.shock_names = [
+                name for name, mask in zip(name_slice, self.innovations_order) if mask
+            ]
             self.param_dims["sigma_trend"] = ("trend_shock",)
             self.coords["trend_shock"] = self.shock_names
             self.param_info["sigma_trend"] = {"shape": (self.k_posdef,), "constraints": "Positive"}
@@ -1106,7 +1121,7 @@ class TimeSeasonality(Component):
             name=name,
             k_endog=1,
             k_states=k_states,
-            k_posdef=1,  # TODO: Why not int(self.innovation)?
+            k_posdef=int(self.innovations),
             measurement_error=False,
             combine_hidden_states=True,
             obs_state_idxs=np.r_[[1.0], np.zeros(k_states - 1)],
@@ -1227,7 +1242,7 @@ class FrequencySeasonality(Component):
             name=name,
             k_endog=1,
             k_states=k_states,
-            k_posdef=k_states,
+            k_posdef=k_states * int(self.innovations),
             measurement_error=False,
             combine_hidden_states=True,
             obs_state_idxs=obs_state_idx,
@@ -1235,7 +1250,6 @@ class FrequencySeasonality(Component):
 
     def make_symbolic_graph(self) -> None:
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
-        self.ssm["selection", :, :] = np.eye(self.k_states)
 
         init_state = self.make_and_register_variable(f"{self.name}", shape=(self.n_coefs,))
 
@@ -1249,11 +1263,11 @@ class FrequencySeasonality(Component):
         if self.innovations:
             sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
+            self.ssm["selection", :, :] = np.eye(self.k_states)
 
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
         self.param_names = [f"{self.name}"]
-        self.shock_names = self.state_names.copy()
 
         self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
@@ -1270,6 +1284,7 @@ class FrequencySeasonality(Component):
         self.coords = {f"{self.name}_initial_state": [self.state_names[i] for i in init_state_idx]}
 
         if self.innovations:
+            self.shock_names = self.state_names.copy()
             self.param_names += [f"sigma_{self.name}"]
             self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
@@ -1296,7 +1311,7 @@ class CycleComponent(Component):
         if cycle_length is not None and estimate_cycle_length:
             raise ValueError("Cannot specify cycle_length if estimate_cycle_length is True")
         if name is None:
-            cycle = cycle_length if cycle_length is not None else "Estimate"
+            cycle = int(cycle_length) if cycle_length is not None else "Estimate"
             name = f"Cycle[s={cycle}, dampen={dampen}, innovations={innovations}]"
 
         self.estimate_cycle_length = estimate_cycle_length
@@ -1326,7 +1341,7 @@ class CycleComponent(Component):
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
         self.ssm["selection", :, :] = np.eye(self.k_states)
 
-        init_state = self.make_and_register_variable(f"{self.name}", shape=(1,))
+        init_state = self.make_and_register_variable(f"initial_{self.name}", shape=(1,))
 
         self.ssm["initial_state", 0] = init_state
 
@@ -1340,7 +1355,7 @@ class CycleComponent(Component):
         else:
             rho = 1
 
-        T = rho * _frequency_transition_block(s=lamb, j=1)
+        T = rho * _frequency_transition_block(lamb, j=1)
         self.ssm["transition", :, :] = T
 
         if self.innovations:
@@ -1348,8 +1363,8 @@ class CycleComponent(Component):
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
 
     def populate_component_properties(self):
-        self.state_names = [f"{self.name}_{f}" for f in ["Cos", "Sin"]]
-        self.param_names = [f"{self.name}"]
+        self.state_names = [f"{self.name}_{f}" for f in ["Sin", "Cos"]]
+        self.param_names = [f"initial_{self.name}"]
 
         self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
