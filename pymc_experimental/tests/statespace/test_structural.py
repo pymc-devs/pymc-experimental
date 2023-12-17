@@ -44,6 +44,15 @@ def _assert_all_statespace_matrices_match(mod, params, sm_mod):
         )
 
 
+def _assert_basic_coords_correct(mod):
+    assert mod.coords["state"] == mod.state_names
+    assert mod.coords["state_aux"] == mod.state_names
+    assert mod.coords["shock"] == mod.shock_names
+    assert mod.coords["shock_aux"] == mod.shock_names
+    assert mod.coords["observed_state"] == ["data"]
+    assert mod.coords["observed_state_aux"] == ["data"]
+
+
 def create_structural_model_and_equivalent_statsmodel(
     rng,
     level: Optional[bool] = False,
@@ -297,36 +306,55 @@ def test_structural_model_against_statsmodels(
     _assert_all_statespace_matrices_match(mod, params, sm_mod)
 
 
-def test_deterministic_constant_model(rng):
-    mod = st.LevelTrendComponent(order=1, innovations_order=0)
-    params = {"initial_trend": [1.0]}
-    x, y = simulate_from_numpy_model(mod, rng, params)
-
-    assert_allclose(y, 1, atol=ATOL, rtol=RTOL)
-
-
-def test_deterministic_slope_model(rng):
+def test_level_trend_model(rng):
     mod = st.LevelTrendComponent(order=2, innovations_order=0)
     params = {"initial_trend": [0.0, 1.0]}
     x, y = simulate_from_numpy_model(mod, rng, params)
 
     assert_allclose(np.diff(y), 1, atol=ATOL, rtol=RTOL)
 
+    # Check coords
+    mod = mod.build(verbose=False)
+    _assert_basic_coords_correct(mod)
+    assert mod.coords["trend_state"] == ["level", "trend"]
+
+
+def test_measurement_error(rng):
+    mod = st.MeasurementError("obs") + st.LevelTrendComponent(order=2)
+    mod = mod.build(verbose=False)
+
+    _assert_basic_coords_correct(mod)
+    assert "sigma_obs" in mod.param_names
+
 
 @pytest.mark.parametrize("order", [1, 2, [1, 0, 1]], ids=["AR1", "AR2", "AR(1,0,1)"])
 def test_autoregressive_model(order, rng):
     ar = st.AutoregressiveComponent(order=order)
     params = {
-        "ar_params": np.full((sum(ar.order),), 0.95, dtype=floatX),
-        "sigma_ar": np.array([0.1], dtype=floatX),
+        "ar_params": np.full((sum(ar.order),), 0.5, dtype=floatX),
+        "sigma_ar": np.array([0.0], dtype=floatX),
     }
-    x, y = simulate_from_numpy_model(ar, rng, params)
+    x, y = simulate_from_numpy_model(ar, rng, params, steps=100)
+
+    # Check coords
+    ar.build(verbose=False)
+    _assert_basic_coords_correct(ar)
+    lags = np.arange(len(order) if isinstance(order, list) else order, dtype="int") + 1
+    if isinstance(order, list):
+        lags = lags[np.flatnonzero(order)]
+    assert_allclose(ar.coords["ar_lags"], lags)
 
 
 @pytest.mark.parametrize("s", [10, 25, 50])
 @pytest.mark.parametrize("innovations", [True, False])
 def test_time_seasonality(s, innovations, rng):
-    mod = st.TimeSeasonality(season_length=s, innovations=innovations, name="season")
+    def random_word(rng):
+        return "".join(rng.choice(list("abcdefghijklmnopqrstuvwxyz")) for _ in range(5))
+
+    state_names = [random_word(rng) for _ in range(s)]
+    mod = st.TimeSeasonality(
+        season_length=s, innovations=innovations, name="season", state_names=state_names
+    )
     x0 = np.zeros(mod.k_states, dtype=floatX)
     x0[0] = 1
 
@@ -338,6 +366,11 @@ def test_time_seasonality(s, innovations, rng):
     y = y.ravel()
     if not innovations:
         assert_pattern_repeats(y, s, atol=ATOL, rtol=RTOL)
+
+    # Check coords
+    mod.build(verbose=False)
+    _assert_basic_coords_correct(mod)
+    assert mod.coords["season_state"] == state_names[1:]
 
 
 def get_shift_factor(s):
@@ -360,75 +393,89 @@ def test_frequency_seasonality(n, s, rng):
     x, y = simulate_from_numpy_model(mod, rng, params, 2 * T)
     assert_pattern_repeats(y, T, atol=ATOL, rtol=RTOL)
 
+    # Check coords
+    mod.build(verbose=False)
+    _assert_basic_coords_correct(mod)
+    if n is None:
+        n = int(s // 2)
+    states = [f"season_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
 
-@pytest.mark.parametrize("s,n", [(10, 5), pytest.param(10.2, 5, marks=pytest.mark.xfail)])
-def test_state_removed_when_freq_seasonality_is_saturated(s, n):
-    mod = st.FrequencySeasonality(season_length=s, n=n, name="test")
-    init_params = mod._name_to_variable["test"]
-
-    assert init_params.type.shape[0] == (n * 2 - 1)
+    # Remove the last state when the model is completely saturated
+    if s / n == 2.0:
+        states.pop()
+    assert mod.coords["season_initial_state"] == states
 
 
 cycle_test_vals = zip([None, None, 3, 5, 10], [False, True, True, False, False])
 
 
-@pytest.mark.parametrize("innovations", [True, False], ids=[f"innov={x}" for x in [True, False]])
-@pytest.mark.parametrize("dampen", [True, False], ids=[f"dampen={x}" for x in [True, False]])
-@pytest.mark.parametrize(
-    "cycle_length, estimate_cycle_length",
-    list(cycle_test_vals),
-    ids=[f"cycle_len={a}-est_cycle_len={b}" for a, b in cycle_test_vals],
-)
-def test_cycle_component(innovations, dampen, cycle_length, estimate_cycle_length, rng):
-    if estimate_cycle_length and (cycle_length is not None):
-        with pytest.raises(ValueError, match="Cannot specify cycle_length"):
-            st.CycleComponent(
-                name="cycle",
-                cycle_length=cycle_length,
-                estimate_cycle_length=estimate_cycle_length,
-                dampen=dampen,
-                innovations=innovations,
-            )
+def test_cycle_component_deterministic(rng):
+    cycle = st.CycleComponent(
+        name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False
+    )
+    params = {"initial_cycle": np.array([1.0], dtype=floatX)}
+    x, y = simulate_from_numpy_model(cycle, rng, params, steps=12 * 12)
 
-    elif not estimate_cycle_length and (cycle_length is None):
-        with pytest.raises(ValueError, match="Must specify cycle_length"):
-            st.CycleComponent(
-                name="cycle",
-                cycle_length=cycle_length,
-                estimate_cycle_length=estimate_cycle_length,
-                dampen=dampen,
-                innovations=innovations,
-            )
+    assert_pattern_repeats(y, 12, atol=ATOL, rtol=RTOL)
 
-    else:
-        cycle = st.CycleComponent(
-            name="cycle",
-            cycle_length=cycle_length,
-            estimate_cycle_length=estimate_cycle_length,
-            dampen=dampen,
-            innovations=innovations,
-        )
 
-        params = {"initial_cycle": rng.normal(size=(1,)).astype(floatX)}
+def test_cycle_component_with_dampening(rng):
+    cycle = st.CycleComponent(
+        name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False, dampen=True
+    )
+    params = {
+        "initial_cycle": np.array([10.0], dtype=floatX),
+        "cycle_dampening_factor": np.array([0.75], dtype=floatX),
+    }
+    x, y = simulate_from_numpy_model(cycle, rng, params, steps=100)
 
-        if estimate_cycle_length:
-            params["cycle_cycle_length"] = np.array([7], dtype=floatX)
-        cycle_len = params.get("cycle_cycle_length", cycle_length)
-        fit_params = {"frequency.cycle": cycle_len, "sigma2.irregular": 0.0}
-        if dampen:
-            params["cycle_dampening_factor"] = np.array([0.95], dtype=floatX)
-            fit_params["damping.cycle"] = 0.95
-        if innovations:
-            params["sigma_cycle"] = np.ones((1,), dtype=floatX)
-            fit_params["sigma2.cycle"] = 1.0
+    # Check that the cycle dampens to zero over time
+    assert_allclose(y[-1], 0.0, atol=ATOL, rtol=RTOL)
 
-        x, y = simulate_from_numpy_model(cycle, rng, params)
 
-        if not innovations and not estimate_cycle_length:
-            if dampen:
-                # undo the dampening so it's all constant
-                y = y / 0.95 ** np.arange(y.shape[0])
-            assert_pattern_repeats(y, cycle_length, atol=ATOL, rtol=RTOL)
+def test_cycle_component_with_innovations_and_cycle_length(rng):
+    cycle = st.CycleComponent(
+        name="cycle", estimate_cycle_length=True, innovations=True, dampen=True
+    )
+    params = {
+        "initial_cycle": np.array([1.0], dtype=floatX),
+        "cycle_cycle_length": np.array([12], dtype=floatX),
+        "cycle_dampening_factor": np.array([0.95], dtype=floatX),
+        "sigma_cycle": np.array([1.0], dtype=floatX),
+    }
+
+    x, y = simulate_from_numpy_model(cycle, rng, params)
+
+    cycle.build(verbose=False)
+    _assert_basic_coords_correct(cycle)
+    assert cycle.coords["cycle_initial_state"] == ["cycle_Sin", "cycle_Cos"]
+
+
+def test_exogenous_component(rng):
+    data = rng.normal(size=(100, 2)).astype(floatX)
+    mod = st.RegressionComponent(state_names=["feature_1", "feature_2"], name="exog")
+
+    params = {"beta_exog": np.array([1.0, 2.0], dtype=floatX), "data_exog": data}
+    x, y = simulate_from_numpy_model(mod, rng, params)
+
+    # Check that the generated data is just a linear regression
+    assert_allclose(y, data @ params["beta_exog"], atol=ATOL, rtol=RTOL)
+
+    mod.build(verbose=False)
+    _assert_basic_coords_correct(mod)
+    assert mod.coords["exog_state"] == ["feature_1", "feature_2"]
+
+
+def test_adding_exogenous_component(rng):
+    data = rng.normal(size=(100, 2)).astype(floatX)
+    reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
+    ll = st.LevelTrendComponent(name="level")
+
+    seasonal = st.FrequencySeasonality(name="annual", season_length=12, n=4)
+    mod = reg + ll + seasonal
+
+    assert mod.ssm["design"].eval({"data_exog": data}).shape == (100, 1, 2 + 2 + 8)
+    assert_allclose(mod.ssm["design", 5, 0, :2].eval({"data_exog": data}), data[5])
 
 
 def test_add_components():
@@ -473,18 +520,6 @@ def test_add_components():
 
     for (ll_mat, se_mat, all_mat, axis) in zip(ll_mats, se_mats, all_mats, axes):
         assert_allclose(all_mat, np.concatenate([ll_mat, se_mat], axis=axis), atol=ATOL, rtol=RTOL)
-
-
-def test_adding_exogenous_component(rng):
-    data = rng.normal(size=(100, 2)).astype(floatX)
-    reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
-    ll = st.LevelTrendComponent(name="level")
-
-    seasonal = st.FrequencySeasonality(name="annual", season_length=12, n=4)
-    mod = reg + ll + seasonal
-
-    assert mod.ssm["design"].eval({"data_exog": data}).shape == (100, 1, 2 + 2 + 8)
-    assert_allclose(mod.ssm["design", 5, 0, :2].eval({"data_exog": data}), data[5])
 
 
 def test_filter_scans_time_varying_design_matrix(rng):

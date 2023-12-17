@@ -600,7 +600,7 @@ class Component(ABC):
         Parameters
         ----------
         name: str, optional
-            Name of the exogenous data being modeled. Default is "obs"
+            Name of the exogenous data being modeled. Default is "data"
 
         filter_type : str, optional
             The type of Kalman filter to use. Valid options are "standard", "univariate", "single", "cholesky", and
@@ -1109,19 +1109,19 @@ class TimeSeasonality(Component):
                     f"state_names must be a list of length season_length, got {len(state_names)}"
                 )
             state_names = state_names.copy()
-        self.state_names = state_names
         self.innovations = innovations
 
         # The first state doesn't get a coefficient, it is defined as -sum(state_coefs)
         # TODO: Can I stash that information in the model somewhere so users don't have to know that?
-        state_0 = state_names.pop(-1)
+        state_0 = state_names.pop(0)
         k_states = season_length - 1
 
         super().__init__(
             name=name,
             k_endog=1,
             k_states=k_states,
-            k_posdef=int(self.innovations),
+            k_posdef=int(innovations),
+            state_names=state_names,
             measurement_error=False,
             combine_hidden_states=True,
             obs_state_idxs=np.r_[[1.0], np.zeros(k_states - 1)],
