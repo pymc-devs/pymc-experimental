@@ -1269,6 +1269,8 @@ class FrequencySeasonality(Component):
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
         self.param_names = [f"{self.name}"]
+        self.param_dims = {self.name: (f"{self.name}_state",)}
+        self.coords = {f"{self.name}_state": self.state_names}
 
         self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
@@ -1422,9 +1424,9 @@ class CycleComponent(Component):
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
         self.ssm["selection", :, :] = np.eye(self.k_states)
 
-        init_state = self.make_and_register_variable(f"{self.name}", shape=(1,))
+        init_state = self.make_and_register_variable(f"{self.name}", shape=(self.k_states,))
 
-        self.ssm["initial_state", 0] = init_state
+        self.ssm["initial_state", :] = init_state
 
         if self.estimate_cycle_length:
             lamb = self.make_and_register_variable(f"{self.name}_length", shape=(1,))
@@ -1449,7 +1451,7 @@ class CycleComponent(Component):
 
         self.param_info = {
             f"{self.name}": {
-                "shape": (1,),
+                "shape": (2,),
                 "constraints": "None",
                 "dims": None,
             }
@@ -1468,7 +1470,7 @@ class CycleComponent(Component):
             self.param_info[f"{self.name}_dampening_factor"] = {
                 "shape": (1,),
                 "constraints": "0 < x ≤ 1",
-                "dims": None,
+                "dims": f"({self.name}_state, )",
             }
 
         if self.innovations:
