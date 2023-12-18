@@ -636,6 +636,37 @@ class PyMCStateSpace:
         }
         self.subbed_ssm = graph_replace(matrices, replace=replacement_dict, strict=True)
 
+    def _register_matrices_with_pymc_model(self) -> List[pt.TensorVariable]:
+        """
+        Add all statespace matrices to the PyMC model currently on the context stack as pm.Deterministic nodes, and
+        adds named dimensions if they are found.
+
+        Returns
+        -------
+        registered_matrices: list of pt.TensorVariable
+            List of statespace matrices, wrapped in pm.Deterministic
+        """
+
+        pm_mod = modelcontext(None)
+        matrices = self.unpack_statespace()
+
+        registered_matrices = []
+        for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
+            time_varying_ndim = 2 if name in VECTOR_VALUED else 3
+            if not getattr(pm_mod, name, None):
+                shape, dims = self._get_matrix_shape_and_dims(name)
+                has_dims = dims is not None
+
+                if matrix.ndim == time_varying_ndim and has_dims:
+                    dims = (TIME_DIM,) + dims
+
+                x = pm.Deterministic(name, matrix, dims=dims)
+                registered_matrices.append(x)
+            else:
+                registered_matrices.append(matrices[i])
+
+        return registered_matrices
+
     def add_exogenous(self, exog: pt.TensorVariable) -> None:
         """
         Add an exogenous process to the statespace model
@@ -746,7 +777,6 @@ class PyMCStateSpace:
         pm_mod = modelcontext(None)
 
         self._insert_random_variables()
-        matrices = self.unpack_statespace()
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
 
         self.data_len = data.shape[0]
@@ -758,20 +788,7 @@ class PyMCStateSpace:
             missing_fill_value=missing_fill_value,
         )
 
-        registered_matrices = []
-        for i, (matrix, name) in enumerate(zip(matrices, MATRIX_NAMES)):
-            time_varying_ndim = 2 if name in VECTOR_VALUED else 3
-            if not getattr(pm_mod, name, None):
-                shape, dims = self._get_matrix_shape_and_dims(name)
-                has_dims = dims is not None
-
-                if matrix.ndim == time_varying_ndim and has_dims:
-                    dims = (TIME_DIM,) + dims
-
-                x = pm.Deterministic(name, matrix, dims=dims)
-                registered_matrices.append(x)
-            else:
-                registered_matrices.append(matrices[i])
+        registered_matrices = self._register_matrices_with_pymc_model()
 
         filter_outputs = self.kalman_filter.build_graph(
             pt.as_tensor_variable(data),

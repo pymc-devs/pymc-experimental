@@ -1,7 +1,7 @@
 import functools as ft
 import logging
 from abc import ABC
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 import pytensor
@@ -600,7 +600,7 @@ class Component(ABC):
         Parameters
         ----------
         name: str, optional
-            Name of the exogenous data being modeled. Default is "obs"
+            Name of the exogenous data being modeled. Default is "data"
 
         filter_type : str, optional
             The type of Kalman filter to use. Valid options are "standard", "univariate", "single", "cholesky", and
@@ -737,13 +737,25 @@ class LevelTrendComponent(Component):
     """
 
     def __init__(
-        self, order: int = 2, innovations_order: Optional[int] = None, name: str = "LevelTrend"
+        self,
+        order: Union[int, list[int]] = 2,
+        innovations_order: Optional[Union[int, list[int]]] = None,
+        name: str = "LevelTrend",
     ):
         if innovations_order is None:
             innovations_order = order
 
-        order = order_to_mask(order)
-        k_states = int(sum(order))
+        self._order_mask = order_to_mask(order)
+        max_state = np.flatnonzero(self._order_mask)[-1].item() + 1
+
+        # If the user passes excess zeros, raise an error. The alternative is to prune them, but this would cause
+        # the shape of the state to be different to what the user expects.
+        if len(self._order_mask) > max_state:
+            raise ValueError(
+                f"order={order} is invalid. The highest derivative should not be set to zero. If you want a "
+                f"lower order model, explicitly omit the zeros."
+            )
+        k_states = max_state
 
         if isinstance(innovations_order, int):
             n = innovations_order
@@ -755,29 +767,32 @@ class LevelTrendComponent(Component):
         else:
             innovations_order = order_to_mask(innovations_order)
 
-        self.innovations_order = innovations_order
+        self.innovations_order = innovations_order[:max_state]
         k_posdef = int(sum(innovations_order))
 
         super().__init__(
             name,
-            1,
-            k_states,
-            k_posdef,
+            k_endog=1,
+            k_states=k_states,
+            k_posdef=k_posdef,
             measurement_error=False,
             combine_hidden_states=False,
             obs_state_idxs=np.array([1.0] + [0.0] * (k_states - 1)),
         )
 
     def populate_component_properties(self):
+        name_slice = POSITION_DERIVATIVE_NAMES[: self.k_states]
         self.param_names = ["initial_trend"]
-        self.state_names = POSITION_DERIVATIVE_NAMES[: self.k_states]
+        self.state_names = [name for name, mask in zip(name_slice, self._order_mask) if mask]
         self.param_dims = {"initial_trend": ("trend_state",)}
         self.coords = {"trend_state": self.state_names}
         self.param_info = {"initial_trend": {"shape": (self.k_states,), "constraints": "None"}}
 
         if self.k_posdef > 0:
             self.param_names += ["sigma_trend"]
-            self.shock_names = list(np.array(self.state_names)[self.innovations_order])
+            self.shock_names = [
+                name for name, mask in zip(name_slice, self.innovations_order) if mask
+            ]
             self.param_dims["sigma_trend"] = ("trend_shock",)
             self.coords["trend_shock"] = self.shock_names
             self.param_info["sigma_trend"] = {"shape": (self.k_posdef,), "constraints": "Positive"}
@@ -1038,9 +1053,10 @@ class TimeSeasonality(Component):
     And so on. So for interpretation, the ``season_length - 1`` initial states are, when reversed, the coefficients
     associated with ``state_names[1:]``.
 
-    .. warning:: Although the ``season_names`` argument expects a list of length ``season_length``, only
-                ``season_names[1:]`` will be saved as model dimensions, since the 1st coefficient is not estimated (it is the sum
-                of the other 11).
+    .. warning::
+        Although the ``state_names`` argument expects a list of length ``season_length``, only ``state_names[1:]``
+        will be saved as model dimensions, since the 1st coefficient is not identified (it is defined as
+        :math:`-\sum_{i=1}^{s} \gamma_{t-i}`).
 
     Examples
     --------
@@ -1094,19 +1110,19 @@ class TimeSeasonality(Component):
                     f"state_names must be a list of length season_length, got {len(state_names)}"
                 )
             state_names = state_names.copy()
-        self.state_names = state_names
         self.innovations = innovations
 
         # The first state doesn't get a coefficient, it is defined as -sum(state_coefs)
         # TODO: Can I stash that information in the model somewhere so users don't have to know that?
-        state_0 = state_names.pop(-1)
+        state_0 = state_names.pop(0)
         k_states = season_length - 1
 
         super().__init__(
             name=name,
             k_endog=1,
             k_states=k_states,
-            k_posdef=1,  # TODO: Why not int(self.innovation)?
+            k_posdef=int(innovations),
+            state_names=state_names,
             measurement_error=False,
             combine_hidden_states=True,
             obs_state_idxs=np.r_[[1.0], np.zeros(k_states - 1)],
@@ -1122,7 +1138,7 @@ class TimeSeasonality(Component):
             }
         }
         self.param_dims = {f"{self.name}_coefs": (f"{self.name}_periods",)}
-        self.coords = {f"{self.name}_periods": self.state_names}
+        self.coords = {f"{self.name}_state": self.state_names}
 
         if self.innovations:
             self.param_names += [f"sigma_{self.name}"]
@@ -1227,7 +1243,7 @@ class FrequencySeasonality(Component):
             name=name,
             k_endog=1,
             k_states=k_states,
-            k_posdef=k_states,
+            k_posdef=k_states * int(self.innovations),
             measurement_error=False,
             combine_hidden_states=True,
             obs_state_idxs=obs_state_idx,
@@ -1235,7 +1251,6 @@ class FrequencySeasonality(Component):
 
     def make_symbolic_graph(self) -> None:
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
-        self.ssm["selection", :, :] = np.eye(self.k_states)
 
         init_state = self.make_and_register_variable(f"{self.name}", shape=(self.n_coefs,))
 
@@ -1249,11 +1264,11 @@ class FrequencySeasonality(Component):
         if self.innovations:
             sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
+            self.ssm["selection", :, :] = np.eye(self.k_states)
 
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
         self.param_names = [f"{self.name}"]
-        self.shock_names = self.state_names.copy()
 
         self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
@@ -1270,6 +1285,7 @@ class FrequencySeasonality(Component):
         self.coords = {f"{self.name}_initial_state": [self.state_names[i] for i in init_state_idx]}
 
         if self.innovations:
+            self.shock_names = self.state_names.copy()
             self.param_names += [f"sigma_{self.name}"]
             self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
@@ -1280,23 +1296,103 @@ class FrequencySeasonality(Component):
 
 class CycleComponent(Component):
     r"""
-    # TODO: WRITEME
+    A component for modeling longer-term cyclical effects
+
+    Parameters
+    ----------
+    name: str
+        Name of the component. Used in generated coordinates and state names. If None, a descriptive name will be
+        used.
+
+    cycle_length: int, optional
+        The length of the cycle, in the calendar units of your data. For example, if your data is monthly, and you
+        want to model a 12-month cycle, use ``cycle_length=12``. You cannot specify both ``cycle_length`` and
+        ``estimate_cycle_length``.
+
+    estimate_cycle_length: bool, default False
+        Whether to estimate the cycle length. If True, an additional parameter, ``cycle_length`` will be added to the
+        model. You cannot specify both ``cycle_length`` and ``estimate_cycle_length``.
+
+    dampen: bool, default False
+        Whether to dampen the cycle by multiplying by a dampening factor :math:`\rho` at every timestep. If true,
+        an additional parameter, ``dampening_factor`` will be added to the model.
+
+    innovations: bool, default True
+        Whether to include stochastic innovations in the strength of the seasonal effect. If True, an additional
+        parameter, ``sigma_{name}`` will be added to the model.
+
+    Notes
+    -----
+    The cycle component is very similar in implementation to the frequency domain seasonal component, expect that it
+    is restricted to n=1. The cycle component can be expressed:
+
+    .. math::
+        \begin{align}
+            \gamma_t &= \rho \gamma_{t-1} \cos \lambda + \rho \gamma_{t-1}^\star \sin \lambda + \omega_{t} \\
+            \gamma_{t}^\star &= -\rho \gamma_{t-1} \sin \lambda + \rho \gamma_{t-1}^\star \cos \lambda + \omega_{t}^\star \\
+            \lambda &= \frac{2\pi}{s}
+        \end{align}
+
+    Where :math:`s` is the ``cycle_length``. [1] recommend that this component be used for longer term cyclical
+    effects, such as business cycles, and that the seasonal component be used for shorter term effects, such as
+    weekly or monthly seasonality.
+
+    Unlike a FrequencySeasonality component, the length of a CycleComponent can be estimated.
+
+    Examples
+    --------
+    Estimate a business cycle with length between 6 and 12 years:
+
+    .. code:: python
+
+        from pymc_experimental.statespace import structural as st
+        import pymc as pm
+        import pytensor.tensor as pt
+        import pandas as pd
+        import numpy as np
+
+        data = np.random.normal(size=(100, 1))
+
+        # Build the structural model
+        grw = st.LevelTrendComponent(order=1, innovations_order=1)
+        cycle = st.CycleComponent('business_cycle', estimate_cycle_length=True, dampen=False)
+        ss_mod = (grw + cycle).build()
+
+        # Estimate with PyMC
+        with pm.Model(coords=ss_mod.coords) as model:
+            P0 = pm.Deterministic('P0', pt.eye(ss_mod.k_states), dims=ss_mod.param_dims['P0'])
+            intitial_trend = pm.Normal('initial_trend', dims=ss_mod.param_dims['initial_trend'])
+            sigma_trend = pm.HalfNormal('sigma_trend', dims=ss_mod.param_dims['sigma_trend'])
+
+            cycle_strength = pm.Normal('business_cycle')
+            cycle_length = pm.Uniform('business_cycle_length', lower=6, upper=12)
+
+            sigma_cycle = pm.HalfNormal('sigma_business_cycle', sigma=1)
+            ss_mod.build_statespace_graph(data, mode='JAX')
+
+            idata = pm.sample(nuts_sampler='numpyro')
+
+    References
+    ----------
+    .. [1] Durbin, James, and Siem Jan Koopman. 2012.
+        Time Series Analysis by State Space Methods: Second Edition.
+        Oxford University Press.
     """
 
     def __init__(
         self,
-        name=None,
-        cycle_length=None,
-        estimate_cycle_length=False,
-        dampen=False,
-        innovations=True,
+        name: str = None,
+        cycle_length: int = None,
+        estimate_cycle_length: bool = False,
+        dampen: bool = False,
+        innovations: bool = True,
     ):
         if cycle_length is None and not estimate_cycle_length:
             raise ValueError("Must specify cycle_length if estimate_cycle_length is False")
         if cycle_length is not None and estimate_cycle_length:
             raise ValueError("Cannot specify cycle_length if estimate_cycle_length is True")
         if name is None:
-            cycle = cycle_length if cycle_length is not None else "Estimate"
+            cycle = int(cycle_length) if cycle_length is not None else "Estimate"
             name = f"Cycle[s={cycle}, dampen={dampen}, innovations={innovations}]"
 
         self.estimate_cycle_length = estimate_cycle_length
@@ -1331,7 +1427,7 @@ class CycleComponent(Component):
         self.ssm["initial_state", 0] = init_state
 
         if self.estimate_cycle_length:
-            lamb = self.make_and_register_variable(f"{self.name}_cycle_length", shape=(1,))
+            lamb = self.make_and_register_variable(f"{self.name}_length", shape=(1,))
         else:
             lamb = self.cycle_length
 
@@ -1340,7 +1436,7 @@ class CycleComponent(Component):
         else:
             rho = 1
 
-        T = rho * _frequency_transition_block(s=lamb, j=1)
+        T = rho * _frequency_transition_block(lamb, j=1)
         self.ssm["transition", :, :] = T
 
         if self.innovations:
@@ -1348,22 +1444,20 @@ class CycleComponent(Component):
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
 
     def populate_component_properties(self):
-        self.state_names = [f"{self.name}_{f}" for f in ["Cos", "Sin"]]
+        self.state_names = [f"{self.name}_{f}" for f in ["Sin", "Cos"]]
         self.param_names = [f"{self.name}"]
 
-        self.param_dims = {self.name: (f"{self.name}_initial_state",)}
         self.param_info = {
             f"{self.name}": {
                 "shape": (1,),
                 "constraints": "None",
-                "dims": f"({self.name}_initial_state, )",
+                "dims": None,
             }
         }
-        self.coords = {f"{self.name}_initial_state": self.state_names}
 
         if self.estimate_cycle_length:
-            self.param_names += [f"{self.name}_cycle_length"]
-            self.param_info[f"{self.name}_cycle_length"] = {
+            self.param_names += [f"{self.name}_length"]
+            self.param_info[f"{self.name}_length"] = {
                 "shape": (1,),
                 "constraints": "Positive, non-zero",
                 "dims": None,
@@ -1384,7 +1478,7 @@ class CycleComponent(Component):
                 "constraints": "Positive",
                 "dims": "None",
             }
-            self.shock_names = [f"{self.name}"]
+            self.shock_names = self.state_names.copy()
 
 
 class RegressionComponent(Component):

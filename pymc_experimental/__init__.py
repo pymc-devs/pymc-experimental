@@ -23,7 +23,7 @@ if not logging.root.handlers:
         handler = logging.StreamHandler()
         _log.addHandler(handler)
 
-from pymc_experimental import distributions, gp, utils
+from pymc_experimental import distributions, gp, statespace, utils
 from pymc_experimental.inference.fit import fit
 from pymc_experimental.model.marginal_model import MarginalModel
 from pymc_experimental.model.model_api import as_model

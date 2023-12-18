@@ -207,9 +207,12 @@ def unpack_statespace(ssm):
     return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
 
 
-def unpack_symbolic_matrices_with_params(mod, param_dict):
+def unpack_symbolic_matrices_with_params(mod, param_dict, mode="FAST_COMPILE"):
     f_matrices = pytensor.function(
-        list(mod._name_to_variable.values()), unpack_statespace(mod.ssm), on_unused_input="ignore"
+        list(mod._name_to_variable.values()),
+        unpack_statespace(mod.ssm),
+        on_unused_input="raise",
+        mode=mode,
     )
     x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict)
     return x0, P0, c, d, T, Z, R, H, Q
@@ -227,7 +230,7 @@ def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
     y = np.zeros(steps)
 
     x[0] = x0
-    y[0] = (Z @ x0).squeeze()
+    y[0] = (Z @ x0).squeeze() if Z.ndim == 2 else (Z[0] @ x0).squeeze()
 
     if not np.allclose(H, 0):
         y[0] += rng.multivariate_normal(mean=np.zeros(1), cov=H)
@@ -245,7 +248,10 @@ def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
             error = 0
 
         x[t] = c + T @ x[t - 1] + innov
-        y[t] = (d + Z @ x[t] + error).squeeze()
+        if Z.ndim == 2:
+            y[t] = (d + Z @ x[t] + error).squeeze()
+        else:
+            y[t] = (d + Z[t] @ x[t] + error).squeeze()
 
     return x, y
 

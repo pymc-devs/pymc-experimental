@@ -6,7 +6,7 @@ Statespace Models
 .. autosummary::
    :toctree: generated
 
-    BayesianARIMA
+    BayesianSARIMA
     BayesianVARMAX
 
 *********************
