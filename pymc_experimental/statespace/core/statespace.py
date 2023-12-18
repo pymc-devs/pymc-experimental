@@ -23,7 +23,6 @@ from pymc_experimental.statespace.filters import (
 )
 from pymc_experimental.statespace.filters.distributions import (
     LinearGaussianStateSpace,
-    LinearGaussianStateSpaceRV,
     SequenceMvNormal,
 )
 from pymc_experimental.statespace.filters.utilities import stabilize
@@ -850,54 +849,6 @@ class PyMCStateSpace:
 
         if return_updates:
             return updates
-
-    def build_as_prior(
-        self,
-        name: str,
-        n_steps: int,
-        register_statespace_matrices: Optional[bool] = False,
-        k_endog: Optional[int] = None,
-        mode: Optional[str] = None,
-        **kwargs,
-    ) -> LinearGaussianStateSpaceRV:
-        """
-        Construct a random variable over
-
-        Parameters
-        ----------
-        name: str
-            Name of the random variable
-        n_steps: int
-            Length of the prior sequence, in time steps
-        register_statespace_matrices: bool
-            If True, statespace matrices used to construct the prior sequence will be wrapped in pm.Deterministic and
-            saved to the active model.
-        k_endog: int, optional
-            The number of observed states in the statespace. For debugging purposes only, should be automatically
-            inferred in most cases.
-        mode: str, optional
-            Pytensor compile mode.
-        kwargs:
-            PyMC distribution arguments, passed to LinearGaussianStateSpace
-
-        Returns
-        -------
-        obs_states: LinearGaussianStateSpaceRV
-            A random variable representing realizations of the observation equations of the statespace.
-        """
-
-        pm_mod = modelcontext(None)
-        self._insert_random_variables()
-
-        if register_statespace_matrices:
-            matrices = self._register_matrices_with_pymc_model()
-        else:
-            matrices = self.unpack_statespace()
-
-        latent_states, obs_states = LinearGaussianStateSpace(
-            name, *matrices, steps=n_steps, k_endog=k_endog, mode=mode, **kwargs
-        )
-        return obs_states
 
     def _build_smoother_graph(
         self,
