@@ -64,9 +64,9 @@ def _assert_coord_shapes_match_matrices(mod, params):
         params["initial_state_cov"] = np.eye(mod.k_states)
 
     x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
-    n_states = len(mod.coords["state"])
-    n_shocks = len(mod.coords["shock"])
-    n_obs = len(mod.coords["observed_state"])
+    n_states = len(mod.coords[ALL_STATE_DIM])
+    n_shocks = len(mod.coords[SHOCK_DIM])
+    n_obs = len(mod.coords[OBS_STATE_DIM])
 
     assert x0.shape[-1:] == (n_states,)
     assert P0.shape[-2:] == (n_states, n_states)
@@ -80,12 +80,12 @@ def _assert_coord_shapes_match_matrices(mod, params):
 
 
 def _assert_basic_coords_correct(mod):
-    assert mod.coords["state"] == mod.state_names
-    assert mod.coords["state_aux"] == mod.state_names
-    assert mod.coords["shock"] == mod.shock_names
-    assert mod.coords["shock_aux"] == mod.shock_names
-    assert mod.coords["observed_state"] == ["data"]
-    assert mod.coords["observed_state_aux"] == ["data"]
+    assert mod.coords[ALL_STATE_DIM] == mod.state_names
+    assert mod.coords[ALL_STATE_AUX_DIM] == mod.state_names
+    assert mod.coords[SHOCK_DIM] == mod.shock_names
+    assert mod.coords[SHOCK_AUX_DIM] == mod.shock_names
+    assert mod.coords[OBS_STATE_DIM] == ["data"]
+    assert mod.coords[OBS_STATE_AUX_DIM] == ["data"]
 
 
 def _assert_keys_match(test_dict, expected_dict):
@@ -116,6 +116,24 @@ def _assert_coords_correct(coords, expected_coords):
     _assert_keys_match(coords, expected_coords)
     for dim, labels in expected_coords.items():
         assert labels == coords[dim], f"labels on dimension {dim} do not match"
+
+
+def _assert_params_info_correct(param_info, coords, param_dims):
+    for param in param_info.keys():
+        info = param_info[param]
+
+        dims = info["dims"]
+        labels = [coords[dim] for dim in dims] if dims is not None else None
+        if labels is not None:
+            assert param in param_dims.keys()
+            inferred_dims = param_dims[param]
+        else:
+            inferred_dims = None
+
+        shape = tuple(len(label) for label in labels) if labels is not None else (1,)
+
+        assert info["shape"] == shape
+        assert dims == inferred_dims
 
 
 def create_structural_model_and_equivalent_statsmodel(
@@ -499,9 +517,11 @@ def test_structural_model_against_statsmodels(
     _assert_all_statespace_matrices_match(mod, params, sm_mod)
 
     mod.build(verbose=False)
+
     _assert_coord_shapes_match_matrices(mod, params)
     _assert_param_dims_correct(mod.param_dims, expected_dims)
     _assert_coords_correct(mod.coords, expected_coords)
+    _assert_params_info_correct(mod.param_info, mod.coords, mod.param_dims)
 
 
 def test_level_trend_model(rng):
