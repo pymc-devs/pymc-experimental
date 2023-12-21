@@ -1,5 +1,6 @@
 import functools as ft
 import warnings
+from collections import defaultdict
 from typing import Optional
 
 import numpy as np
@@ -13,7 +14,16 @@ from numpy.testing import assert_allclose
 from scipy import linalg
 
 from pymc_experimental.statespace import structural as st
-from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
+from pymc_experimental.statespace.utils.constants import (
+    ALL_STATE_AUX_DIM,
+    ALL_STATE_DIM,
+    AR_PARAM_DIM,
+    OBS_STATE_AUX_DIM,
+    OBS_STATE_DIM,
+    SHOCK_AUX_DIM,
+    SHOCK_DIM,
+    SHORT_NAME_TO_LONG,
+)
 from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
@@ -30,6 +40,11 @@ RTOL = 0 if floatX.endswith("64") else 1e-6
 
 def _assert_all_statespace_matrices_match(mod, params, sm_mod):
     x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
+
+    sm_x0, sm_H0, sm_P0 = sm_mod.initialization()
+
+    if len(x0) > 0:
+        assert_allclose(x0, sm_x0)
 
     for name, matrix in zip(["T", "R", "Z", "Q"], [T, R, Z, Q]):
         long_name = SHORT_NAME_TO_LONG[name]
@@ -49,9 +64,9 @@ def _assert_coord_shapes_match_matrices(mod, params):
         params["initial_state_cov"] = np.eye(mod.k_states)
 
     x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
-    n_states = len(mod.coords["state"])
-    n_shocks = len(mod.coords["shock"])
-    n_obs = len(mod.coords["observed_state"])
+    n_states = len(mod.coords[ALL_STATE_DIM])
+    n_shocks = len(mod.coords[SHOCK_DIM])
+    n_obs = len(mod.coords[OBS_STATE_DIM])
 
     assert x0.shape[-1:] == (n_states,)
     assert P0.shape[-2:] == (n_states, n_states)
@@ -65,12 +80,60 @@ def _assert_coord_shapes_match_matrices(mod, params):
 
 
 def _assert_basic_coords_correct(mod):
-    assert mod.coords["state"] == mod.state_names
-    assert mod.coords["state_aux"] == mod.state_names
-    assert mod.coords["shock"] == mod.shock_names
-    assert mod.coords["shock_aux"] == mod.shock_names
-    assert mod.coords["observed_state"] == ["data"]
-    assert mod.coords["observed_state_aux"] == ["data"]
+    assert mod.coords[ALL_STATE_DIM] == mod.state_names
+    assert mod.coords[ALL_STATE_AUX_DIM] == mod.state_names
+    assert mod.coords[SHOCK_DIM] == mod.shock_names
+    assert mod.coords[SHOCK_AUX_DIM] == mod.shock_names
+    assert mod.coords[OBS_STATE_DIM] == ["data"]
+    assert mod.coords[OBS_STATE_AUX_DIM] == ["data"]
+
+
+def _assert_keys_match(test_dict, expected_dict):
+    expected_keys = list(expected_dict.keys())
+    param_keys = list(test_dict.keys())
+    key_diff = set(expected_keys) - set(param_keys)
+    assert len(key_diff) == 0, f'{", ".join(key_diff)} were not found in the test_dict keys.'
+
+    key_diff = set(param_keys) - set(expected_keys)
+    assert (
+        len(key_diff) == 0
+    ), f'{", ".join(key_diff)} were keys of the tests_dict not in expected_dict.'
+
+
+def _assert_param_dims_correct(param_dims, expected_dims):
+    if len(expected_dims) == 0 and len(param_dims) == 0:
+        return
+
+    _assert_keys_match(param_dims, expected_dims)
+    for param, dims in expected_dims.items():
+        assert dims == param_dims[param], f"dims for parameter {param} do not match"
+
+
+def _assert_coords_correct(coords, expected_coords):
+    if len(coords) == 0 and len(expected_coords) == 0:
+        return
+
+    _assert_keys_match(coords, expected_coords)
+    for dim, labels in expected_coords.items():
+        assert labels == coords[dim], f"labels on dimension {dim} do not match"
+
+
+def _assert_params_info_correct(param_info, coords, param_dims):
+    for param in param_info.keys():
+        info = param_info[param]
+
+        dims = info["dims"]
+        labels = [coords[dim] for dim in dims] if dims is not None else None
+        if labels is not None:
+            assert param in param_dims.keys()
+            inferred_dims = param_dims[param]
+        else:
+            inferred_dims = None
+
+        shape = tuple(len(label) for label in labels) if labels is not None else (1,)
+
+        assert info["shape"] == shape
+        assert dims == inferred_dims
 
 
 def create_structural_model_and_equivalent_statsmodel(
@@ -113,12 +176,31 @@ def create_structural_model_and_equivalent_statsmodel(
 
     params = {}
     sm_params = {}
+    sm_init = {}
+    expected_param_dims = defaultdict(lambda: ())
+    expected_coords = defaultdict(lambda: [])
+    expected_param_dims["P0"] += ("state", "state_aux")
+
+    default_states = [
+        ALL_STATE_DIM,
+        ALL_STATE_AUX_DIM,
+        OBS_STATE_DIM,
+        OBS_STATE_AUX_DIM,
+        SHOCK_DIM,
+        SHOCK_AUX_DIM,
+    ]
+    default_values = [[], [], ["data"], ["data"], [], []]
+    for dim, value in zip(default_states, default_values):
+        expected_coords[dim] += value
+
     components = []
 
     if irregular:
         sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
         params["sigma_irregular"] = sigma
         sm_params["sigma2.irregular"] = sigma.item()
+        expected_param_dims["sigma_irregular"] += ("observed_state",)
+
         comp = st.MeasurementError("irregular")
         components.append(comp)
 
@@ -127,15 +209,45 @@ def create_structural_model_and_equivalent_statsmodel(
 
     if level:
         level_trend_order[0] = 1
+        expected_coords["trend_state"] += [
+            "level",
+        ]
+        expected_coords[ALL_STATE_DIM] += [
+            "level",
+        ]
+        expected_coords[ALL_STATE_AUX_DIM] += [
+            "level",
+        ]
         if stochastic_level:
             level_trend_innov_order[0] = 1
+            expected_coords["trend_shock"] += ["level"]
+            expected_coords[SHOCK_DIM] += [
+                "level",
+            ]
+            expected_coords[SHOCK_AUX_DIM] += [
+                "level",
+            ]
 
     if trend:
         level_trend_order[1] = 1
+        expected_coords["trend_state"] += [
+            "trend",
+        ]
+        expected_coords[ALL_STATE_DIM] += [
+            "trend",
+        ]
+        expected_coords[ALL_STATE_AUX_DIM] += [
+            "trend",
+        ]
+
         if stochastic_trend:
             level_trend_innov_order[1] = 1
+            expected_coords["trend_shock"] += ["trend"]
+            expected_coords[SHOCK_DIM] += ["trend"]
+            expected_coords[SHOCK_AUX_DIM] += ["trend"]
 
     if level or trend:
+        expected_param_dims["initial_trend"] += ("trend_state",)
         level_value = np.where(
             level_trend_order,
             rng.normal(
@@ -150,7 +262,11 @@ def create_structural_model_and_equivalent_statsmodel(
         level_trend_order = level_trend_order[:max_order]
 
         params["initial_trend"] = level_value[:max_order]
+        sm_init["level"] = level_value[0]
+        sm_init["trend"] = level_value[1]
+
         if sum(level_trend_innov_order) > 0:
+            expected_param_dims["sigma_trend"] += ("trend_shock",)
             params["sigma_trend"] = sigma_level_value
 
         sigma_level_value = sigma_level_value.tolist()
@@ -167,12 +283,30 @@ def create_structural_model_and_equivalent_statsmodel(
         components.append(comp)
 
     if seasonal is not None:
-        params["seasonal_coefs"] = rng.normal(size=(seasonal - 1,)).astype(floatX)
+        state_names = [f"seasonal_{i}" for i in range(seasonal)][1:]
+        seasonal_coefs = rng.normal(size=(seasonal - 1,)).astype(floatX)
+        params["seasonal_coefs"] = seasonal_coefs
+        expected_param_dims["seasonal_coefs"] += ("seasonal_state",)
+
+        expected_coords["seasonal_state"] += tuple(state_names)
+        expected_coords[ALL_STATE_DIM] += state_names
+        expected_coords[ALL_STATE_AUX_DIM] += state_names
+
+        seasonal_dict = {
+            "seasonal" if i == 0 else f"seasonal.L{i}": c for i, c in enumerate(seasonal_coefs)
+        }
+        sm_init.update(seasonal_dict)
 
         if stochastic_seasonal:
             sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
             params["sigma_seasonal"] = sigma
             sm_params["sigma2.seasonal"] = sigma
+            expected_coords[SHOCK_DIM] += [
+                "seasonal",
+            ]
+            expected_coords[SHOCK_AUX_DIM] += [
+                "seasonal",
+            ]
 
         comp = st.TimeSeasonality(
             name="seasonal", season_length=seasonal, innovations=stochastic_seasonal
@@ -180,19 +314,40 @@ def create_structural_model_and_equivalent_statsmodel(
         components.append(comp)
 
     if freq_seasonal is not None:
+        state_count = 0
         for d, has_innov in zip(freq_seasonal, stochastic_freq_seasonal):
             n = d["harmonics"]
             s = d["period"]
+            last_state_not_identified = (s / n) == 2.0
+            n_states = 2 * n - int(last_state_not_identified)
+            state_names = [f"seasonal_{s}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
 
-            last_state_not_identified = s / n == 2.0
+            # if last_state_not_identified:
+            #     state_names.pop(-1)
 
-            params[f"seasonal_{s}"] = rng.normal(
-                size=(2 * n - int(last_state_not_identified))
-            ).astype(floatX)
+            seasonal_params = rng.normal(size=n_states).astype(floatX)
+
+            params[f"seasonal_{s}"] = seasonal_params
+            expected_param_dims[f"seasonal_{s}"] += (f"seasonal_{s}_state",)
+            expected_coords[ALL_STATE_DIM] += state_names
+            expected_coords[ALL_STATE_AUX_DIM] += state_names
+            expected_coords[f"seasonal_{s}_state"] += (
+                tuple(state_names[:-1]) if last_state_not_identified else tuple(state_names)
+            )
+
+            for param in seasonal_params:
+                sm_init[f"freq_seasonal.{state_count}"] = param
+                state_count += 1
+            if last_state_not_identified:
+                sm_init[f"freq_seasonal.{state_count}"] = 0.0
+                state_count += 1
+
             if has_innov:
                 sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
                 params[f"sigma_seasonal_{s}"] = sigma
                 sm_params[f"sigma2.freq_seasonal_{s}({n})"] = sigma
+                expected_coords[SHOCK_DIM] += state_names
+                expected_coords[SHOCK_AUX_DIM] += state_names
 
             comp = st.FrequencySeasonality(
                 name=f"seasonal_{s}", season_length=s, n=n, innovations=has_innov
@@ -205,11 +360,25 @@ def create_structural_model_and_equivalent_statsmodel(
         # Statsmodels takes the frequency not the cycle length, so convert it.
         sm_params["frequency.cycle"] = 2.0 * np.pi / cycle_length
         params["cycle_length"] = np.atleast_1d(cycle_length)
-        params["cycle"] = np.ones((1,), dtype=floatX)
+
+        init_cycle = rng.normal(size=(2,)).astype(floatX)
+        params["cycle"] = init_cycle
+        expected_param_dims["cycle"] += ("cycle_state",)
+
+        state_names = ["cycle_Sin", "cycle_Cos"]
+        expected_coords["cycle_state"] += state_names
+        expected_coords[ALL_STATE_DIM] += state_names
+        expected_coords[ALL_STATE_AUX_DIM] += state_names
+
+        sm_init["cycle"] = init_cycle[0]
+        sm_init["cycle.auxilliary"] = init_cycle[1]
 
         if stochastic_cycle:
             sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
             params["sigma_cycle"] = sigma
+            expected_coords[SHOCK_DIM] += state_names
+            expected_coords[SHOCK_AUX_DIM] += state_names
+
             sm_params["sigma2.cycle"] = sigma
 
         if damped_cycle:
@@ -227,14 +396,23 @@ def create_structural_model_and_equivalent_statsmodel(
         components.append(comp)
 
     if autoregressive is not None:
+        ar_names = [f"L{i+1}.data" for i in range(autoregressive)]
         ar_params = rng.normal(size=(autoregressive,)).astype(floatX)
         sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
+
         params["ar_params"] = ar_params
         params["sigma_ar"] = sigma
+        expected_param_dims["ar_params"] += (AR_PARAM_DIM,)
+        expected_coords[AR_PARAM_DIM] += tuple(list(range(1, autoregressive + 1)))
+        expected_coords[ALL_STATE_DIM] += ar_names
+        expected_coords[ALL_STATE_AUX_DIM] += ar_names
+        expected_coords[SHOCK_DIM] += ["ar_innovation"]
+        expected_coords[SHOCK_AUX_DIM] += ["ar_innovation"]
 
         sm_params["sigma2.ar"] = sigma
         for i, rho in enumerate(ar_params):
-            sm_params[f"ar.L{i + 1}"] = rho
+            sm_init[f"ar.L{i+1}"] = 0
+            sm_params[f"ar.L{i+1}"] = rho
 
         comp = st.AutoregressiveComponent(name="ar", order=autoregressive)
         components.append(comp)
@@ -244,16 +422,21 @@ def create_structural_model_and_equivalent_statsmodel(
         betas = rng.normal(size=(exog.shape[1],)).astype(floatX)
         params["beta_exog"] = betas
         params["data_exog"] = exog
+        expected_param_dims["beta_exog"] += ("exog_state",)
+        expected_param_dims["data_exog"] += ("time", "exog_data")
+
+        expected_coords["exog_state"] += tuple(names)
 
         for i, beta in enumerate(betas):
             sm_params[f"beta.x{i + 1}"] = beta
+            sm_init[f"beta.x{i+1}"] = beta
         comp = st.RegressionComponent(name="exog", state_names=names)
         components.append(comp)
 
     st_mod = components.pop(0)
     for comp in components:
         st_mod += comp
-    return mod, st_mod, params, sm_params
+    return mod, st_mod, params, sm_params, sm_init, expected_param_dims, expected_coords
 
 
 @pytest.mark.parametrize(
@@ -296,7 +479,7 @@ def test_structural_model_against_statsmodels(
     stochastic_cycle,
     rng,
 ):
-    f_sm_mod, mod, params, sm_params = create_structural_model_and_equivalent_statsmodel(
+    retvals = create_structural_model_and_equivalent_statsmodel(
         rng,
         level=level,
         trend=trend,
@@ -312,10 +495,18 @@ def test_structural_model_against_statsmodels(
         stochastic_freq_seasonal=stochastic_freq_seasonal,
         stochastic_cycle=stochastic_cycle,
     )
+    f_sm_mod, mod, params, sm_params, sm_init, expected_dims, expected_coords = retvals
 
     data = rng.normal(size=(100,)).astype(floatX)
     sm_mod = f_sm_mod(data)
-    sm_mod.initialize_default()
+
+    if len(sm_init) > 0:
+        init_array = np.concatenate(
+            [np.atleast_1d(sm_init[k]).ravel() for k in sm_mod.state_names if k != "dummy"]
+        )
+        sm_mod.initialize_known(init_array, np.eye(sm_mod.k_states))
+    else:
+        sm_mod.initialize_default()
 
     if len(sm_params) > 0:
         param_array = np.concatenate(
@@ -326,7 +517,11 @@ def test_structural_model_against_statsmodels(
     _assert_all_statespace_matrices_match(mod, params, sm_mod)
 
     mod.build(verbose=False)
+
     _assert_coord_shapes_match_matrices(mod, params)
+    _assert_param_dims_correct(mod.param_dims, expected_dims)
+    _assert_coords_correct(mod.coords, expected_coords)
+    _assert_params_info_correct(mod.param_info, mod.coords, mod.param_dims)
 
 
 def test_level_trend_model(rng):
@@ -365,7 +560,7 @@ def test_autoregressive_model(order, rng):
     lags = np.arange(len(order) if isinstance(order, list) else order, dtype="int") + 1
     if isinstance(order, list):
         lags = lags[np.flatnonzero(order)]
-    assert_allclose(ar.coords["ar_lags"], lags)
+    assert_allclose(ar.coords["ar_lag"], lags)
 
 
 @pytest.mark.parametrize("s", [10, 25, 50])
@@ -426,7 +621,7 @@ def test_frequency_seasonality(n, s, rng):
     # Remove the last state when the model is completely saturated
     if s / n == 2.0:
         states.pop()
-    assert mod.coords["season_initial_state"] == states
+    assert mod.coords["season_state"] == states
 
 
 cycle_test_vals = zip([None, None, 3, 5, 10], [False, True, True, False, False])
@@ -436,7 +631,7 @@ def test_cycle_component_deterministic(rng):
     cycle = st.CycleComponent(
         name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False
     )
-    params = {"cycle": np.array([1.0], dtype=floatX)}
+    params = {"cycle": np.array([1.0, 1.0], dtype=floatX)}
     x, y = simulate_from_numpy_model(cycle, rng, params, steps=12 * 12)
 
     assert_pattern_repeats(y, 12, atol=ATOL, rtol=RTOL)
@@ -447,7 +642,7 @@ def test_cycle_component_with_dampening(rng):
         name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False, dampen=True
     )
     params = {
-        "cycle": np.array([10.0], dtype=floatX),
+        "cycle": np.array([10.0, 10.0], dtype=floatX),
         "cycle_dampening_factor": np.array([0.75], dtype=floatX),
     }
     x, y = simulate_from_numpy_model(cycle, rng, params, steps=100)
@@ -461,7 +656,7 @@ def test_cycle_component_with_innovations_and_cycle_length(rng):
         name="cycle", estimate_cycle_length=True, innovations=True, dampen=True
     )
     params = {
-        "cycle": np.array([1.0], dtype=floatX),
+        "cycle": np.array([1.0, 1.0], dtype=floatX),
         "cycle_length": np.array([12], dtype=floatX),
         "cycle_dampening_factor": np.array([0.95], dtype=floatX),
         "sigma_cycle": np.array([1.0], dtype=floatX),
@@ -589,7 +784,7 @@ def test_extract_components_from_idata(rng):
         beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
         initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
         sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
-        seasonal_coefs = pm.Normal("seasonal", dims=["seasonal_initial_state"])
+        seasonal_coefs = pm.Normal("seasonal", dims=["seasonal_state"])
         sigma_obs = pm.Exponential("sigma_obs", 1)
 
         mod.build_statespace_graph(y)

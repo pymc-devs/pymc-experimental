@@ -18,9 +18,11 @@ from pymc_experimental.statespace.models.utilities import (
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
+    AR_PARAM_DIM,
     LONG_MATRIX_NAMES,
     OBS_STATE_DIM,
     POSITION_DERIVATIVE_NAMES,
+    TIME_DIM,
 )
 
 _log = logging.getLogger("pymc.experimental.statespace")
@@ -786,7 +788,7 @@ class LevelTrendComponent(Component):
         self.state_names = [name for name, mask in zip(name_slice, self._order_mask) if mask]
         self.param_dims = {"initial_trend": ("trend_state",)}
         self.coords = {"trend_state": self.state_names}
-        self.param_info = {"initial_trend": {"shape": (self.k_states,), "constraints": "None"}}
+        self.param_info = {"initial_trend": {"shape": (self.k_states,), "constraints": None}}
 
         if self.k_posdef > 0:
             self.param_names += ["sigma_trend"]
@@ -871,7 +873,11 @@ class MeasurementError(Component):
         self.param_names = [f"sigma_{self.name}"]
         self.param_dims = {f"sigma_{self.name}": (OBS_STATE_DIM,)}
         self.param_info = {
-            f"sigma_{self.name}": {"shape": (1,), "constraints": "Positive", "dims": "None"}
+            f"sigma_{self.name}": {
+                "shape": (1,),
+                "constraints": "Positive",
+                "dims": (OBS_STATE_DIM,),
+            }
         }
 
     def make_symbolic_graph(self) -> None:
@@ -959,11 +965,15 @@ class AutoregressiveComponent(Component):
         self.state_names = [f"L{i + 1}.data" for i in range(self.k_states)]
         self.shock_names = [f"{self.name}_innovation"]
         self.param_names = ["ar_params", "sigma_ar"]
-        self.param_dims = {"ar_params": ("ar_lags",)}
-        self.coords = {"ar_lags": self.ar_lags}
+        self.param_dims = {"ar_params": (AR_PARAM_DIM,)}
+        self.coords = {AR_PARAM_DIM: self.ar_lags.tolist()}
 
         self.param_info = {
-            "ar_params": {"shape": (self.k_states,), "constraints": "None", "dims": "(ar_lags, )"},
+            "ar_params": {
+                "shape": (self.k_states,),
+                "constraints": None,
+                "dims": (AR_PARAM_DIM,),
+            },
             "sigma_ar": {"shape": (1,), "constraints": "Positive", "dims": None},
         }
 
@@ -1133,11 +1143,11 @@ class TimeSeasonality(Component):
         self.param_info = {
             f"{self.name}_coefs": {
                 "shape": (self.k_states,),
-                "constraints": "None",
-                "dims": f"({self.name}_state, )",
+                "constraints": None,
+                "dims": (f"{self.name}_state",),
             }
         }
-        self.param_dims = {f"{self.name}_coefs": (f"{self.name}_periods",)}
+        self.param_dims = {f"{self.name}_coefs": (f"{self.name}_state",)}
         self.coords = {f"{self.name}_state": self.state_names}
 
         if self.innovations:
@@ -1145,7 +1155,7 @@ class TimeSeasonality(Component):
             self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
                 "constraints": "Positive",
-                "dims": "None",
+                "dims": None,
             }
             self.shock_names = [f"{self.name}"]
 
@@ -1270,19 +1280,19 @@ class FrequencySeasonality(Component):
         self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
         self.param_names = [f"{self.name}"]
 
-        self.param_dims = {self.name: (f"{self.name}_initial_state",)}
+        self.param_dims = {self.name: (f"{self.name}_state",)}
         self.param_info = {
             f"{self.name}": {
                 "shape": (self.k_states - int(self.last_state_not_identified),),
-                "constraints": "None",
-                "dims": f"({self.name}_initial_state, )",
+                "constraints": None,
+                "dims": (f"{self.name}_state",),
             }
         }
 
         init_state_idx = np.arange(self.k_states, dtype=int)
         if self.last_state_not_identified:
             init_state_idx = init_state_idx[:-1]
-        self.coords = {f"{self.name}_initial_state": [self.state_names[i] for i in init_state_idx]}
+        self.coords = {f"{self.name}_state": [self.state_names[i] for i in init_state_idx]}
 
         if self.innovations:
             self.shock_names = self.state_names.copy()
@@ -1290,7 +1300,7 @@ class FrequencySeasonality(Component):
             self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
                 "constraints": "Positive",
-                "dims": "None",
+                "dims": None,
             }
 
 
@@ -1421,10 +1431,12 @@ class CycleComponent(Component):
     def make_symbolic_graph(self) -> None:
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
         self.ssm["selection", :, :] = np.eye(self.k_states)
+        self.param_dims = {self.name: (f"{self.name}_state",)}
+        self.coords = {f"{self.name}_state": self.state_names}
 
-        init_state = self.make_and_register_variable(f"{self.name}", shape=(1,))
+        init_state = self.make_and_register_variable(f"{self.name}", shape=(self.k_states,))
 
-        self.ssm["initial_state", 0] = init_state
+        self.ssm["initial_state", :] = init_state
 
         if self.estimate_cycle_length:
             lamb = self.make_and_register_variable(f"{self.name}_length", shape=(1,))
@@ -1440,8 +1452,8 @@ class CycleComponent(Component):
         self.ssm["transition", :, :] = T
 
         if self.innovations:
-            sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
-            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
+            sigma_cycle = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_cycle
 
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}" for f in ["Sin", "Cos"]]
@@ -1449,9 +1461,9 @@ class CycleComponent(Component):
 
         self.param_info = {
             f"{self.name}": {
-                "shape": (1,),
-                "constraints": "None",
-                "dims": None,
+                "shape": (2,),
+                "constraints": None,
+                "dims": (f"{self.name}_state",),
             }
         }
 
@@ -1476,7 +1488,7 @@ class CycleComponent(Component):
             self.param_info[f"sigma_{self.name}"] = {
                 "shape": (1,),
                 "constraints": "Positive",
-                "dims": "None",
+                "dims": None,
             }
             self.shock_names = self.state_names.copy()
 
@@ -1551,15 +1563,16 @@ class RegressionComponent(Component):
 
         self.param_names = [f"beta_{self.name}", f"data_{self.name}"]
         self.param_dims = {
-            f"beta_{self.name}": "exog_state",
-            f"data_{self.name}": ("time", "exog_state"),
+            f"beta_{self.name}": ("exog_state",),
+            f"data_{self.name}": (TIME_DIM, "exog_state"),
         }
+
         self.param_info = {
-            f"beta_{self.name}": {"shape": (1,), "constraints": "None", "dims": ("exog_state",)},
+            f"beta_{self.name}": {"shape": (1,), "constraints": None, "dims": ("exog_state",)},
             f"data_{self.name}": {
                 "shape": (None, self.k_states),
-                "constraints": "None",
-                "dims": ("time", "exog_state"),
+                "constraints": None,
+                "dims": (TIME_DIM, "exog_state"),
             },
         }
         self.coords = {f"exog_state": self.state_names}
