@@ -290,10 +290,11 @@ def test_recover_marginals_basic():
         idata = InferenceData(posterior=dict_to_dataset(prior))
 
     idata = m.recover_marginals(idata, return_samples=True)
-    assert "k" in idata
-    assert "lp_k" in idata
-    assert idata.k.shape == idata.y.shape
-    assert idata.lp_k.shape == idata.k.shape + (len(p),)
+    post = idata.posterior
+    assert "k" in post
+    assert "lp_k" in post
+    assert post.k.shape == post.y.shape
+    assert post.lp_k.shape == post.k.shape + (len(p),)
 
     def true_logp(y, sigma):
         y = y.repeat(len(p)).reshape(len(y), -1)
@@ -307,8 +308,8 @@ def test_recover_marginals_basic():
         )
 
     np.testing.assert_almost_equal(
-        true_logp(idata.y.values.flatten(), idata.sigma.values.flatten()),
-        idata.lp_k[0].values,
+        true_logp(post.y.values.flatten(), post.sigma.values.flatten()),
+        post.lp_k[0].values,
     )
 
 
@@ -316,8 +317,8 @@ def test_recover_batched_marginal():
     """Test that marginalization works for batched random variables"""
     with MarginalModel() as m:
         sigma = pm.HalfNormal("sigma")
-        idx = pm.Bernoulli("idx", p=0.7, shape=(2, 3))
-        y = pm.Normal("y", mu=idx, sigma=sigma, shape=(2, 3))
+        idx = pm.Bernoulli("idx", p=0.7, shape=(3, 2))
+        y = pm.Normal("y", mu=idx, sigma=sigma, shape=(3, 2))
 
     m.marginalize([idx])
 
@@ -334,6 +335,11 @@ def test_recover_batched_marginal():
         )
 
     idata = m.recover_marginals(idata, return_samples=True)
+    post = idata.posterior
+    assert "idx" in post
+    assert "lp_idx" in post
+    assert post.idx.shape == post.y.shape
+    assert post.lp_idx.shape == post.idx.shape + (2,)
 
 
 def test_nested_recover_marginals():
@@ -357,14 +363,15 @@ def test_nested_recover_marginals():
         idata = InferenceData(posterior=dict_to_dataset(prior))
 
     idata = m.recover_marginals(idata, return_samples=True)
-    assert "idx" in idata
-    assert "lp_idx" in idata
-    assert idata.idx.shape == idata.y.shape
-    assert idata.lp_idx.shape == idata.idx.shape + (2,)
-    assert "sub_idx" in idata
-    assert "lp_sub_idx" in idata
-    assert idata.sub_idx.shape == idata.y.shape
-    assert idata.lp_sub_idx.shape == idata.sub_idx.shape + (2,)
+    post = idata.posterior
+    assert "idx" in post
+    assert "lp_idx" in post
+    assert post.idx.shape == post.y.shape
+    assert post.lp_idx.shape == post.idx.shape + (2,)
+    assert "sub_idx" in post
+    assert "lp_sub_idx" in post
+    assert post.sub_idx.shape == post.y.shape
+    assert post.lp_sub_idx.shape == post.sub_idx.shape + (2,)
 
     def true_idx_logp(y):
         idx_0 = np.log(0.85 * 0.25 * norm.pdf(y, loc=0) + 0.15 * 0.25 * norm.pdf(y, loc=1))
@@ -372,8 +379,8 @@ def test_nested_recover_marginals():
         return log_softmax(np.stack([idx_0, idx_1]).T, axis=1)
 
     np.testing.assert_almost_equal(
-        true_idx_logp(idata.y.values.flatten()),
-        idata.lp_idx[0].values,
+        true_idx_logp(post.y.values.flatten()),
+        post.lp_idx[0].values,
     )
 
     def true_sub_idx_logp(y):
@@ -382,8 +389,8 @@ def test_nested_recover_marginals():
         return log_softmax(np.stack([sub_idx_0, sub_idx_1]).T, axis=1)
 
     np.testing.assert_almost_equal(
-        true_sub_idx_logp(idata.y.values.flatten()),
-        idata.lp_sub_idx[0].values,
+        true_sub_idx_logp(post.y.values.flatten()),
+        post.lp_sub_idx[0].values,
     )
 
 

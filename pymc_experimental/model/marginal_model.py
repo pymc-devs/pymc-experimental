@@ -14,7 +14,7 @@ from pymc.logprob.basic import conditional_logp
 from pymc.logprob.transforms import IntervalTransform
 from pymc.model import Model
 from pymc.pytensorf import compile_pymc, constant_fold, inputvars
-from pymc.util import dataset_to_point_list, treedict
+from pymc.util import _get_seeds_per_chain, dataset_to_point_list, treedict
 from pytensor import Mode
 from pytensor.compile import SharedVariable
 from pytensor.compile.builders import OpFromGraph
@@ -233,9 +233,14 @@ class MarginalModel(Model):
         m.marginalized_rvs = [vars_to_clone[rv] for rv in self.marginalized_rvs]
         return m
 
-    def marginalize(self, rvs_to_marginalize: Union[TensorVariable, Sequence[TensorVariable]]):
+    def marginalize(
+        self, rvs_to_marginalize: Union[TensorVariable, str, Sequence[TensorVariable], Sequence[str]]
+    ):
         if not isinstance(rvs_to_marginalize, Sequence):
             rvs_to_marginalize = (rvs_to_marginalize,)
+        rvs_to_marginalize = [
+            self[var] if isinstance(var, str) else var for var in rvs_to_marginalize
+        ]
 
         supported_dists = (Bernoulli, Categorical, DiscreteUniform)
         for rv_to_marginalize in rvs_to_marginalize:
@@ -279,7 +284,12 @@ class MarginalModel(Model):
             self.register_rv(rv, name=rv.name)
 
     def recover_marginals(
-        self, idata, var_names=None, return_samples=True, extend_inferencedata=True
+        self,
+        idata,
+        var_names=None,
+        return_samples=True,
+        extend_inferencedata=True,
+        random_seed=None,
     ):
         """Computes posterior log-probabilities and samples of marginalized variables
         conditioned on parameters of the model given InferenceData with posterior group
@@ -299,6 +309,8 @@ class MarginalModel(Model):
             If True, also return samples of the marginalized variables
         extend_inferencedata : bool, default True
             Whether to extend the original InferenceData or return a new one
+        random_seed: int, array-like of int or SeedSequence, optional
+            Seed used to generating samples
 
         Returns
         -------
@@ -323,14 +335,18 @@ class MarginalModel(Model):
 
         """
         if var_names is None:
-            var_names = {var.name for var in self.marginalized_rvs}
-        else:
-            var_names = {var_names}
+            var_names = [var.name for var in self.marginalized_rvs]
 
+        var_names = [var if isinstance(var, str) else var.name for var in var_names]
         vars_to_recover = [v for v in self.marginalized_rvs if v.name in var_names]
-        missing_names = var_names.difference(v.name for v in vars_to_recover)
+        missing_names = [v.name for v in vars_to_recover if v not in self.marginalized_rvs]
         if missing_names:
             raise ValueError(f"Unrecognized var_names: {missing_names}")
+
+        if return_samples and random_seed is not None:
+            seeds = _get_seeds_per_chain(random_seed, len(vars_to_recover))
+        else:
+            seeds = [None] * len(vars_to_recover)
 
         posterior = idata.posterior
 
@@ -351,9 +367,8 @@ class MarginalModel(Model):
         posterior_pts = [transform_input(vs) for vs in posterior_pts]
 
         rv_dict = {}
-        rv_dims_dict = {}
 
-        for rv in vars_to_recover:
+        for seed, rv in zip(seeds, vars_to_recover):
             supported_dists = (Bernoulli, Categorical, DiscreteUniform)
             if not isinstance(rv.owner.op, supported_dists):
                 raise NotImplementedError(
@@ -365,7 +380,21 @@ class MarginalModel(Model):
             rv = m.vars_to_clone[rv]
             m.unmarginalize([rv])
             dependent_vars = find_conditional_dependent_rvs(rv, m.basic_RVs)
-            joint_logp = m.logp(vars=dependent_vars + [rv])
+            joint_logps = m.logp(vars=dependent_vars + [rv], sum=False)
+
+            marginalized_value = m.rvs_to_values[rv]
+            other_values = [v for v in m.value_vars if v is not marginalized_value]
+
+            # Handle batch dims for marginalized value and its dependent RVs
+            joint_logp = joint_logps[-1]
+            for dv in joint_logps[:-1]:
+                dbcast = dv.type.broadcastable
+                mbcast = marginalized_value.type.broadcastable
+                mbcast = (True,) * (len(dbcast) - len(mbcast)) + mbcast
+                values_axis_bcast = [
+                    i for i, (m, v) in enumerate(zip(mbcast, dbcast)) if m and not v
+                ]
+                joint_logp += dv.sum(values_axis_bcast)
 
             rv_shape = constant_fold(tuple(rv.shape))
             rv_domain = get_domain_of_finite_discrete_rv(rv)
@@ -379,27 +408,28 @@ class MarginalModel(Model):
                 0,
             )
 
-            marginalized_value = m.rvs_to_values[rv]
-            other_values = [v for v in m.value_vars if v is not marginalized_value]
-
             joint_logps = vectorize_graph(
                 joint_logp,
                 replace={marginalized_value: rv_domain_tensor},
             )
+            joint_logps = pt.moveaxis(joint_logps, 0, -1)
 
             rv_loglike_fn = None
+            joint_logps_norm = log_softmax(joint_logps, axis=0)
             if return_samples:
                 sample_rv_outs = pymc.Categorical.dist(logit_p=joint_logps)
                 rv_loglike_fn = compile_pymc(
                     inputs=other_values,
-                    outputs=[log_softmax(joint_logps, axis=0), sample_rv_outs],
+                    outputs=[joint_logps_norm, sample_rv_outs],
                     on_unused_input="ignore",
+                    random_seed=seed,
                 )
             else:
                 rv_loglike_fn = compile_pymc(
                     inputs=other_values,
-                    outputs=log_softmax(joint_logps, axis=0),
+                    outputs=joint_logps_norm,
                     on_unused_input="ignore",
+                    random_seed=seed,
                 )
 
             logvs = [rv_loglike_fn(**vs) for vs in posterior_pts]
@@ -409,18 +439,16 @@ class MarginalModel(Model):
             if return_samples:
                 logps, samples = zip(*logvs)
                 logps = np.array(logps)
-                rv_dict[rv.name] = np.reshape(
-                    samples, tuple(len(coord) for coord in stacked_dims.values())
+                samples = np.array(samples)
+                rv_dict[rv.name] = samples.reshape(
+                    tuple(len(coord) for coord in stacked_dims.values()) + samples.shape[1:],
                 )
-                rv_dims_dict[rv.name] = sample_dims
             else:
                 logps = np.array(logvs)
 
-            rv_dict["lp_" + rv.name] = np.reshape(
-                logps,
+            rv_dict["lp_" + rv.name] = logps.reshape(
                 tuple(len(coord) for coord in stacked_dims.values()) + logps.shape[1:],
             )
-            rv_dims_dict["lp_" + rv.name] = sample_dims + ("lp_" + rv.name + "_dims",)
 
         coords, dims = coords_and_dims_for_inferencedata(self)
         rv_dataset = dict_to_dataset(
@@ -433,8 +461,7 @@ class MarginalModel(Model):
         )
 
         if extend_inferencedata:
-            rv_dict = {k: (rv_dims_dict[k], v) for (k, v) in rv_dict.items()}
-            idata = idata.posterior.assign(**rv_dict)
+            idata.posterior = idata.posterior.assign(rv_dataset)
             return idata
         else:
             return rv_dataset
