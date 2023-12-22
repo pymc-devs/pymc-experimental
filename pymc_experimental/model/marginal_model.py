@@ -419,6 +419,9 @@ class MarginalModel(Model):
             joint_logps_norm = log_softmax(joint_logps, axis=0)
             if return_samples:
                 sample_rv_outs = pymc.Categorical.dist(logit_p=joint_logps)
+                if isinstance(rv.owner.op, DiscreteUniform):
+                    sample_rv_outs += rv_domain[0]
+
                 rv_loglike_fn = compile_pymc(
                     inputs=other_values,
                     outputs=[joint_logps_norm, sample_rv_outs],
