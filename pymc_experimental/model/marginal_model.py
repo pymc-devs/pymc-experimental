@@ -234,7 +234,8 @@ class MarginalModel(Model):
         return m
 
     def marginalize(
-        self, rvs_to_marginalize: Union[TensorVariable, str, Sequence[TensorVariable], Sequence[str]]
+        self,
+        rvs_to_marginalize: Union[TensorVariable, str, Sequence[TensorVariable], Sequence[str]],
     ):
         if not isinstance(rvs_to_marginalize, Sequence):
             rvs_to_marginalize = (rvs_to_marginalize,)
