@@ -313,6 +313,32 @@ def test_recover_marginals_basic():
     )
 
 
+def test_recover_marginals_coords():
+    """Test if coords can be recovered with marginalized value had it originally"""
+    with MarginalModel(coords={"year": [1990, 1991, 1992]}) as m:
+        sigma = pm.HalfNormal("sigma")
+        idx = pm.Bernoulli("idx", p=0.75, dims="year")
+        x = pm.Normal("x", mu=idx, sigma=sigma, dims="year")
+
+    m.marginalize([idx])
+    rng = np.random.default_rng(211)
+
+    with m:
+        prior = pm.sample_prior_predictive(
+            samples=20,
+            random_seed=rng,
+            return_inferencedata=False,
+        )
+        idata = InferenceData(
+            posterior=dict_to_dataset({k: np.expand_dims(prior[k], axis=0) for k in prior})
+        )
+
+    idata = m.recover_marginals(idata, return_samples=True)
+    post = idata.posterior
+    assert post.idx.dims == ("chain", "draw", "year")
+    assert post.lp_idx.dims == ("chain", "draw", "year", "lp_idx_dim")
+
+
 def test_recover_batched_marginal():
     """Test that marginalization works for batched random variables"""
     with MarginalModel() as m:

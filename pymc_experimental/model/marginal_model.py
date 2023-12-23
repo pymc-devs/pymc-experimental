@@ -84,6 +84,7 @@ class MarginalModel(Model):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.marginalized_rvs = []
+        self._marginalized_named_vars_to_dims = treedict()
 
     def _delete_rv_mappings(self, rv: TensorVariable) -> None:
         """Remove all model mappings referring to rv
@@ -231,6 +232,7 @@ class MarginalModel(Model):
         m.deterministics = [vars_to_clone[det] for det in self.deterministics]
 
         m.marginalized_rvs = [vars_to_clone[rv] for rv in self.marginalized_rvs]
+        m._marginalized_named_vars_to_dims = self._marginalized_named_vars_to_dims
         return m
 
     def marginalize(
@@ -254,6 +256,10 @@ class MarginalModel(Model):
                     f"RV with distribution {rv_to_marginalize.owner.op} cannot be marginalized. "
                     f"Supported distribution include {supported_dists}"
                 )
+
+            if rv_to_marginalize.name in self.named_vars_to_dims:
+                dims = self.named_vars_to_dims[rv_to_marginalize.name]
+                self._marginalized_named_vars_to_dims[rv_to_marginalize.name] = dims
 
             self._delete_rv_mappings(rv_to_marginalize)
             self.marginalized_rvs.append(rv_to_marginalize)
@@ -282,7 +288,11 @@ class MarginalModel(Model):
     def unmarginalize(self, rvs_to_unmarginalize):
         for rv in rvs_to_unmarginalize:
             self.marginalized_rvs.remove(rv)
-            self.register_rv(rv, name=rv.name)
+            if rv.name in self._marginalized_named_vars_to_dims:
+                dims = self._marginalized_named_vars_to_dims.pop(rv.name)
+            else:
+                dims = None
+            self.register_rv(rv, name=rv.name, dims=dims)
 
     def recover_marginals(
         self,
@@ -368,7 +378,7 @@ class MarginalModel(Model):
         posterior_pts = [transform_input(vs) for vs in posterior_pts]
 
         rv_dict = {}
-
+        rv_dims = {}
         for seed, rv in zip(seeds, vars_to_recover):
             supported_dists = (Bernoulli, Categorical, DiscreteUniform)
             if not isinstance(rv.owner.op, supported_dists):
@@ -453,8 +463,12 @@ class MarginalModel(Model):
             rv_dict["lp_" + rv.name] = logps.reshape(
                 tuple(len(coord) for coord in stacked_dims.values()) + logps.shape[1:],
             )
+            if rv.name in m.named_vars_to_dims:
+                rv_dims[rv.name] = list(m.named_vars_to_dims[rv.name])
+                rv_dims["lp_" + rv.name] = rv_dims[rv.name] + ["lp_" + rv.name + "_dim"]
 
         coords, dims = coords_and_dims_for_inferencedata(self)
+        dims.update(rv_dims)
         rv_dataset = dict_to_dataset(
             rv_dict,
             library=pymc,
