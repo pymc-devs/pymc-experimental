@@ -426,7 +426,7 @@ class MarginalModel(Model):
             joint_logps = pt.moveaxis(joint_logps, 0, -1)
 
             rv_loglike_fn = None
-            joint_logps_norm = log_softmax(joint_logps, axis=0)
+            joint_logps_norm = log_softmax(joint_logps, axis=-1)
             if return_samples:
                 sample_rv_outs = pymc.Categorical.dist(logit_p=joint_logps)
                 if isinstance(rv.owner.op, DiscreteUniform):

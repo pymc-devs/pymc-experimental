@@ -311,6 +311,7 @@ def test_recover_marginals_basic():
         true_logp(post.y.values.flatten(), post.sigma.values.flatten()),
         post.lp_k[0].values,
     )
+    np.testing.assert_almost_equal(logsumexp(post.lp_k, axis=-1), 0)
 
 
 def test_recover_marginals_coords():
@@ -418,6 +419,8 @@ def test_nested_recover_marginals():
         true_sub_idx_logp(post.y.values.flatten()),
         post.lp_sub_idx[0].values,
     )
+    np.testing.assert_almost_equal(logsumexp(post.lp_idx, axis=-1), 0)
+    np.testing.assert_almost_equal(logsumexp(post.lp_sub_idx, axis=-1), 0)
 
 
 @pytest.mark.filterwarnings("error")
