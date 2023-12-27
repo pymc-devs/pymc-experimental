@@ -353,6 +353,11 @@ def vip_reparametrize(
 
         with Reparam_eight:
             trace = pm.sample()
+
+    References
+    ----------
+    - Automatic Reparameterisation of Probabilistic Programs,
+        Maria I. Gorinova, Dave Moore, Matthew D. Hoffman (2019)
     """
     fmodel, memo = fgraph_from_model(model)
     lambda_names = []
