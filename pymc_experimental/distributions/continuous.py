@@ -221,6 +221,158 @@ class GenExtreme(Continuous):
         return mode
 
 
+# Generalized Pareto Distribution
+class GenParetoRV(RandomVariable):
+    name: str = "Generalized Pareto Distribution"
+    ndim_supp: int = 0
+    ndims_params: List[int] = [0, 0, 0]
+    dtype: str = "floatX"
+    _print_name: Tuple[str, str] = ("Generalized Pareto Distribution", "\\operatorname{GP}")
+
+    def __call__(self, mu=0.0, sigma=1.0, xi=1.0, size=None, **kwargs) -> TensorVariable:
+        return super().__call__(mu, sigma, xi, size=size, **kwargs)
+
+    @classmethod
+    def rng_fn(
+        cls,
+        rng: Union[np.random.RandomState, np.random.Generator],
+        mu: np.ndarray,
+        sigma: np.ndarray,
+        xi: np.ndarray,
+        size: Tuple[int, ...],
+    ) -> np.ndarray:
+        # using scipy's parameterization
+        return stats.genpareto.rvs(c=xi, loc=mu, scale=sigma, random_state=rng, size=size)
+
+
+gp = GenParetoRV()
+
+
+class GenPareto(Continuous):
+    r"""
+    The Generalized Pareto Distribution
+
+    The pdf of this distribution is
+
+    .. math::
+
+       f(x \mid \mu, \sigma, \xi) = \frac{1}{\sigma} (1 + \xi z)^{-1/\xi-1}
+
+    where
+
+    .. math::
+
+        z = \frac{x - \mu}{\sigma}
+
+    and is defined on the set:
+
+    .. math::
+
+        \left\{x: x \geq \mu \right\} if \xi \geq 0, or \\
+        \left\{x: \mu \leq x \leq \mu - \sigma/\xi \right\} if \xi < 0.
+
+    .. plot::
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import scipy.stats as st
+        import arviz as az
+        plt.style.use('arviz-darkgrid')
+        x = np.linspace(-2, 10, 200)
+        mus = [0., 0., 0., 0., 1., ]
+        sigmas = [1., 1., 1.,2., 1., ]
+        xis = [1., 0., 5., 1., 1.,  ]
+        for mu, sigma, xi in zip(mus, sigmas, xis):
+            pdf = st.genpareto.pdf(x, c=xi, loc=mu, scale=sigma)
+            plt.plot(x, pdf, label=rf'$\mu$ = {mu}, $\sigma$ = {sigma}, $\xi$={xi}')
+        plt.xlabel('x', fontsize=12)
+        plt.ylabel('f(x)', fontsize=12)
+        plt.legend(loc=1)
+        plt.show()
+
+
+    ========  =========================================================================
+    Support   * :math:`x \geq \mu`, when :math:`\xi \geq 0`
+              * :math:`\mu \leq x \leq \mu - \sigma/\xi` when :math:`\xi < 0`
+    Mean      * :math:`\mu + \frac{\sigma}{1-\xi}`, when :math:`\xi < 1`
+    Variance  * :math:`\frac{\sigma^2}{(1-\xi)^2 (1-2\xi)}`, when :math:`\xi < 0.5`
+    ========  =========================================================================
+
+    Parameters
+    ----------
+    mu : float
+        Location parameter.
+    sigma : float
+        Scale parameter (sigma > 0).
+    xi : float
+        Shape parameter
+
+    """
+
+    rv_op = gp
+
+    @classmethod
+    def dist(cls, mu=0, sigma=1, xi=0, **kwargs):
+        mu = pt.as_tensor_variable(floatX(mu))
+        sigma = pt.as_tensor_variable(floatX(sigma))
+        xi = pt.as_tensor_variable(floatX(xi))
+
+        return super().dist([mu, sigma, xi], **kwargs)
+
+    def logp(value, mu, sigma, xi):
+        """
+        Calculate log-probability of Generalized Pareto distribution
+        at specified value.
+
+        Parameters
+        ----------
+        value: numeric
+            Value(s) for which log-probability is calculated. If the log probabilities for multiple
+            values are desired the values must be provided in a numpy array or Pytensor tensor
+
+        Returns
+        -------
+        TensorVariable
+        """
+        scaled = (value - mu) / sigma
+        p = (1 / sigma) * (1 + xi * scaled) ** (-1 / xi - 1)
+        logprob = pt.switch(pt.gt(scaled, 0.0), pt.log(p), -np.inf)
+        return check_parameters(logprob, sigma > 0, msg="sigma > 0")
+
+    def logcdf(value, mu, sigma, xi):
+        """
+        Compute the log of the cumulative distribution function for Generalized Pareto
+        distribution at the specified value.
+
+        Parameters
+        ----------
+        value: numeric or np.ndarray or `TensorVariable`
+            Value(s) for which log CDF is calculated. If the log CDF for
+            multiple values are desired the values must be provided in a numpy
+            array or `TensorVariable`.
+
+        Returns
+        -------
+        TensorVariable
+        """
+        scaled = (value - mu) / sigma
+        logc_expression = 1 - (1 + xi * scaled) ** (-1 / xi)
+
+        logc = pt.switch(sigma > 0, pt.log(logc_expression), -np.inf)
+
+        return check_parameters(logc, sigma > 0, msg="sigma > 0")
+
+    def moment(rv, size, mu, sigma, xi):
+        r"""
+        Mean is defined when :math:`\xi < 1`
+        """
+        mean_expression = mu + sigma / (1 - xi)
+        mean = pt.switch(xi < 1, mean_expression, np.inf)
+        if not rv_size_is_none(size):
+            mean = pt.full(size, mean)
+        return check_parameters(mean, xi < 1, msg="xi < 1")
+
+
 class Chi:
     r"""
     :math:`\chi` log-likelihood.
