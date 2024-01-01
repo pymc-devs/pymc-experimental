@@ -84,7 +84,7 @@ class MarginalModel(Model):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.marginalized_rvs = []
-        self._marginalized_named_vars_to_dims = treedict()
+        self._marginalized_named_vars_to_dims = {}
 
     def _delete_rv_mappings(self, rv: TensorVariable) -> None:
         """Remove all model mappings referring to rv
