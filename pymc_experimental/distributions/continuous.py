@@ -264,13 +264,11 @@ class GenPareto(Continuous):
 
         z = \frac{x - \mu}{\sigma}
 
-    and is defined on the set:
+    and is defined on the set (when :math:`\xi \geq 0`):
 
     .. math::
 
-        \left\{x: x \geq \mu \right\} if \xi \geq 0, or \\
-        \left\{x: \mu \leq x \leq \mu - \sigma/\xi \right\} if \xi < 0.
-
+        \left\{x: x \geq \mu \right\}
     .. plot::
 
         import matplotlib.pyplot as plt
@@ -293,7 +291,6 @@ class GenPareto(Continuous):
 
     ========  =========================================================================
     Support   * :math:`x \geq \mu`, when :math:`\xi \geq 0`
-              * :math:`\mu \leq x \leq \mu - \sigma/\xi` when :math:`\xi < 0`
     Mean      * :math:`\mu + \frac{\sigma}{1-\xi}`, when :math:`\xi < 1`
     Variance  * :math:`\frac{\sigma^2}{(1-\xi)^2 (1-2\xi)}`, when :math:`\xi < 0.5`
     ========  =========================================================================
@@ -305,8 +302,7 @@ class GenPareto(Continuous):
     sigma : float
         Scale parameter (sigma > 0).
     xi : float
-        Shape parameter
-
+        Shape parameter (xi >= 0)
     """
 
     rv_op = gp
@@ -334,10 +330,16 @@ class GenPareto(Continuous):
         -------
         TensorVariable
         """
+
         scaled = (value - mu) / sigma
-        p = (1 / sigma) * (1 + xi * scaled) ** (-1 / xi - 1)
-        logprob = pt.switch(pt.gt(scaled, 0.0), pt.log(p), -np.inf)
-        return check_parameters(logprob, sigma > 0, msg="sigma > 0")
+
+        logp_expression = pt.switch(
+            pt.eq(xi, 0),
+            -1 * scaled,
+            -1 * pt.log(sigma) - ((xi + 1) / xi) * pt.log1p(xi * scaled),
+        )
+        logp = pt.switch(pt.ge(scaled, 0), logp_expression, -np.inf)
+        return check_parameters(logp, sigma > 0, xi >= 0, msg="sigma > 0 and xi >= 0")
 
     def logcdf(value, mu, sigma, xi):
         """
@@ -356,11 +358,14 @@ class GenPareto(Continuous):
         TensorVariable
         """
         scaled = (value - mu) / sigma
-        logc_expression = 1 - (1 + xi * scaled) ** (-1 / xi)
+        logc_expression = pt.switch(
+            pt.eq(xi, 0),
+            pt.log(1 - pt.exp(-1 * scaled)),
+            pt.log(1 - pt.pow((1 + xi * scaled), (-1 / xi))),
+        )
+        logc = pt.switch(pt.ge(scaled, 0), logc_expression, -np.inf)
 
-        logc = pt.switch(sigma > 0, pt.log(logc_expression), -np.inf)
-
-        return check_parameters(logc, sigma > 0, msg="sigma > 0")
+        return check_parameters(logc, sigma > 0, xi >= 0, msg="sigma > 0 and xi >= 0")
 
     def moment(rv, size, mu, sigma, xi):
         r"""

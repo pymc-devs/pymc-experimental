@@ -33,7 +33,7 @@ from pymc.testing import (
 )
 
 # the distributions to be tested
-from pymc_experimental.distributions import Chi, GenExtreme, Maxwell
+from pymc_experimental.distributions import Chi, GenExtreme, GenPareto, Maxwell
 
 
 class TestGenExtremeClass:
@@ -131,6 +131,64 @@ class TestGenExtreme(BaseTestDistributionRandom):
     # Notice, using different parametrization of xi sign to scipy
     reference_dist_params = {"loc": 0, "scale": 1, "c": 0.1}
     reference_dist = seeded_scipy_distribution_builder("genextreme")
+    tests_to_run = [
+        "check_pymc_params_match_rv_op",
+        "check_pymc_draws_match_reference",
+        "check_rv_size",
+    ]
+
+
+class TestGenParetoClass:
+    """
+    Wrapper class so that tests of experimental additions can be dropped into
+    PyMC directly on adoption.
+
+    pm.logp(GenPareto.dist(mu=0.,sigma=1.,xi=5.),value=1.)
+    """
+
+    def test_logp(self):
+        def ref_logp(value, mu, sigma, xi):
+            if xi == 0:
+                return sp.expon.logpdf((value - mu) / sigma)
+            else:
+                return sp.genpareto.logpdf(value, c=xi, loc=mu, scale=sigma)
+
+        check_logp(
+            GenPareto,
+            R,
+            {"mu": R, "sigma": Rplusbig, "xi": Rplusbig},
+            ref_logp,
+            decimal=select_by_precision(float64=6, float32=2),
+            skip_paramdomain_outside_edge_test=True,
+        )
+
+    def test_logcdf(self):
+        def ref_logc(value, mu, sigma, xi):
+            if xi == 0:
+                return sp.expon.logcdf((value - mu) / sigma)
+            else:
+                return sp.genpareto.logcdf(value, c=xi, loc=mu, scale=sigma)
+
+        check_logcdf(
+            GenPareto,
+            R,
+            {
+                "mu": R,
+                "sigma": Rplusbig,
+                "xi": Rplusbig,
+            },
+            ref_logc,
+            decimal=select_by_precision(float64=6, float32=2),
+            skip_paramdomain_outside_edge_test=True,
+        )
+
+
+class TestGenPareto(BaseTestDistributionRandom):
+    pymc_dist = GenPareto
+    pymc_dist_params = {"mu": 0, "sigma": 1, "xi": 1}
+    expected_rv_op_params = {"mu": 0, "sigma": 1, "xi": 1}
+    reference_dist_params = {"loc": 0, "scale": 1, "c": 0.1}
+    reference_dist = seeded_scipy_distribution_builder("genpareto")
     tests_to_run = [
         "check_pymc_params_match_rv_op",
         "check_pymc_draws_match_reference",
