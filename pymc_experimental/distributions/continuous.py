@@ -30,7 +30,7 @@ from pymc.distributions.distribution import Continuous
 from pymc.distributions.shape_utils import rv_size_is_none
 from pymc.logprob.utils import CheckParameterValue
 from pymc.pytensorf import floatX
-from pytensor.tensor.random.op import RandomVariable
+from pytensor.tensor.random.op import RandomVariable, ScipyRandomVariable
 from pytensor.tensor.variable import TensorVariable
 from scipy import stats
 
@@ -222,12 +222,12 @@ class GenExtreme(Continuous):
 
 
 # Generalized Pareto Distribution
-class GenParetoRV(RandomVariable):
-    name: str = "Generalized Pareto Distribution"
+class GenParetoRV(ScipyRandomVariable):
+    name: str = "Generalized Pareto"
     ndim_supp: int = 0
     ndims_params: List[int] = [0, 0, 0]
     dtype: str = "floatX"
-    _print_name: Tuple[str, str] = ("Generalized Pareto Distribution", "\\operatorname{GP}")
+    _print_name: Tuple[str, str] = ("Generalized Pareto Distribution", "\\operatorname{GenPareto}")
 
     def __call__(self, mu=0.0, sigma=1.0, xi=1.0, size=None, **kwargs) -> TensorVariable:
         return super().__call__(mu, sigma, xi, size=size, **kwargs)
