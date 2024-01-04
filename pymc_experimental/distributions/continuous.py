@@ -229,9 +229,6 @@ class GenParetoRV(ScipyRandomVariable):
     dtype: str = "floatX"
     _print_name: Tuple[str, str] = ("Generalized Pareto Distribution", "\\operatorname{GenPareto}")
 
-    def __call__(self, mu=0.0, sigma=1.0, xi=1.0, size=None, **kwargs) -> TensorVariable:
-        return super().__call__(mu, sigma, xi, size=size, **kwargs)
-
     @classmethod
     def rng_fn(
         cls,
@@ -245,7 +242,7 @@ class GenParetoRV(ScipyRandomVariable):
         return stats.genpareto.rvs(c=xi, loc=mu, scale=sigma, random_state=rng, size=size)
 
 
-gp = GenParetoRV()
+gen_pareto = GenParetoRV()
 
 
 class GenPareto(Continuous):
@@ -302,10 +299,10 @@ class GenPareto(Continuous):
     sigma : float
         Scale parameter (sigma > 0).
     xi : float
-        Shape parameter (xi >= 0)
+        Shape parameter (xi >= 0). Notice that we are using a more restrictive definition for Generalized Pareto Distribution (xi can be smaller than 0). We only include :math:`\xi \geq 0` since it's more commonly used for modelling the tails.
     """
 
-    rv_op = gp
+    rv_op = gen_pareto
 
     @classmethod
     def dist(cls, mu=0, sigma=1, xi=0, **kwargs):
