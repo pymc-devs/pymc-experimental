@@ -296,7 +296,9 @@ def test_SARIMAX_update_matches_statsmodels(p, d, q, P, D, Q, S, data, rng):
                 ),
             )
 
-        pm.Deterministic("sigma_state", pt.as_tensor_variable(np.array([param_d["sigma2"]])))
+        pm.Deterministic(
+            "sigma_state", pt.as_tensor_variable(np.sqrt(np.array([param_d["sigma2"]])))
+        )
 
         mod._insert_random_variables()
         matrices = pm.draw(mod.subbed_ssm)

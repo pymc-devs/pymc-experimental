@@ -197,7 +197,7 @@ def create_structural_model_and_equivalent_statsmodel(
 
     if irregular:
         sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
-        params["sigma_irregular"] = sigma
+        params["sigma_irregular"] = np.sqrt(sigma)
         sm_params["sigma2.irregular"] = sigma.item()
         expected_param_dims["sigma_irregular"] += ("observed_state",)
 
@@ -267,7 +267,7 @@ def create_structural_model_and_equivalent_statsmodel(
 
         if sum(level_trend_innov_order) > 0:
             expected_param_dims["sigma_trend"] += ("trend_shock",)
-            params["sigma_trend"] = sigma_level_value
+            params["sigma_trend"] = np.sqrt(sigma_level_value)
 
         sigma_level_value = sigma_level_value.tolist()
         if stochastic_level:
@@ -299,7 +299,7 @@ def create_structural_model_and_equivalent_statsmodel(
 
         if stochastic_seasonal:
             sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
-            params["sigma_seasonal"] = sigma
+            params["sigma_seasonal"] = np.sqrt(sigma)
             sm_params["sigma2.seasonal"] = sigma
             expected_coords[SHOCK_DIM] += [
                 "seasonal",
@@ -344,7 +344,7 @@ def create_structural_model_and_equivalent_statsmodel(
 
             if has_innov:
                 sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
-                params[f"sigma_seasonal_{s}"] = sigma
+                params[f"sigma_seasonal_{s}"] = np.sqrt(sigma)
                 sm_params[f"sigma2.freq_seasonal_{s}({n})"] = sigma
                 expected_coords[SHOCK_DIM] += state_names
                 expected_coords[SHOCK_AUX_DIM] += state_names
@@ -375,7 +375,7 @@ def create_structural_model_and_equivalent_statsmodel(
 
         if stochastic_cycle:
             sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
-            params["sigma_cycle"] = sigma
+            params["sigma_cycle"] = np.sqrt(sigma)
             expected_coords[SHOCK_DIM] += state_names
             expected_coords[SHOCK_AUX_DIM] += state_names
 
@@ -401,7 +401,7 @@ def create_structural_model_and_equivalent_statsmodel(
         sigma = np.abs(rng.normal(size=(1,))).astype(floatX)
 
         params["ar_params"] = ar_params
-        params["sigma_ar"] = sigma
+        params["sigma_ar"] = np.sqrt(sigma)
         expected_param_dims["ar_params"] += (AR_PARAM_DIM,)
         expected_coords[AR_PARAM_DIM] += tuple(list(range(1, autoregressive + 1)))
         expected_coords[ALL_STATE_DIM] += ar_names

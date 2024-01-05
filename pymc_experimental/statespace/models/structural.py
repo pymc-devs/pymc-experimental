@@ -818,7 +818,7 @@ class LevelTrendComponent(Component):
             sigma_trend = self.make_and_register_variable("sigma_trend", shape=(self.k_posdef,))
             diag_idx = np.diag_indices(self.k_posdef)
             idx = np.s_["state_cov", diag_idx[0], diag_idx[1]]
-            self.ssm[idx] = sigma_trend
+            self.ssm[idx] = sigma_trend**2
 
 
 class MeasurementError(Component):
@@ -884,7 +884,7 @@ class MeasurementError(Component):
         error_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(self.k_endog,))
         diag_idx = np.diag_indices(self.k_endog)
         idx = np.s_["obs_cov", diag_idx[0], diag_idx[1]]
-        self.ssm[idx] = error_sigma
+        self.ssm[idx] = error_sigma**2
 
 
 class AutoregressiveComponent(Component):
@@ -991,7 +991,7 @@ class AutoregressiveComponent(Component):
         self.ssm[ar_idx] = ar_params
 
         cov_idx = ("state_cov", *np.diag_indices(1))
-        self.ssm[cov_idx] = sigma_ar
+        self.ssm[cov_idx] = sigma_ar**2
 
 
 class TimeSeasonality(Component):
@@ -1175,7 +1175,7 @@ class TimeSeasonality(Component):
             self.ssm["selection", 0, 0] = 1
             season_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
             cov_idx = ("state_cov", *np.diag_indices(1))
-            self.ssm[cov_idx] = season_sigma
+            self.ssm[cov_idx] = season_sigma**2
 
 
 class FrequencySeasonality(Component):
@@ -1273,7 +1273,7 @@ class FrequencySeasonality(Component):
 
         if self.innovations:
             sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
-            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season
+            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season**2
             self.ssm["selection", :, :] = np.eye(self.k_states)
 
     def populate_component_properties(self):
@@ -1453,7 +1453,7 @@ class CycleComponent(Component):
 
         if self.innovations:
             sigma_cycle = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
-            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_cycle
+            self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_cycle**2
 
     def populate_component_properties(self):
         self.state_names = [f"{self.name}_{f}" for f in ["Sin", "Cos"]]
@@ -1556,7 +1556,7 @@ class RegressionComponent(Component):
                 f"sigma_beta_{self.name}", (self.k_states,)
             )
             row_idx, col_idx = np.diag_indices(self.k_states)
-            self.ssm["state_cov", row_idx, col_idx] = sigma_beta
+            self.ssm["state_cov", row_idx, col_idx] = sigma_beta**2
 
     def populate_component_properties(self) -> None:
         self.shock_names = self.state_names
