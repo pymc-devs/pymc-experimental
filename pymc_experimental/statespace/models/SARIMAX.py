@@ -514,14 +514,14 @@ class BayesianSARIMA(PyMCStateSpace):
         state_cov = self.make_and_register_variable(
             "sigma_state", shape=(self.k_posdef,), dtype=floatX
         )
-        self.ssm[state_cov_idx] = state_cov
+        self.ssm[state_cov_idx] = state_cov**2
 
         if self.measurement_error:
             obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
             obs_cov = self.make_and_register_variable(
                 "sigma_obs", shape=(self.k_endog,), dtype=floatX
             )
-            self.ssm[obs_cov_idx] = obs_cov
+            self.ssm[obs_cov_idx] = obs_cov**2
 
         # The initial conditions have to be done last in the case of stationary initialization, because it will depend
         # on c, T, R and Q
