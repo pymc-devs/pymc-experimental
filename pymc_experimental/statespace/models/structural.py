@@ -1,7 +1,7 @@
 import functools as ft
 import logging
 from abc import ABC
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 import pytensor
@@ -44,7 +44,7 @@ def _frequency_transition_block(s, j):
     return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]]).squeeze()
 
 
-def block_diagonal(matrices: List[pt.matrix]):
+def block_diagonal(matrices: list[pt.matrix]):
     rows = [x.shape[0] for x in matrices]
     cols = [x.shape[1] for x in matrices]
     out = pt.zeros((sum(rows), sum(cols)))
@@ -81,15 +81,18 @@ class StructuralTimeSeries(PyMCStateSpace):
         self,
         ssm: PytensorRepresentation,
         state_names,
+        data_names,
         shock_names,
         param_names,
         exog_names,
         param_dims,
         coords,
         param_info,
+        data_info,
         component_info,
         measurement_error,
         name_to_variable,
+        name_to_data,
         name=None,
         verbose=True,
         filter_type: str = "standard",
@@ -104,6 +107,7 @@ class StructuralTimeSeries(PyMCStateSpace):
             param_names, param_dims, param_info, k_states
         )
         self._state_names = state_names
+        self._data_names = data_names
         self._shock_names = shock_names
         self._param_names = param_names
         self._param_dims = param_dims
@@ -113,6 +117,7 @@ class StructuralTimeSeries(PyMCStateSpace):
 
         self._coords = coords
         self._param_info = param_info
+        self._data_info = data_info
         self.measurement_error = measurement_error
 
         super().__init__(
@@ -126,7 +131,10 @@ class StructuralTimeSeries(PyMCStateSpace):
 
         self.ssm = ssm
         self._component_info = component_info
+
         self._name_to_variable = name_to_variable
+        self._name_to_data = name_to_data
+
         self._exog_names = exog_names
         self._needs_exog_data = len(exog_names) > 0
 
@@ -150,6 +158,10 @@ class StructuralTimeSeries(PyMCStateSpace):
         return self._param_names
 
     @property
+    def data_names(self) -> list[str]:
+        return self._data_names
+
+    @property
     def state_names(self):
         return self._state_names
 
@@ -166,12 +178,16 @@ class StructuralTimeSeries(PyMCStateSpace):
         return self._param_dims
 
     @property
-    def coords(self) -> Dict[str, Sequence]:
+    def coords(self) -> dict[str, Sequence]:
         return self._coords
 
     @property
-    def param_info(self) -> Dict[str, Dict[str, Any]]:
+    def param_info(self) -> dict[str, dict[str, Any]]:
         return self._param_info
+
+    @property
+    def data_info(self) -> dict[str, dict[str, Any]]:
+        return self._data_info
 
     def make_symbolic_graph(self) -> None:
         """
@@ -338,6 +354,7 @@ class Component(ABC):
         k_states,
         k_posdef,
         state_names=None,
+        data_names=None,
         shock_names=None,
         param_names=None,
         exog_names=None,
@@ -354,6 +371,7 @@ class Component(ABC):
         self.measurement_error = measurement_error
 
         self.state_names = state_names if state_names is not None else []
+        self.data_names = data_names if data_names is not None else []
         self.shock_names = shock_names if shock_names is not None else []
         self.param_names = param_names if param_names is not None else []
         self.exog_names = exog_names if exog_names is not None else []
@@ -361,7 +379,10 @@ class Component(ABC):
         self.needs_exog_data = len(self.exog_names) > 0
         self.coords = {}
         self.param_dims = {}
+
         self.param_info = {}
+        self.data_info = {}
+
         self.param_counts = {}
 
         if representation is None:
@@ -370,6 +391,7 @@ class Component(ABC):
             self.ssm = representation
 
         self._name_to_variable = {}
+        self._name_to_data = {}
 
         if not component_from_sum:
             self.populate_component_properties()
@@ -429,6 +451,43 @@ class Component(ABC):
         self._name_to_variable[name] = placeholder
         return placeholder
 
+    def make_and_register_data(self, name, shape, dtype=floatX) -> Variable:
+        r"""
+        Helper function to create a pytensor symbolic variable and register it in the _name_to_data dictionary
+
+        Parameters
+        ----------
+        name : str
+            The name of the placeholder data. Must be the name of an expected data variable.
+        shape : int or tuple of int
+            Shape of the parameter
+        dtype : str, default pytensor.config.floatX
+            dtype of the parameter
+
+        Notes
+        -----
+        See docstring for make_and_register_variable for more details. This function is similar, but handles data
+        inputs instead of model parameters.
+
+        An error is raised if the provided name has already been registered, or if the name is not present in the
+        ``data_names`` property.
+        """
+        if name not in self.data_names:
+            raise ValueError(
+                f"{name} is not a model parameter. All placeholder variables should correspond to model "
+                f"parameters."
+            )
+
+        if name in self._name_to_data.keys():
+            raise ValueError(
+                f"{name} is already a registered placeholder variable with shape "
+                f"{self._name_to_data[name].type.shape}"
+            )
+
+        placeholder = pt.tensor(name, shape=shape, dtype=dtype)
+        self._name_to_data[name] = placeholder
+        return placeholder
+
     def make_symbolic_graph(self) -> None:
         raise NotImplementedError
 
@@ -481,7 +540,6 @@ class Component(ABC):
         transition.name = T.name
 
         design = pt.concatenate(conform_time_varying_and_time_invariant_matrices(Z, o_Z), axis=-1)
-
         design.name = Z.name
 
         selection = block_diagonal([R, o_R])
@@ -542,14 +600,18 @@ class Component(ABC):
 
     def __add__(self, other):
         state_names = self._combine_property(other, "state_names")
+        data_names = self._combine_property(other, "data_names")
         param_names = self._combine_property(other, "param_names")
         shock_names = self._combine_property(other, "shock_names")
         param_info = self._combine_property(other, "param_info")
+        data_info = self._combine_property(other, "data_info")
         param_dims = self._combine_property(other, "param_dims")
         coords = self._combine_property(other, "coords")
         exog_names = self._combine_property(other, "exog_names")
 
         _name_to_variable = self._combine_property(other, "_name_to_variable")
+        _name_to_data = self._combine_property(other, "_name_to_data")
+
         measurement_error = any([self.measurement_error, other.measurement_error])
 
         k_states, k_posdef, k_endog = self._get_combined_shapes(other)
@@ -567,30 +629,22 @@ class Component(ABC):
         new_comp._component_info = self._combine_component_info(other)
         new_comp.name = new_comp._make_combined_name()
 
-        property_names = [
-            "state_names",
-            "param_names",
-            "shock_names",
-            "state_dims",
-            "coords",
-            "param_dims",
-            "param_info",
-            "exog_names",
-            "_name_to_variable",
-        ]
-        property_values = [
-            state_names,
-            param_names,
-            shock_names,
-            param_dims,
-            coords,
-            param_dims,
-            param_info,
-            exog_names,
-            _name_to_variable,
+        names_and_props = [
+            ("state_names", state_names),
+            ("data_names", data_names),
+            ("param_names", param_names),
+            ("shock_names", shock_names),
+            ("param_dims", param_dims),
+            ("coords", coords),
+            ("param_dims", param_dims),
+            ("param_info", param_info),
+            ("data_info", data_info),
+            ("exog_names", exog_names),
+            ("_name_to_variable", _name_to_variable),
+            ("_name_to_data", _name_to_data),
         ]
 
-        for prop, value in zip(property_names, property_values):
+        for prop, value in names_and_props:
             setattr(new_comp, prop, value)
 
         return new_comp
@@ -622,15 +676,18 @@ class Component(ABC):
             self.ssm,
             name=name,
             state_names=self.state_names,
+            data_names=self.data_names,
             shock_names=self.shock_names,
             param_names=self.param_names,
             param_dims=self.param_dims,
             coords=self.coords,
             param_info=self.param_info,
+            data_info=self.data_info,
             component_info=self._component_info,
             measurement_error=self.measurement_error,
             exog_names=self.exog_names,
             name_to_variable=self._name_to_variable,
+            name_to_data=self._name_to_data,
             filter_type=filter_type,
             verbose=verbose,
         )
@@ -881,7 +938,8 @@ class MeasurementError(Component):
         }
 
     def make_symbolic_graph(self) -> None:
-        error_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(self.k_endog,))
+        sigma_shape = () if self.k_endog == 1 else (self.k_endog,)
+        error_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=sigma_shape)
         diag_idx = np.diag_indices(self.k_endog)
         idx = np.s_["obs_cov", diag_idx[0], diag_idx[1]]
         self.ssm[idx] = error_sigma**2
@@ -1498,7 +1556,7 @@ class RegressionComponent(Component):
         self,
         k_exog: Optional[int] = None,
         name: Optional[str] = "Exogenous",
-        state_names: Optional[List[str]] = None,
+        state_names: Optional[list[str]] = None,
         innovations=False,
     ):
         self.innovations = innovations
@@ -1520,7 +1578,8 @@ class RegressionComponent(Component):
             obs_state_idxs=np.ones(k_states),
         )
 
-    def _get_state_names(self, k_exog, state_names, name):
+    @staticmethod
+    def _get_state_names(k_exog: Optional[int], state_names: Optional[list[str]], name: str):
         if k_exog is None and state_names is None:
             raise ValueError("Must specify at least one of k_exog or state_names")
         if state_names is not None and k_exog is not None:
@@ -1533,7 +1592,7 @@ class RegressionComponent(Component):
 
         return k_exog, state_names
 
-    def _handle_input_data(self, k_exog: int, state_names: Optional[List[str]], name) -> int:
+    def _handle_input_data(self, k_exog: int, state_names: Optional[list[str]], name) -> int:
         k_exog, state_names = self._get_state_names(k_exog, state_names, name)
         self.state_names = state_names
 
@@ -1541,7 +1600,7 @@ class RegressionComponent(Component):
 
     def make_symbolic_graph(self) -> None:
         betas = self.make_and_register_variable(f"beta_{self.name}", shape=(self.k_states,))
-        regression_data = self.make_and_register_variable(
+        regression_data = self.make_and_register_data(
             f"data_{self.name}", shape=(None, self.k_states)
         )
 
@@ -1560,17 +1619,19 @@ class RegressionComponent(Component):
     def populate_component_properties(self) -> None:
         self.shock_names = self.state_names
 
-        self.param_names = [f"beta_{self.name}", f"data_{self.name}"]
+        self.param_names = [f"beta_{self.name}"]
+        self.data_names = [f"data_{self.name}"]
         self.param_dims = {
             f"beta_{self.name}": ("exog_state",),
-            f"data_{self.name}": (TIME_DIM, "exog_state"),
         }
 
         self.param_info = {
             f"beta_{self.name}": {"shape": (1,), "constraints": None, "dims": ("exog_state",)},
+        }
+
+        self.data_info = {
             f"data_{self.name}": {
                 "shape": (None, self.k_states),
-                "constraints": None,
                 "dims": (TIME_DIM, "exog_state"),
             },
         }

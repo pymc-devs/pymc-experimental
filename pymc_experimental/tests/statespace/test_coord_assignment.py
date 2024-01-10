@@ -11,8 +11,6 @@ from pymc_experimental.statespace.models import structural
 from pymc_experimental.statespace.utils.constants import (
     FILTER_OUTPUT_DIMS,
     FILTER_OUTPUT_NAMES,
-    MATRIX_DIMS,
-    MATRIX_NAMES,
     SMOOTHER_OUTPUT_NAMES,
     TIME_DIM,
 )
@@ -85,19 +83,10 @@ def create_model(load_dataset):
             P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=("state", "state_aux"))
             initial_trend = pm.Normal("initial_trend", dims="trend_state")
             sigma_trend = pm.Exponential("sigma_trend", 1, dims="trend_shock")
-            ss_mod.build_statespace_graph(data)
+            ss_mod.build_statespace_graph(data, save_kalman_filter_outputs_in_idata=True)
         return mod
 
     return _create_model
-
-
-@pytest.mark.parametrize("f, warning", func_inputs, ids=function_names)
-def test_matrix_coord_assignment(f, warning, create_model):
-    with warning:
-        pymc_model = create_model(f)
-
-    for matrix in MATRIX_NAMES:
-        assert pymc_model.named_vars_to_dims[matrix] == MATRIX_DIMS[matrix]
 
 
 @pytest.mark.parametrize("f, warning", func_inputs, ids=function_names)

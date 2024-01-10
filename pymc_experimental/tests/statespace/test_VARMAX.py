@@ -63,7 +63,7 @@ def pymc_mod(varma_mod, data):
         )
         sigma_obs = pm.Exponential("sigma_obs", 1, dims=["observed_state"])
 
-        varma_mod.build_statespace_graph(data=data)
+        varma_mod.build_statespace_graph(data=data, save_kalman_filter_outputs_in_idata=True)
 
     return pymc_mod
 
@@ -71,10 +71,8 @@ def pymc_mod(varma_mod, data):
 @pytest.fixture(scope="session")
 def idata(pymc_mod, rng):
     with pymc_mod:
-        # idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
         idata = pm.sample_prior_predictive(samples=10, random_seed=rng)
 
-    # idata.extend(idata_prior)
     return idata
 
 
@@ -158,11 +156,11 @@ def test_all_prior_covariances_are_PSD(filter_output, pymc_mod, rng):
 
 
 parameters = [
-    {"steps": 10, "shock_size": None},
-    {"steps": 10, "shock_size": 1.0},
-    {"steps": 10, "shock_size": np.array([1.0, 0.0, 0.0])},
+    {"n_steps": 10, "shock_size": None},
+    {"n_steps": 10, "shock_size": 1.0},
+    {"n_steps": 10, "shock_size": np.array([1.0, 0.0, 0.0])},
     {
-        "steps": 10,
+        "n_steps": 10,
         "shock_cov": np.array([[1.38, 0.58, -1.84], [0.58, 0.99, -0.82], [-1.84, -0.82, 2.51]]),
     },
     {

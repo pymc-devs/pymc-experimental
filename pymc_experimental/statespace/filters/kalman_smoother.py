@@ -100,6 +100,9 @@ class KalmanSmoother:
             [smoothed_covariances[::-1], pt.expand_dims(P_last, axis=(0,))], axis=0
         )
 
+        smoothed_states.name = "smoothed_states"
+        smoothed_covariances.name = "smoothed_covariances"
+
         return smoothed_states, smoothed_covariances
 
     def smoother_step(self, *args):

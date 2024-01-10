@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
 import numpy as np
 import pytensor
@@ -31,7 +31,7 @@ class BayesianVARMAX(PyMCStateSpace):
         Number of autoregressive (AR) and moving average (MA) terms to include in the model. All terms up to the
         specified order are included. For restricted models, set zeros directly on the priors.
 
-    endog_names: List of str, optional
+    endog_names: list of str, optional
         Names of the endogenous variables being modeled. Used to generate names for the state and shock coords. If
         None, the state names will simply be numbered.
 
@@ -141,7 +141,7 @@ class BayesianVARMAX(PyMCStateSpace):
     def __init__(
         self,
         order: Tuple[int, int],
-        endog_names: List[str] = None,
+        endog_names: list[str] = None,
         k_endog: int = None,
         stationary_initialization: bool = False,
         filter_type: str = "standard",
@@ -200,7 +200,7 @@ class BayesianVARMAX(PyMCStateSpace):
         return names
 
     @property
-    def param_info(self) -> Dict[str, Dict[str, Any]]:
+    def param_info(self) -> dict[str, dict[str, Any]]:
         info = {
             "x0": {
                 "shape": (self.k_states,),
@@ -258,7 +258,7 @@ class BayesianVARMAX(PyMCStateSpace):
         raise NotImplementedError
 
     @property
-    def coords(self) -> Dict[str, Sequence]:
+    def coords(self) -> dict[str, Sequence]:
         coords = make_default_coords(self)
         if self.p > 0:
             coords.update({AR_PARAM_DIM: list(range(1, self.p + 1))})

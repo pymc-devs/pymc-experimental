@@ -196,7 +196,7 @@ def create_structural_model_and_equivalent_statsmodel(
     components = []
 
     if irregular:
-        sigma2 = np.abs(rng.normal(size=(1,))).astype(floatX)
+        sigma2 = np.abs(rng.normal()).astype(floatX)
         params["sigma_irregular"] = np.sqrt(sigma2)
         sm_params["sigma2.irregular"] = sigma2.item()
         expected_param_dims["sigma_irregular"] += ("observed_state",)
@@ -608,7 +608,7 @@ def test_frequency_seasonality(n, s, rng):
     k = get_shift_factor(s)
     T = int(s * k)
 
-    x, y = simulate_from_numpy_model(mod, rng, params, 2 * T)
+    x, y = simulate_from_numpy_model(mod, rng, params, steps=2 * T)
     assert_pattern_repeats(y, T, atol=ATOL, rtol=RTOL)
 
     # Check coords
@@ -672,8 +672,9 @@ def test_exogenous_component(rng):
     data = rng.normal(size=(100, 2)).astype(floatX)
     mod = st.RegressionComponent(state_names=["feature_1", "feature_2"], name="exog")
 
-    params = {"beta_exog": np.array([1.0, 2.0], dtype=floatX), "data_exog": data}
-    x, y = simulate_from_numpy_model(mod, rng, params)
+    params = {"beta_exog": np.array([1.0, 2.0], dtype=floatX)}
+    exog_data = {"data_exog": data}
+    x, y = simulate_from_numpy_model(mod, rng, params, exog_data)
 
     # Check that the generated data is just a linear regression
     assert_allclose(y, data @ params["beta_exog"], atol=ATOL, rtol=RTOL)
@@ -756,6 +757,9 @@ def test_filter_scans_time_varying_design_matrix(rng):
         beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
 
         mod.build_statespace_graph(y)
+        x0, P0, c, d, T, Z, R, H, Q = mod.unpack_statespace()
+        pm.Deterministic("Z", Z)
+
         prior = pm.sample_prior_predictive(samples=10)
 
     prior_Z = prior.prior.Z.values
@@ -788,6 +792,8 @@ def test_extract_components_from_idata(rng):
         sigma_obs = pm.Exponential("sigma_obs", 1)
 
         mod.build_statespace_graph(y)
+
+        x0, P0, c, d, T, Z, R, H, Q = mod.unpack_statespace()
         prior = pm.sample_prior_predictive(samples=10)
 
     filter_prior = mod.sample_conditional_prior(prior)
