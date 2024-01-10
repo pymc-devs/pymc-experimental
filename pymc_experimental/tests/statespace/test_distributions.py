@@ -92,6 +92,7 @@ def ss_mod_no_me():
 
 @pytest.mark.parametrize("kfilter", filter_names, ids=filter_names)
 def test_loglike_vectors_agree(kfilter, pymc_model):
+    # TODO: This test might be flakey, I've gotten random failures
     ss_mod = structural.LevelTrendComponent(order=2).build(
         "data", verbose=False, filter_type=kfilter
     )
@@ -184,6 +185,8 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
         mod.add_exogenous(trend)
 
         mod._insert_random_variables()
+        mod._insert_data_variables()
+
         matrices = mod.unpack_statespace()
 
         # pylint: disable=unpacking-non-sequence

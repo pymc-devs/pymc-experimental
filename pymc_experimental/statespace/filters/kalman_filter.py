@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import pytensor
@@ -49,11 +49,11 @@ class BaseFilter(ABC):
         mode : str or None
             The mode used for Pytensor compilation.
 
-        seq_names : List[str]
+        seq_names : list[str]
             A list of name representing time-varying statespace matrices. That is, inputs that will need to be
             provided to the `sequences` argument of `pytensor.scan`
 
-        non_seq_names : List[str]
+        non_seq_names : list[str]
             A list of names representing static statespace matrices. That is, inputs that will need to be provided
             to the `non_sequences` argument of `pytensor.scan`
 
@@ -68,8 +68,8 @@ class BaseFilter(ABC):
         """
 
         self.mode: str = mode
-        self.seq_names: List[str] = []
-        self.non_seq_names: List[str] = []
+        self.seq_names: list[str] = []
+        self.non_seq_names: list[str] = []
 
         self.n_states = None
         self.n_posdef = None
@@ -121,8 +121,8 @@ class BaseFilter(ABC):
 
     @staticmethod
     def add_check_on_time_varying_shapes(
-        data: TensorVariable, sequence_params: List[TensorVariable]
-    ) -> List[Variable]:
+        data: TensorVariable, sequence_params: list[TensorVariable]
+    ) -> list[Variable]:
         """
         Insert a check that time-varying matrices match the data shape to the computational graph.
 
@@ -134,12 +134,12 @@ class BaseFilter(ABC):
         data : TensorVariable
             The tensor representing the data.
 
-        sequence_params : List[TensorVariable]
+        sequence_params : list[TensorVariable]
             A list of tensors to be provided to `pytensor.scan` as `sequences`.
 
         Returns
         -------
-        List[TensorVariable]
+        list[TensorVariable]
             A list of tensors wrapped in an `Assert` `Op` that checks the shape of the 0th dimension on each is equal
              to the shape of the 0th dimension on the data.
 
@@ -153,7 +153,7 @@ class BaseFilter(ABC):
 
         return params_with_assert
 
-    def unpack_args(self, args) -> Tuple:
+    def unpack_args(self, args) -> tuple:
         """
         The order of inputs to the inner scan function is not known, since some, all, or none of the input matrices
         can be time varying. The order arguments are fed to the inner function is sequences, outputs_info,
@@ -203,7 +203,7 @@ class BaseFilter(ABC):
         return_updates=False,
         missing_fill_value=None,
         cov_jitter=None,
-    ) -> List[TensorVariable]:
+    ) -> list[TensorVariable]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
 
@@ -278,7 +278,7 @@ class BaseFilter(ABC):
             return filter_results, updates
         return filter_results
 
-    def _postprocess_scan_results(self, results, a0, P0, n) -> List[TensorVariable]:
+    def _postprocess_scan_results(self, results, a0, P0, n) -> list[TensorVariable]:
         """
         Transform the values returned by the Kalman Filter scan into a form expected by users. In particular:
         1. Append the initial state and covariance matrix to their respective Kalman predictions. This matches the
@@ -350,7 +350,7 @@ class BaseFilter(ABC):
 
     def handle_missing_values(
         self, y, Z, H
-    ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, float]:
+    ) -> tuple[TensorVariable, TensorVariable, TensorVariable, float]:
         """
         This function handles missing values in the observation data `y` and adjusts the design matrix `Z` and the
         observation noise covariance matrix `H` accordingly. Missing values are replaced with zeros to prevent
@@ -398,7 +398,7 @@ class BaseFilter(ABC):
         return y_masked, Z_masked, H_masked, all_nan_flag
 
     @staticmethod
-    def predict(a, P, c, T, R, Q) -> Tuple[TensorVariable, TensorVariable]:
+    def predict(a, P, c, T, R, Q) -> tuple[TensorVariable, TensorVariable]:
         """
         Perform the prediction step of the Kalman filter.
 
@@ -450,7 +450,7 @@ class BaseFilter(ABC):
     @staticmethod
     def update(
         a, P, y, c, d, Z, H, all_nan_flag
-    ) -> Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
+    ) -> tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
         """
         Perform the update step of the Kalman filter.
 
@@ -489,13 +489,13 @@ class BaseFilter(ABC):
 
         Returns
         -------
-        Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]
+        tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]
             A tuple containing the updated state vector `a_filtered`, the updated covariance matrix `P_filtered`, the
             predicted observation `obs_mu`, the predicted observation covariance matrix `obs_cov`, and the log-likelihood `ll`.
         """
         raise NotImplementedError
 
-    def kalman_step(self, *args) -> Tuple:
+    def kalman_step(self, *args) -> tuple:
         """
         Performs a single iteration of the Kalman filter, which is composed of two steps : an update step and a
         prediction step. The timing convention follows [1], in which initial state and covariance estimates a0 and P0
@@ -624,7 +624,7 @@ class StandardFilter(BaseFilter):
 
         Returns
         -------
-        Tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, float]
+        tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, float]
             A tuple containing the updated state vector `a_filtered`, the updated covariance matrix `P_filtered`,
             the one-step forecast mean `y_hat`, one-step forcast covariance matrix  `F`, and the log-likelihood of
             the data, given the one-step forecasts, `ll`.
@@ -769,7 +769,7 @@ class SteadyStateFilter(BaseFilter):
         return_updates=False,
         missing_fill_value=None,
         cov_jitter=None,
-    ) -> List[TensorVariable]:
+    ) -> list[TensorVariable]:
         """
         Need to override the base step to add an argument to self.update, passing F_inv at every step.
         """

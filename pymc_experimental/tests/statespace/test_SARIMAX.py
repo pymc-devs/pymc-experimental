@@ -180,7 +180,7 @@ def pymc_mod(arima_mod):
         ar_params = pm.Normal("ar_params", sigma=0.1, dims=["ar_lag"])
         ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
         sigma_state = pm.Exponential("sigma_state", 0.5)
-        arima_mod.build_statespace_graph(data=data)
+        arima_mod.build_statespace_graph(data=data, save_kalman_filter_outputs_in_idata=True)
 
     return pymc_mod
 
@@ -210,7 +210,8 @@ def pymc_mod_interp(arima_mod_interp):
         ma_params = pm.Normal("ma_params", sigma=1, dims=["ma_lag"])
         sigma_state = pm.Exponential("sigma_state", 0.5)
         sigma_obs = pm.Exponential("sigma_obs", 0.1)
-        arima_mod_interp.build_statespace_graph(data=data)
+
+        arima_mod_interp.build_statespace_graph(data=data, save_kalman_filter_outputs_in_idata=True)
 
     return pymc_mod
 
@@ -296,9 +297,7 @@ def test_SARIMAX_update_matches_statsmodels(p, d, q, P, D, Q, S, data, rng):
                 ),
             )
 
-        pm.Deterministic(
-            "sigma_state", pt.as_tensor_variable(np.sqrt(np.array([param_d["sigma2"]])))
-        )
+        pm.Deterministic("sigma_state", pt.as_tensor_variable(np.sqrt(param_d["sigma2"])))
 
         mod._insert_random_variables()
         matrices = pm.draw(mod.subbed_ssm)

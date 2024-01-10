@@ -1,5 +1,3 @@
-from typing import List
-
 import numpy as np
 import pandas as pd
 import pytensor
@@ -170,7 +168,7 @@ def fast_eval(var):
     return pytensor.function([], var, mode="FAST_COMPILE")()
 
 
-def delete_rvs_from_model(rv_names: List[str]) -> None:
+def delete_rvs_from_model(rv_names: list[str]) -> None:
     """Remove all model mappings referring to rv
 
     This can be used to "delete" an RV from a model
@@ -207,22 +205,28 @@ def unpack_statespace(ssm):
     return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
 
 
-def unpack_symbolic_matrices_with_params(mod, param_dict, mode="FAST_COMPILE"):
+def unpack_symbolic_matrices_with_params(mod, param_dict, data_dict=None, mode="FAST_COMPILE"):
+    inputs = list(mod._name_to_variable.values())
+    if data_dict is not None:
+        inputs += list(mod._name_to_data.values())
+    else:
+        data_dict = {}
+
     f_matrices = pytensor.function(
-        list(mod._name_to_variable.values()),
+        inputs,
         unpack_statespace(mod.ssm),
         on_unused_input="raise",
         mode=mode,
     )
-    x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict)
+    x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict, **data_dict)
     return x0, P0, c, d, T, Z, R, H, Q
 
 
-def simulate_from_numpy_model(mod, rng, param_dict, steps=100):
+def simulate_from_numpy_model(mod, rng, param_dict, data_dict=None, steps=100):
     """
     Helper function to visualize the components outside of a PyMC model context
     """
-    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, param_dict)
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, param_dict, data_dict)
     k_states = mod.k_states
     k_posdef = mod.k_posdef
 
@@ -276,9 +280,7 @@ def make_stationary_params(data, p, d, q, P, D, Q, S):
     sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q), seasonal_order=(P, D, Q, S))
     res = sm_sarimax.fit(disp=False)
 
-    param_dict = dict(
-        ar_params=[], ma_params=[], seasonal_ar_params=[], seasonal_ma_params=[], sigma_state=[]
-    )
+    param_dict = dict(ar_params=[], ma_params=[], seasonal_ar_params=[], seasonal_ma_params=[])
 
     for name, param in zip(res.param_names, res.params):
         if name.startswith("ar.S"):
@@ -290,7 +292,11 @@ def make_stationary_params(data, p, d, q, P, D, Q, S):
         elif name.startswith("ma."):
             param_dict["ma_params"].append(param)
         else:
-            param_dict["sigma_state"].append(param)
+            param_dict["sigma_state"] = param
 
-    param_dict = {k: np.array(v, dtype=floatX) for k, v in param_dict.items() if len(v) > 0}
+    param_dict = {
+        k: np.array(v, dtype=floatX)
+        for k, v in param_dict.items()
+        if isinstance(v, float) or len(v) > 0
+    }
     return param_dict

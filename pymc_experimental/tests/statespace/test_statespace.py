@@ -65,11 +65,11 @@ def ss_mod():
             return make_default_coords(self)
 
         def make_symbolic_graph(self):
-            theta = pt.vector("theta", shape=(self.k_states,), dtype=floatX)
-            self.ssm["transition", 0, :] = theta
+            rho = self.make_and_register_variable("rho", ())
+            zeta = self.make_and_register_variable("zeta", ())
+            self.ssm["transition", 0, 0] = rho
+            self.ssm["transition", 1, 0] = zeta
 
-    T = np.zeros((2, 2)).astype(floatX)
-    T[1, 0] = 1.0
     Z = np.array([[1.0, 0.0]], dtype=floatX)
     R = np.array([[1.0], [0.0]], dtype=floatX)
     H = np.array([[0.1]], dtype=floatX)
@@ -80,8 +80,8 @@ def ss_mod():
         k_endog=nile.shape[1], k_states=2, k_posdef=1, filter_type="standard", verbose=False
     )
     for X, name in zip(
-        [T, Z, R, H, Q, P0],
-        ["transition", "design", "selection", "obs_cov", "state_cov", "initial_state_cov"],
+        [Z, R, H, Q, P0],
+        ["design", "selection", "obs_cov", "state_cov", "initial_state_cov"],
     ):
         ss_mod.ssm[name] = X
 
@@ -93,7 +93,11 @@ def pymc_mod(ss_mod):
     with pm.Model(coords=ss_mod.coords) as pymc_mod:
         rho = pm.Beta("rho", 1, 1)
         zeta = pm.Deterministic("zeta", 1 - rho)
-        ss_mod.build_statespace_graph(data=nile, include_smoother=True)
+
+        ss_mod.build_statespace_graph(data=nile, save_kalman_filter_outputs_in_idata=True)
+        names = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
+        for name, matrix in zip(names, ss_mod.unpack_statespace()):
+            pm.Deterministic(name, matrix)
 
     return pymc_mod
 
@@ -213,7 +217,7 @@ def test_build_statespace_graph_warns_if_data_has_nans():
     ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
 
     with pm.Model() as pymc_mod:
-        initial_trend = pm.Normal("initial_trend")
+        initial_trend = pm.Normal("initial_trend", shape=(1,))
         P0 = pm.Deterministic("P0", pt.eye(1, dtype=floatX))
         with pytest.warns(pm.ImputationWarning):
             ss_mod.build_statespace_graph(
@@ -226,7 +230,7 @@ def test_build_statespace_graph_raises_if_data_has_missing_fill():
     ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
 
     with pm.Model() as pymc_mod:
-        initial_trend = pm.Normal("initial_trend")
+        initial_trend = pm.Normal("initial_trend", shape=(1,))
         P0 = pm.Deterministic("P0", pt.eye(1, dtype=floatX))
         with pytest.raises(ValueError, match="Provided data contains the value 1.0"):
             data = np.ones((10, 1), dtype=floatX)
@@ -290,7 +294,7 @@ def test_forecast(filter_output, ss_mod, idata, rng):
 
 @pytest.mark.filterwarnings("ignore:No time index found on the supplied data.")
 def test_forecast_fails_if_exog_needed(exog_ss_mod, idata_exog):
-    time_idx = idata_exog.posterior.coords["time"].values
+    time_idx = idata_exog.observed_data.coords["time"].values
     with pytest.xfail("Scenario-based forcasting with exogenous variables not currently supported"):
         forecast_idata = exog_ss_mod.forecast(
             idata_exog, start=time_idx[-1], periods=10, random_seed=rng
@@ -313,11 +317,16 @@ def test_add_exogenous(rng, shape):
     y = rng.normal(size=(10, 1))
 
     with pm.Model() as m:
-        initial_trend = pm.Normal("initial_trend")
+        initial_trend = pm.Normal("initial_trend", shape=(1,))
         P0 = pm.Deterministic("P0", pt.eye(1, dtype=floatX))
         constant = pm.Normal("constant", shape=shape)
         ss_mod.add_exogenous(constant)
         ss_mod.build_statespace_graph(data=y)
+
+        names = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
+        for name, matrix in zip(names, ss_mod.unpack_statespace()):
+            if name not in [x.name for x in m.deterministics]:
+                pm.Deterministic(name, matrix)
 
     d, const = pm.draw([m["d"].squeeze(), m["constant"].squeeze()], 10)
     assert_allclose(d, const)

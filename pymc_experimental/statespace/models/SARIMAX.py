@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import numpy as np
 import pytensor.tensor as pt
@@ -258,7 +258,7 @@ class BayesianSARIMA(PyMCStateSpace):
         return names
 
     @property
-    def param_info(self) -> Dict[str, Dict[str, Any]]:
+    def param_info(self) -> dict[str, dict[str, Any]]:
         info = {
             "x0": {
                 "shape": (self.k_states,),
@@ -269,11 +269,11 @@ class BayesianSARIMA(PyMCStateSpace):
                 "constraints": "Positive Semi-definite",
             },
             "sigma_obs": {
-                "shape": (self.k_endog,),
+                "shape": None if self.k_endog == 1 else (self.k_endog,),
                 "constraints": "Positive",
             },
             "sigma_state": {
-                "shape": (self.k_posdef,),
+                "shape": None if self.k_posdef == 1 else (self.k_posdef,),
                 "constraints": "Positive",
             },
             "ar_params": {
@@ -307,6 +307,8 @@ class BayesianSARIMA(PyMCStateSpace):
             states += ["innovations"]
             if self.q > 0:
                 states += [f"L{i + 1}.innovations" for i in range(self._q_max - 1)]
+        else:
+            raise NotImplementedError()
 
         return states
 
@@ -330,8 +332,9 @@ class BayesianSARIMA(PyMCStateSpace):
             "seasonal_ar_params": (SEASONAL_AR_PARAM_DIM,),
             "seasonal_ma_params": (SEASONAL_MA_PARAM_DIM,),
         }
-
-        if not self.measurement_error:
+        if self.k_endog == 1:
+            del coord_map["sigma_state"]
+        if not self.measurement_error or self.k_endog == 1:
             del coord_map["sigma_obs"]
         if self.p == 0:
             del coord_map["ar_params"]
@@ -348,7 +351,7 @@ class BayesianSARIMA(PyMCStateSpace):
         return coord_map
 
     @property
-    def coords(self) -> Dict[str, Sequence]:
+    def coords(self) -> dict[str, Sequence]:
         coords = make_default_coords(self)
         if self.p > 0:
             coords.update({AR_PARAM_DIM: list(range(1, self.p + 1))})
@@ -512,14 +515,14 @@ class BayesianSARIMA(PyMCStateSpace):
         # Set up the state covariance matrix
         state_cov_idx = ("state_cov",) + np.diag_indices(self.k_posdef)
         state_cov = self.make_and_register_variable(
-            "sigma_state", shape=(self.k_posdef,), dtype=floatX
+            "sigma_state", shape=() if self.k_posdef == 1 else (self.k_posdef,), dtype=floatX
         )
         self.ssm[state_cov_idx] = state_cov**2
 
         if self.measurement_error:
             obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
             obs_cov = self.make_and_register_variable(
-                "sigma_obs", shape=(self.k_endog,), dtype=floatX
+                "sigma_obs", shape=() if self.k_endog == 1 else (self.k_endog,), dtype=floatX
             )
             self.ssm[obs_cov_idx] = obs_cov**2
 

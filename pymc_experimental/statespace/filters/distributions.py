@@ -290,16 +290,16 @@ class LinearGaussianStateSpace(Continuous):
         return latent_states, obs_states
 
 
-class SequenceMvNormalRV(SymbolicRandomVariable):
+class KalmanFilterRV(SymbolicRandomVariable):
     default_output = 1
-    _print_name = ("SequenceMvNormal", "\\operatorname{SequenceMvNormal}")
+    _print_name = ("KalmanFilter", "\\operatorname{KalmanFilter}")
 
     def update(self, node: Node):
         return {node.inputs[-1]: node.outputs[0]}
 
 
 class SequenceMvNormal(Continuous):
-    rv_op = SequenceMvNormalRV
+    rv_op = KalmanFilterRV
 
     def __new__(cls, *args, **kwargs):
         support_shape = get_support_shape(
@@ -336,6 +336,7 @@ class SequenceMvNormal(Continuous):
         else:
             batch_size = support_shape
 
+        # mus_, covs_ = mus.type(), covs.type()
         mus_, covs_, support_shape_ = mus.type(), covs.type(), support_shape.type()
         steps_ = steps.type()
         logp_ = logp.type()
@@ -352,7 +353,7 @@ class SequenceMvNormal(Continuous):
 
         (seq_mvn_rng,) = tuple(updates.values())
 
-        mvn_seq_op = SequenceMvNormalRV(
+        mvn_seq_op = KalmanFilterRV(
             inputs=[mus_, covs_, logp_, steps_], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
         )
 
@@ -360,7 +361,7 @@ class SequenceMvNormal(Continuous):
         return mvn_seq
 
 
-@_logprob.register(SequenceMvNormalRV)
+@_logprob.register(KalmanFilterRV)
 def sequence_mvnormal_logp(op, values, mus, covs, logp, steps, rng, **kwargs):
     return check_parameters(
         logp,

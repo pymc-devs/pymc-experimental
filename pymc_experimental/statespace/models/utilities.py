@@ -1,5 +1,3 @@
-from typing import List
-
 import numpy as np
 import pytensor.tensor as pt
 
@@ -29,7 +27,7 @@ def make_default_coords(ss_mod):
     return coords
 
 
-def cleanup_states(states: List[str]) -> List[str]:
+def cleanup_states(states: list[str]) -> list[str]:
     """
     Remove meaningless symbols from state names
 
@@ -60,25 +58,25 @@ def cleanup_states(states: List[str]) -> List[str]:
     return out
 
 
-def make_harvey_state_names(p, d, q, P, D, Q, S) -> List[str]:
+def make_harvey_state_names(p: int, d: int, q: int, P: int, D: int, Q: int, S: int) -> list[str]:
     """
     Generate informative names for the SARIMA states in the Harvey representation
 
     Parameters
     ----------
-    p, int
+    p: int
         AR order
-    d, int
+    d: int
         Number of ARIMA differences
-    q, int
+    q: int
         MA order
-    P, int
+    P: int
         Seasonal AR order
-    D, int
+    D: int
         Number of seasonal differences
-    Q, int
+    Q: int
         Seasonal MA order
-    S, int
+    S: int
         Seasonal length
 
     Returns
@@ -90,9 +88,7 @@ def make_harvey_state_names(p, d, q, P, D, Q, S) -> List[str]:
     a list of state names that can help users understand what they are getting back from the statespace. In particular,
     it is helpful to know how differences and seasonal differences are incorporated into the model
     """
-    n_diffs = S * D + d
     k_lags = max(p + P * S, q + Q * S + 1)
-    k_states = k_lags + n_diffs
     has_diff = (d + D) > 0
 
     # First state is always data
@@ -111,7 +107,7 @@ def make_harvey_state_names(p, d, q, P, D, Q, S) -> List[str]:
     season_diff = [S, 0]
     curr_state = f"D{arma_diff[0]}^{arma_diff[1]}"
     for i in range(D):
-        states.extend([f"L{j+1}{curr_state}.data" for j in range(S - 1)])
+        states.extend([f"L{j + 1}{curr_state}.data" for j in range(S - 1)])
         season_diff[1] += 1
         curr_state = f"D{arma_diff[0]}^{arma_diff[1]}D{season_diff[0]}^{season_diff[1]}"
         if i != (D - 1):
@@ -124,7 +120,7 @@ def make_harvey_state_names(p, d, q, P, D, Q, S) -> List[str]:
     # Next, we add the time series dynamics states. These don't have a immediately obvious interpretation, so just call
     # them "state_1" .., "state_n".
     suffix = "_star" if "star" in states[-1] else ""
-    states.extend([f"state{suffix}_{i+1}" for i in range(k_lags - 1)])
+    states.extend([f"state{suffix}_{i + 1}" for i in range(k_lags - 1)])
 
     states = cleanup_states(states)
 
@@ -139,19 +135,19 @@ def make_SARIMA_transition_matrix(
 
     Parameters
     ----------
-    p, int
+    p: int
         AR order
-    d, int
+    d: int
         Number of ARIMA differences
-    q, int
+    q: int
         MA order
-    P, int
+    P: int
         Seasonal AR order
-    D, int
+    D: int
         Number of seasonal differences
-    Q, int
+    Q: int
         Seasonal MA order
-    S, int
+    S: int
         Seasonal length
 
     Returns
@@ -200,10 +196,10 @@ def make_SARIMA_transition_matrix(
             \begin{bmatrix} x_{t-1} \\ \Delta x_{t-1} \\ \Delta^2 x_{t-1} \\ x_{t-1}^\star \end{bmatrix}
 
     Next are the seasonal differences. The highest seasonal difference stored in the states is one less than the
-    seasonal difference order, ``D``. That is, if ``D = 1, S = 4``, there will be states :math:``x_{t-1}, x_{t-2}, x_{t-3},
-    x_{t-4}, x_t^\star`, with :math:`x_t^\star = \Delta_4 x_t = x_t - x_{t-4}`. The level state can be recovered by
-    adding :math:`x_t^\star + x_{t-4}`. To accomplish all of this, two things need to be inserted into the transition
-    matrix:
+    seasonal difference order, ``D``. That is, if ``D = 1, S = 4``, there will be states :math:``x_{t-1}, x_{t-2},
+    x_{t-3}, x_{t-4}, x_t^\star`, with :math:`x_t^\star = \Delta_4 x_t = x_t - x_{t-4}`. The level state can be
+    recovered by adding :math:`x_t^\star + x_{t-4}`. To accomplish all of this, two things need to be inserted into the
+    transition matrix:
 
         1. A shifted identity matrix to "roll" the lagged states forward each transition, and
         2. A pair of 1's to recover the level state by adding the last 2 states (:math:`x_t^\star + x_{t-4}`)

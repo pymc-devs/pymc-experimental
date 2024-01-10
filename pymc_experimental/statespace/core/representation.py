@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Type, Union
+from typing import Optional, Type, Union
 
 import numpy as np
 import pytensor
@@ -10,7 +10,7 @@ from pymc_experimental.statespace.utils.constants import (
 )
 
 floatX = pytensor.config.floatX
-KeyLike = Union[Tuple[Union[str, int]], str]
+KeyLike = Union[tuple[Union[str, int]], str]
 
 
 class PytensorRepresentation:
@@ -228,8 +228,8 @@ class PytensorRepresentation:
         self.shapes[key] = shape
 
     def _add_time_dim_to_slice(
-        self, name: str, slice_: Union[List[int], Tuple[int]], n_dim: int
-    ) -> Tuple[int]:
+        self, name: str, slice_: Union[list[int], tuple[int]], n_dim: int
+    ) -> tuple[int]:
         # Case 1: There is never a time dim. No changes needed.
         if name in NEVER_TIME_VARYING:
             return slice_
