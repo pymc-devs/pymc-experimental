@@ -582,10 +582,13 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
         raise ValueError(f"No RVs depend on marginalized RV {rv_to_marginalize}")
 
     ndim_supp = {rv.owner.op.ndim_supp for rv in dependent_rvs}
-    if max(ndim_supp) > 0:
+    if len(ndim_supp) != 1:
         raise NotImplementedError(
-            "Marginalization of withe dependent Multivariate RVs not implemented"
+            "Marginalization with dependent variables of different support dimensionality not implemented"
         )
+    [ndim_supp] = ndim_supp
+    if ndim_supp > 0:
+        raise NotImplementedError("Marginalization with dependent Multivariate RVs not implemented")
 
     marginalized_rv_input_rvs = find_conditional_input_rvs([rv_to_marginalize], all_rvs)
     dependent_rvs_input_rvs = [
@@ -623,7 +626,7 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     marginalization_op = FiniteDiscreteMarginalRV(
         inputs=list(replace_inputs.values()),
         outputs=cloned_outputs,
-        ndim_supp=0,
+        ndim_supp=ndim_supp,
     )
     marginalized_rvs = marginalization_op(*replace_inputs.keys())
     fgraph.replace_all(tuple(zip(rvs_to_marginalize, marginalized_rvs)))

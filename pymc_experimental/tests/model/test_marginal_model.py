@@ -472,7 +472,7 @@ def test_not_supported_marginalized():
         y = pm.Dirichlet("y", a=pm.math.switch(x, [1, 1, 1], [10, 10, 10]))
         with pytest.raises(
             NotImplementedError,
-            match="Marginalization of withe dependent Multivariate RVs not implemented",
+            match="Marginalization with dependent Multivariate RVs not implemented",
         ):
             m.marginalize(x)
 
