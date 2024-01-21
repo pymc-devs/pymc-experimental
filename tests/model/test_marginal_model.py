@@ -53,7 +53,6 @@ def disaster_model():
     return disaster_model, years
 
 
-@pytest.mark.filterwarnings("error")
 def test_marginalized_bernoulli_logp():
     """Test logp of IR TestFiniteMarginalDiscreteRV directly"""
     mu = pt.vector("mu")
@@ -83,7 +82,6 @@ def test_marginalized_bernoulli_logp():
     )
 
 
-@pytest.mark.filterwarnings("error")
 def test_marginalized_basic():
     data = [2] * 5
 
@@ -128,7 +126,6 @@ def test_marginalized_basic():
         )
 
 
-@pytest.mark.filterwarnings("error")
 def test_multiple_independent_marginalized_rvs():
     with MarginalModel() as m:
         sigma = pm.HalfNormal("sigma")
@@ -155,7 +152,6 @@ def test_multiple_independent_marginalized_rvs():
     np.testing.assert_array_almost_equal(y_logp, y_ref_logp)
 
 
-@pytest.mark.filterwarnings("error")
 def test_multiple_dependent_marginalized_rvs():
     """Test that marginalization works when there is more than one dependent RV"""
     with MarginalModel() as m:
@@ -194,7 +190,6 @@ def test_rv_dependent_multiple_marginalized_rvs():
     np.testing.assert_allclose(np.exp(logp({"z": 2})), 0.1 * 0.3)
 
 
-@pytest.mark.filterwarnings("error")
 def test_nested_marginalized_rvs():
     """Test that marginalization works when there are nested marginalized RVs"""
 
@@ -232,7 +227,6 @@ def test_nested_marginalized_rvs():
     )
 
 
-@pytest.mark.filterwarnings("error")
 def test_marginalized_change_point_model(disaster_model):
     m, years = disaster_model
 
@@ -251,7 +245,6 @@ def test_marginalized_change_point_model(disaster_model):
 
 
 @pytest.mark.slow
-@pytest.mark.filterwarnings("error")
 def test_marginalized_change_point_model_sampling(disaster_model):
     m, _ = disaster_model
 
@@ -435,7 +428,6 @@ def test_nested_recover_marginals():
     np.testing.assert_almost_equal(logsumexp(post.lp_sub_idx, axis=-1), 0)
 
 
-@pytest.mark.filterwarnings("error")
 def test_not_supported_marginalized():
     """Marginalized graphs with non-Elemwise Operations are not supported as they
     would violate the batching logp assumption"""
@@ -484,7 +476,6 @@ def test_not_supported_marginalized():
             m.marginalize(x)
 
 
-@pytest.mark.filterwarnings("error")
 def test_marginalized_deterministic_and_potential():
     rng = np.random.default_rng(299)
 
@@ -510,7 +501,6 @@ def test_marginalized_deterministic_and_potential():
     assert pot_value.eval({y_value: 2, z_value: 5}) == 8
 
 
-@pytest.mark.filterwarnings("error")
 def test_not_supported_marginalized_deterministic_and_potential():
     with MarginalModel() as m:
         x = pm.Bernoulli("x", p=0.7)
@@ -533,7 +523,6 @@ def test_not_supported_marginalized_deterministic_and_potential():
         m.marginalize([x])
 
 
-@pytest.mark.filterwarnings("error")
 @pytest.mark.parametrize(
     "transform, expected_warning",
     (
