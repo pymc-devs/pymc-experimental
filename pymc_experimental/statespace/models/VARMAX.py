@@ -148,7 +148,6 @@ class BayesianVARMAX(PyMCStateSpace):
         measurement_error: bool = False,
         verbose=True,
     ):
-
         if (endog_names is None) and (k_endog is None):
             raise ValueError("Must specify either endog_names or k_endog")
         if (endog_names is not None) and (k_endog is None):

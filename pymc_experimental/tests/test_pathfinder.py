@@ -29,7 +29,6 @@ def test_pathfinder():
     sigma = np.array([15.0, 10.0, 16.0, 11.0, 9.0, 11.0, 10.0, 18.0])
 
     with pm.Model() as model:
-
         mu = pm.Normal("mu", mu=0.0, sigma=10.0)
         tau = pm.HalfCauchy("tau", 5.0)
 

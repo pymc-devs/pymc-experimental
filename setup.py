@@ -77,7 +77,6 @@ def read_version():
 
 
 if __name__ == "__main__":
-
     setup(
         name="pymc-experimental",
         version=read_version(),
