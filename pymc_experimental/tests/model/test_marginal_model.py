@@ -9,6 +9,7 @@ import pytest
 from arviz import InferenceData, dict_to_dataset
 from pymc import ImputationWarning, inputvars
 from pymc.distributions import transforms
+from pymc.distributions.transforms import ordered
 from pymc.logprob.abstract import _logprob
 from pymc.util import UNSET
 from scipy.special import log_softmax, logsumexp
@@ -195,51 +196,133 @@ def test_nested_marginalized_rvs():
     )
 
 
+def test_marginalized_index_as_value_and_key():
+    """Test we can marginalize graphs were marginalized_rv is indexed."""
+
+    def build_model(batch: bool) -> MarginalModel:
+        with MarginalModel() as m:
+            if batch:
+                latent_state = pm.Bernoulli("latent_state", p=0.3, size=(4,))
+            else:
+                latent_state = pm.math.stack(
+                    [pm.Bernoulli(f"latent_state_{i}", p=0.3) for i in range(4)]
+                )
+            # latent state is used as the indexed variable
+            latent_intensities = pt.where(latent_state[:, None], [0.0, 1.0, 2.0], [0.0, 10.0, 20.0])
+            picked_intensity = pm.Categorical("picked_intensity", p=[0.2, 0.2, 0.6])
+            # picked intensity is used as the indexing variable
+            pm.Normal(
+                "intensity",
+                mu=latent_intensities[:, picked_intensity],
+                observed=[0.5, 1.5, 5.0, 15.0],
+            )
+        return m
+
+    # We compare with the equivalent but less efficient batched model
+    m = build_model(batch=True)
+    ref_m = build_model(batch=False)
+
+    m.marginalize(["latent_state"])
+    ref_m.marginalize([f"latent_state_{i}" for i in range(4)])
+    test_point = {"picked_intensity": 1}
+    np.testing.assert_allclose(
+        m.compile_logp()(test_point),
+        ref_m.compile_logp()(test_point),
+    )
+
+    m.marginalize(["picked_intensity"])
+    ref_m.marginalize(["picked_intensity"])
+    test_point = {}
+    np.testing.assert_allclose(
+        m.compile_logp()(test_point),
+        ref_m.compile_logp()(test_point),
+    )
+
+
+@pytest.mark.parametrize("advanced_indexing", (False, True))
+def test_marginalized_index_as_key(advanced_indexing):
+    """Test we can marginalize graphs where indexing is used as a mapping."""
+
+    w = [0.1, 0.3, 0.6]
+    mu = pt.as_tensor([-1, 0, 1])
+
+    if advanced_indexing:
+        y_val = pt.as_tensor([[-1, -1], [0, 1]])
+        shape = (2, 2)
+    else:
+        y_val = -1
+        shape = ()
+
+    with MarginalModel() as m:
+        x = pm.Categorical("x", p=w, shape=shape)
+        y = pm.Normal("y", mu[x], sigma=1, observed=y_val)
+
+    m.marginalize(x)
+
+    marginal_logp = m.compile_logp(sum=False)({})[0]
+    ref_logp = pm.logp(pm.NormalMixture.dist(w=w, mu=mu, sigma=1, shape=shape), y_val).eval()
+
+    np.testing.assert_allclose(marginal_logp, ref_logp)
+
+
 def test_not_supported_marginalized():
-    """Marginalized graphs with non-Elemwise Operations are not supported as they
-    would violate the batching logp assumption"""
-    mu = pt.constant([-1, 1])
+    """Test lack of support for models where batch dims of marginalized variables are mixed."""
 
-    # Allowed, as only elemwise operations connect idx to y
     with MarginalModel() as m:
-        p = pm.Beta("p", 1, 1)
-        idx = pm.Bernoulli("idx", p=p, size=2)
-        y = pm.Normal("y", mu=pm.math.switch(idx, 0, 1))
-        m.marginalize([idx])
-
-    # ALlowed, as index operation does not connext idx to y
-    with MarginalModel() as m:
-        p = pm.Beta("p", 1, 1)
-        idx = pm.Bernoulli("idx", p=p, size=2)
-        y = pm.Normal("y", mu=pm.math.switch(idx, mu[0], mu[1]))
-        m.marginalize([idx])
-
-    # Not allowed, as index operation  connects idx to y
-    with MarginalModel() as m:
-        p = pm.Beta("p", 1, 1)
-        idx = pm.Bernoulli("idx", p=p, size=2)
-        # Not allowed
-        y = pm.Normal("y", mu=mu[idx])
+        idx = pm.Bernoulli("idx", p=0.7, shape=2)
+        y = pm.Normal("y", mu=idx @ idx.T)
         with pytest.raises(NotImplementedError):
             m.marginalize(idx)
 
-    # Not allowed, as index operation  connects idx to y, even though there is a
-    # pure Elemwise connection between the two
     with MarginalModel() as m:
-        p = pm.Beta("p", 1, 1)
-        idx = pm.Bernoulli("idx", p=p, size=2)
-        y = pm.Normal("y", mu=mu[idx] + idx)
+        mean = pt.as_tensor([[0.1, 0.9], [0.6, 0.4]])
+        idx = pm.Bernoulli("idx", p=0.7, shape=2)
+        y = pm.Normal("y", mu=mean[idx, :] + mean[:, idx])
         with pytest.raises(NotImplementedError):
             m.marginalize(idx)
 
-    # Multivariate dependent RVs not supported
     with MarginalModel() as m:
-        x = pm.Bernoulli("x", p=0.7)
-        y = pm.Dirichlet("y", a=pm.math.switch(x, [1, 1, 1], [10, 10, 10]))
-        with pytest.raises(
-            NotImplementedError,
-            match="Marginalization of withe dependent Multivariate RVs not implemented",
-        ):
+        mean = pt.as_tensor([[0.1, 0.9], [0.6, 0.4]])
+        idx = pm.Bernoulli("idx", p=0.7, shape=2)
+        y = pm.Normal("y", mu=mean[idx, None] + mean[None, idx])
+        with pytest.raises(NotImplementedError):
+            m.marginalize(idx)
+
+    with MarginalModel() as m:
+        mean = pt.as_tensor([[0.1, 0.9], [0.6, 0.4]])
+        idx = pm.Bernoulli("idx", p=0.7, shape=2)
+        mu = (
+            # FIXME: PyTensor does not figure out this static broadcastings!
+            # FIXME: Specify broadcastable does not handle negative axis correctly
+            pt.specify_broadcastable(mean[:, None][idx], 1)
+            + pt.specify_broadcastable(mean[None, :][:, idx], 0)
+        )
+        y = pm.Normal("y", mu=mu)
+        with pytest.raises(NotImplementedError):
+            m.marginalize(idx)
+
+    with MarginalModel() as m:
+        idx = pm.Bernoulli("idx", p=0.7, shape=2)
+        y = pm.Normal("y", mu=idx[0] + idx[1])
+        with pytest.raises(NotImplementedError):
+            m.marginalize(idx)
+
+    with MarginalModel() as m:
+        idx = pm.Bernoulli("idx", p=0.7, shape=2)
+        y = pm.Normal("y", mu=idx[[0, 1, 0, 0]])
+        with pytest.raises(NotImplementedError):
+            m.marginalize(idx)
+
+    with MarginalModel() as m:
+        idx = pm.Categorical("key", p=[0.1, 0.3, 0.6], shape=(2, 2))
+        y = pm.Normal("y", pt.as_tensor([[0, 1], [2, 3]])[idx.astype(bool)])
+        with pytest.raises(NotImplementedError):
+            m.marginalize(idx)
+
+    with MarginalModel() as m:
+        x = pm.Bernoulli("x", p=0.7, shape=3)
+        y = pm.Dirichlet("y", a=x * 10 + 1)
+        with pytest.raises(NotImplementedError):
             m.marginalize(x)
 
 
@@ -466,6 +549,61 @@ class TestFullModels:
             rtol=1e-2,
         )
 
+    def test_k_censored_clusters_model(self):
+        def build_model(batch: bool) -> MarginalModel:
+            data = np.array([[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0]]).T
+            nobs = data.shape[-1]
+            n_clusters = 5
+            coords = {
+                "cluster": range(n_clusters),
+                "ndim": ("x", "y"),
+                "obs": range(nobs),
+            }
+            with MarginalModel(coords=coords) as m:
+                if batch:
+                    idx = pm.Categorical("idx", p=np.ones(n_clusters) / n_clusters, dims=["obs"])
+                else:
+                    idx = pm.math.stack(
+                        [
+                            pm.Categorical(f"idx_{i}", p=np.ones(n_clusters) / n_clusters)
+                            for i in range(nobs)
+                        ]
+                    )
+
+                mu_x = pm.Normal(
+                    "mu_x",
+                    dims=["cluster"],
+                    transform=ordered,
+                    initval=np.linspace(-1, 1, n_clusters),
+                )
+                mu_y = pm.Normal("mu_y", dims=["cluster"])
+                mu = pm.math.concatenate([mu_x[None], mu_y[None]], axis=0)  # (ndim, cluster)
+
+                sigma = pm.HalfNormal("sigma")
+
+                y = pm.Censored(
+                    "y",
+                    dist=pm.Normal.dist(mu[:, idx], sigma),
+                    lower=-3,
+                    upper=3,
+                    observed=data,
+                    dims=["ndim", "obs"],
+                )
+
+            return m
+
+        m = build_model(batch=True)
+        ref_m = build_model(batch=False)
+
+        m.marginalize([m["idx"]])
+        ref_m.marginalize([n for n in ref_m.named_vars if n.startswith("idx_")])
+
+        test_point = m.initial_point()
+        np.testing.assert_almost_equal(
+            m.compile_logp()(test_point),
+            ref_m.compile_logp()(test_point),
+        )
+
 
 class TestRecoverMarginals:
     def test_basic(self):
@@ -618,3 +756,8 @@ class TestRecoverMarginals:
         )
         np.testing.assert_almost_equal(logsumexp(post.lp_idx, axis=-1), 0)
         np.testing.assert_almost_equal(logsumexp(post.lp_sub_idx, axis=-1), 0)
+
+
+class TestSubgraphDims:
+    def test_baisc(self):
+        raise NotImplementedError("Write tests")
