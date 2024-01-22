@@ -1534,7 +1534,6 @@ class RegressionComponent(Component):
         return k_exog, state_names
 
     def _handle_input_data(self, k_exog: int, state_names: Optional[List[str]], name) -> int:
-
         k_exog, state_names = self._get_state_names(k_exog, state_names, name)
         self.state_names = state_names
 

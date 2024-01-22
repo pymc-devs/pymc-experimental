@@ -339,7 +339,7 @@ def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_inter
     ma_lags = prior.prior.coords["ma_lag"].values - 1
 
     # Check the first p states are lags of the previous state
-    for (t, tm1) in zip(ar_lags[1:], ar_lags[:-1]):
+    for t, tm1 in zip(ar_lags[1:], ar_lags[:-1]):
         assert_allclose(
             prior_outputs.prior_latent.isel(state=t).values[1:],
             prior_outputs.prior_latent.isel(state=tm1).values[:-1],
@@ -348,7 +348,7 @@ def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_inter
 
     # Check the next p+q states are lags of the innovations
     n = len(ar_lags)
-    for (t, tm1) in zip(ma_lags[1:], ma_lags[:-1]):
+    for t, tm1 in zip(ma_lags[1:], ma_lags[:-1]):
         assert_allclose(
             prior_outputs.prior_latent.isel(state=n + t).values[1:],
             prior_outputs.prior_latent.isel(state=n + tm1).values[:-1],

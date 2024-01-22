@@ -35,7 +35,6 @@ def convert_flat_trace_to_idata(
     postprocessing_backend="cpu",
     model=None,
 ):
-
     model = modelcontext(model)
     ip = model.initial_point()
     ip_point_map_info = pm.blocking.DictToArrayBijection.map(ip).point_map_info

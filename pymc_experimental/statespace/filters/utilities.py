@@ -40,7 +40,6 @@ def split_vars_into_seq_and_nonseq(params, param_names):
     seq_names, non_seq_names = [], []
 
     for param, name in zip(params, param_names):
-
         if decide_if_x_time_varies(param, name):
             sequences.append(param)
             seq_names.append(name)

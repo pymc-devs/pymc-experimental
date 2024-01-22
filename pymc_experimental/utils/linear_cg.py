@@ -28,7 +28,6 @@ def masked_fill(vector, mask, fill_value):
 def linear_cg_updates(
     result, alpha, residual_inner_prod, eps, beta, residual, precond_residual, curr_conjugate_vec
 ):
-
     # Everything inside _jit_linear_cg_updates
     result = result + alpha * curr_conjugate_vec
     beta = np.copy(residual_inner_prod)
@@ -68,7 +67,6 @@ def linear_cg(
     terminate_cg_by_size=False,
     use_eval_tolerange=False,
 ):
-
     if initial_guess is None:
         initial_guess = np.zeros_like(rhs)
 

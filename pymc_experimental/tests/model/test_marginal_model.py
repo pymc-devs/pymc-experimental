@@ -54,7 +54,12 @@ def test_marginalized_bernoulli_logp():
 
     idx = pm.Bernoulli.dist(0.7, name="idx")
     y = pm.Normal.dist(mu=mu[idx], sigma=1.0, name="y")
-    marginal_rv_node = FiniteDiscreteMarginalRV([mu], [idx, y], ndim_supp=None, n_updates=0,)(
+    marginal_rv_node = FiniteDiscreteMarginalRV(
+        [mu],
+        [idx, y],
+        ndim_supp=None,
+        n_updates=0,
+    )(
         mu
     )[0].owner
 

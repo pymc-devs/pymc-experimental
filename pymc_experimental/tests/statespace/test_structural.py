@@ -177,8 +177,8 @@ def create_structural_model_and_equivalent_statsmodel(
     params = {}
     sm_params = {}
     sm_init = {}
-    expected_param_dims = defaultdict(lambda: ())
-    expected_coords = defaultdict(lambda: [])
+    expected_param_dims = defaultdict(tuple)
+    expected_coords = defaultdict(list)
     expected_param_dims["P0"] += ("state", "state_aux")
 
     default_states = [
@@ -727,7 +727,7 @@ def test_add_components():
     se_mats = [se_T, se_R, se_Q]
     all_mats = [T, R, Q]
 
-    for (ll_mat, se_mat, all_mat) in zip(ll_mats, se_mats, all_mats):
+    for ll_mat, se_mat, all_mat in zip(ll_mats, se_mats, all_mats):
         assert_allclose(all_mat, linalg.block_diag(ll_mat, se_mat), atol=ATOL, rtol=RTOL)
 
     ll_mats = [ll_x0, ll_c, ll_Z]
@@ -735,7 +735,7 @@ def test_add_components():
     all_mats = [x0, c, Z]
     axes = [0, 0, 1]
 
-    for (ll_mat, se_mat, all_mat, axis) in zip(ll_mats, se_mats, all_mats, axes):
+    for ll_mat, se_mat, all_mat, axis in zip(ll_mats, se_mats, all_mats, axes):
         assert_allclose(all_mat, np.concatenate([ll_mat, se_mat], axis=axis), atol=ATOL, rtol=RTOL)
 
 

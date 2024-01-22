@@ -36,7 +36,6 @@ class StringConstant(Constant):
 
 @pytensor._as_symbolic.register(str)
 def as_symbolic_string(x, **kwargs):
-
     return StringConstant(stringtype, x)
 
 
