@@ -212,8 +212,10 @@ class MarginalModel(Model):
         return m._logp(vars=vars, **kwargs)
 
     def clone(self):
-        m = MarginalModel()
-        vars = self.basic_RVs + self.potentials + self.deterministics + self.marginalized_rvs
+        m = MarginalModel(coords=self.coords)
+        model_vars = self.basic_RVs + self.potentials + self.deterministics + self.marginalized_rvs
+        data_vars = [var for name, var in self.named_vars.items() if var not in model_vars]
+        vars = model_vars + data_vars
         cloned_vars = clone_replace(vars)
         vars_to_clone = {var: cloned_var for var, cloned_var in zip(vars, cloned_vars)}
         m.vars_to_clone = vars_to_clone
@@ -598,7 +600,7 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     # can ultimately be generated that is proportional to the support domain and not
     # to the variables dimensions
     # We don't need to worry about this if the  RV is scalar.
-    if np.prod(constant_fold(tuple(rv_to_marginalize.shape))) > 1:
+    if np.prod(constant_fold(tuple(rv_to_marginalize.shape), raise_not_constant=False)) != 1:
         if not is_elemwise_subgraph(rv_to_marginalize, dependent_rvs_input_rvs, dependent_rvs):
             raise NotImplementedError(
                 "The subgraph between a marginalized RV and its dependents includes non Elemwise operations. "
@@ -682,7 +684,7 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
     # batched dimensions of the marginalized RV
 
     # PyMC does not allow RVs in the logp graph, even if we are just using the shape
-    marginalized_rv_shape = constant_fold(tuple(marginalized_rv.shape))
+    marginalized_rv_shape = constant_fold(tuple(marginalized_rv.shape), raise_not_constant=False)
     marginalized_rv_domain = get_domain_of_finite_discrete_rv(marginalized_rv)
     marginalized_rv_domain_tensor = pt.moveaxis(
         pt.full(

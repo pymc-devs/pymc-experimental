@@ -603,3 +603,29 @@ def test_is_conditional_dependent_static_shape():
     x2 = pt.matrix("x2", shape=(9, 5))
     y2 = pt.random.normal(size=pt.shape(x2))
     assert not is_conditional_dependent(y2, x2, [x2, y2])
+
+
+def test_data_container():
+    """Test that MarginalModel can handle Data containers."""
+    with MarginalModel(coords_mutable={"obs": [0]}) as marginal_m:
+        x = pm.MutableData("x", 2.5)
+        idx = pm.Bernoulli("idx", p=0.7, dims="obs")
+        y = pm.Normal("y", idx * x, dims="obs")
+
+    marginal_m.marginalize([idx])
+
+    logp_fn = marginal_m.compile_logp()
+
+    with pm.Model(coords_mutable={"obs": [0]}) as m_ref:
+        x = pm.MutableData("x", 2.5)
+        y = pm.NormalMixture("y", w=[0.3, 0.7], mu=[0, x], dims="obs")
+
+    ref_logp_fn = m_ref.compile_logp()
+
+    for i, x_val in enumerate((-1.5, 2.5, 3.5), start=1):
+        for m in (marginal_m, m_ref):
+            m.set_dim("obs", new_length=i, coord_values=tuple(range(i)))
+            pm.set_data({"x": x_val}, model=m)
+
+        ip = marginal_m.initial_point()
+        np.testing.assert_allclose(logp_fn(ip), ref_logp_fn(ip))
