@@ -14,6 +14,9 @@ filterwarnings =[
 
   # bool8, find_common_type, cumproduct, and product had deprecation warnings added in numpy 1.25
   'ignore:.*(\b(pkg_resources\.declare_namespace|np\.bool8|np\.find_common_type|cumproduct|product)\b).*:DeprecationWarning',
+
+  # JAX issues an over-eager warning if os.fork() is called when the JAX module is loaded, even if JAX isn't being used
+  'ignore:os\.fork\(\) was called\.:RuntimeWarning',
 ]
 
 [tool.black]
