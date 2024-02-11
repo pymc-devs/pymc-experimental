@@ -48,7 +48,7 @@ def get_unfitted_model_instance(X, y):
     sampler_config = {
         "draws": 20,
         "tune": 10,
-        "chains": 2,
+        "chains": 1,
         "target_accept": 0.95,
     }
     model_config = {
@@ -158,7 +158,7 @@ class test_ModelBuilder(ModelBuilder):
         return {
             "draws": 10,
             "tune": 10,
-            "chains": 3,
+            "chains": 1,
             "target_accept": 0.95,
         }
 

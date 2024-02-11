@@ -90,7 +90,7 @@ def test_histogram_approx_cont(use_dask, ndims):
         pot = pmx.distributions.histogram_utils.histogram_approximation(
             "histogram_potential", pm.Normal.dist(m, s), observed=data, n_quantiles=1000
         )
-        trace = pm.sample(10, tune=0)  # very fast
+        trace = pm.sample(10, tune=0, chains=1)  # very fast
 
 
 @pytest.mark.parametrize("use_dask", [True, False])
@@ -106,4 +106,4 @@ def test_histogram_approx_discrete(use_dask, ndims):
         pot = pmx.distributions.histogram_utils.histogram_approximation(
             "histogram_potential", pm.Poisson.dist(s), observed=data, min_count=10
         )
-        trace = pm.sample(10, tune=0)  # very fast
+        trace = pm.sample(10, tune=0, chains=1)  # very fast

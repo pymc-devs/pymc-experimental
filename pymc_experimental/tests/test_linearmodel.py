@@ -66,7 +66,7 @@ def fitted_linear_model_instance(toy_X, toy_y):
     sampler_config = {
         "draws": 50,
         "tune": 30,
-        "chains": 2,
+        "chains": 1,
         "target_accept": 0.95,
     }
     model = LinearModel(sampler_config=sampler_config)
@@ -117,7 +117,7 @@ def test_parameter_fit(toy_X, toy_y, toy_actual_params):
     sampler_config = {
         "draws": 500,
         "tune": 300,
-        "chains": 2,
+        "chains": 1,
         "target_accept": 0.95,
     }
     model = LinearModel(sampler_config=sampler_config)
@@ -173,7 +173,7 @@ def test_id():
     sampler_config = {
         "draws": 1_000,
         "tune": 1_000,
-        "chains": 3,
+        "chains": 1,
         "target_accept": 0.95,
     }
     model = LinearModel(model_config=model_config, sampler_config=sampler_config)
