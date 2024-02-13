@@ -35,6 +35,7 @@ Distributions
    GeneralizedPoisson
    BetaNegativeBinomial
    GenExtreme
+   GenPareto
    R2D2M2CP
    Skellam
    histogram_approximation

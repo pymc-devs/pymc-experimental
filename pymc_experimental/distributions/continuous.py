@@ -30,7 +30,7 @@ from pymc.distributions.distribution import Continuous
 from pymc.distributions.shape_utils import rv_size_is_none
 from pymc.logprob.utils import CheckParameterValue
 from pymc.pytensorf import floatX
-from pytensor.tensor.random.op import RandomVariable
+from pytensor.tensor.random.op import RandomVariable, ScipyRandomVariable
 from pytensor.tensor.variable import TensorVariable
 from scipy import stats
 
@@ -219,6 +219,160 @@ class GenExtreme(Continuous):
         if not rv_size_is_none(size):
             mode = pt.full(size, mode)
         return mode
+
+
+# Generalized Pareto Distribution
+class GenParetoRV(ScipyRandomVariable):
+    name: str = "Generalized Pareto"
+    ndim_supp: int = 0
+    ndims_params: List[int] = [0, 0, 0]
+    dtype: str = "floatX"
+    _print_name: Tuple[str, str] = ("Generalized Pareto Distribution", "\\operatorname{GenPareto}")
+
+    @classmethod
+    def rng_fn(
+        cls,
+        rng: Union[np.random.RandomState, np.random.Generator],
+        mu: np.ndarray,
+        sigma: np.ndarray,
+        xi: np.ndarray,
+        size: Tuple[int, ...],
+    ) -> np.ndarray:
+        # using scipy's parameterization
+        return stats.genpareto.rvs(c=xi, loc=mu, scale=sigma, random_state=rng, size=size)
+
+
+gen_pareto = GenParetoRV()
+
+
+class GenPareto(Continuous):
+    r"""
+    The Generalized Pareto Distribution
+
+    The pdf of this distribution is
+
+    .. math::
+
+       f(x \mid \mu, \sigma, \xi) = \frac{1}{\sigma} (1 + \xi z)^{-1/\xi-1}
+
+    where
+
+    .. math::
+
+        z = \frac{x - \mu}{\sigma}
+
+    and is defined on the set (when :math:`\xi \geq 0`):
+
+    .. math::
+
+        \left\{x: x \geq \mu \right\}
+    .. plot::
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import scipy.stats as st
+        import arviz as az
+        plt.style.use('arviz-darkgrid')
+        x = np.linspace(-2, 10, 200)
+        mus = [0., 0., 0., 0., 1., ]
+        sigmas = [1., 1., 1.,2., 1., ]
+        xis = [1., 0., 5., 1., 1.,  ]
+        for mu, sigma, xi in zip(mus, sigmas, xis):
+            pdf = st.genpareto.pdf(x, c=xi, loc=mu, scale=sigma)
+            plt.plot(x, pdf, label=rf'$\mu$ = {mu}, $\sigma$ = {sigma}, $\xi$={xi}')
+        plt.xlabel('x', fontsize=12)
+        plt.ylabel('f(x)', fontsize=12)
+        plt.legend(loc=1)
+        plt.show()
+
+
+    ========  =========================================================================
+    Support   * :math:`x \geq \mu`, when :math:`\xi \geq 0`
+    Mean      * :math:`\mu + \frac{\sigma}{1-\xi}`, when :math:`\xi < 1`
+    Variance  * :math:`\frac{\sigma^2}{(1-\xi)^2 (1-2\xi)}`, when :math:`\xi < 0.5`
+    ========  =========================================================================
+
+    Parameters
+    ----------
+    mu : float
+        Location parameter.
+    sigma : float
+        Scale parameter (sigma > 0).
+    xi : float
+        Shape parameter (xi >= 0). Notice that we are using a more restrictive definition for Generalized Pareto Distribution (xi can be smaller than 0). We only include :math:`\xi \geq 0` since it's more commonly used for modelling the tails.
+    """
+
+    rv_op = gen_pareto
+
+    @classmethod
+    def dist(cls, mu=0, sigma=1, xi=0, **kwargs):
+        mu = pt.as_tensor_variable(floatX(mu))
+        sigma = pt.as_tensor_variable(floatX(sigma))
+        xi = pt.as_tensor_variable(floatX(xi))
+
+        return super().dist([mu, sigma, xi], **kwargs)
+
+    def logp(value, mu, sigma, xi):
+        """
+        Calculate log-probability of Generalized Pareto distribution
+        at specified value.
+
+        Parameters
+        ----------
+        value: numeric
+            Value(s) for which log-probability is calculated. If the log probabilities for multiple
+            values are desired the values must be provided in a numpy array or Pytensor tensor
+
+        Returns
+        -------
+        TensorVariable
+        """
+
+        scaled = (value - mu) / sigma
+
+        logp_expression = pt.switch(
+            pt.eq(xi, 0),
+            -1 * scaled,
+            -1 * pt.log(sigma) - ((xi + 1) / xi) * pt.log1p(xi * scaled),
+        )
+        logp = pt.switch(pt.ge(scaled, 0), logp_expression, -np.inf)
+        return check_parameters(logp, sigma > 0, xi >= 0, msg="sigma > 0 and xi >= 0")
+
+    def logcdf(value, mu, sigma, xi):
+        """
+        Compute the log of the cumulative distribution function for Generalized Pareto
+        distribution at the specified value.
+
+        Parameters
+        ----------
+        value: numeric or np.ndarray or `TensorVariable`
+            Value(s) for which log CDF is calculated. If the log CDF for
+            multiple values are desired the values must be provided in a numpy
+            array or `TensorVariable`.
+
+        Returns
+        -------
+        TensorVariable
+        """
+        scaled = (value - mu) / sigma
+        logc_expression = pt.switch(
+            pt.eq(xi, 0),
+            pt.log(1 - pt.exp(-1 * scaled)),
+            pt.log(1 - pt.pow((1 + xi * scaled), (-1 / xi))),
+        )
+        logc = pt.switch(pt.ge(scaled, 0), logc_expression, -np.inf)
+
+        return check_parameters(logc, sigma > 0, xi >= 0, msg="sigma > 0 and xi >= 0")
+
+    def moment(rv, size, mu, sigma, xi):
+        r"""
+        Mean is defined when :math:`\xi < 1`
+        """
+        mean_expression = mu + sigma / (1 - xi)
+        mean = pt.switch(xi < 1, mean_expression, np.inf)
+        if not rv_size_is_none(size):
+            mean = pt.full(size, mean)
+        return check_parameters(mean, xi < 1, msg="xi < 1")
 
 
 class Chi:
