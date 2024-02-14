@@ -44,23 +44,6 @@ def _frequency_transition_block(s, j):
     return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]]).squeeze()
 
 
-def block_diagonal(matrices: list[pt.matrix]):
-    rows = [x.shape[0] for x in matrices]
-    cols = [x.shape[1] for x in matrices]
-    out = pt.zeros((sum(rows), sum(cols)))
-    row_cursor = 0
-    col_cursor = 0
-
-    for row, col, mat in zip(rows, cols, matrices):
-        row_slice = slice(row_cursor, row_cursor + row)
-        col_slice = slice(col_cursor, col_cursor + col)
-        row_cursor += row
-        col_cursor += col
-
-        out = pt.set_subtensor(out[row_slice, col_slice], mat)
-    return out
-
-
 class StructuralTimeSeries(PyMCStateSpace):
     r"""
     Structural Time Series Model
@@ -527,7 +510,7 @@ class Component(ABC):
         initial_state = pt.concatenate(conform_time_varying_and_time_invariant_matrices(x0, o_x0))
         initial_state.name = x0.name
 
-        initial_state_cov = block_diagonal([P0, o_P0])
+        initial_state_cov = pt.linalg.block_diag(P0, o_P0)
         initial_state_cov.name = P0.name
 
         state_intercept = pt.concatenate(conform_time_varying_and_time_invariant_matrices(c, o_c))
@@ -536,19 +519,19 @@ class Component(ABC):
         obs_intercept = d + o_d
         obs_intercept.name = d.name
 
-        transition = block_diagonal([T, o_T])
+        transition = pt.linalg.block_diag(T, o_T)
         transition.name = T.name
 
         design = pt.concatenate(conform_time_varying_and_time_invariant_matrices(Z, o_Z), axis=-1)
         design.name = Z.name
 
-        selection = block_diagonal([R, o_R])
+        selection = pt.linalg.block_diag(R, o_R)
         selection.name = R.name
 
         obs_cov = H + o_H
         obs_cov.name = H.name
 
-        state_cov = block_diagonal([Q, o_Q])
+        state_cov = pt.linalg.block_diag(Q, o_Q)
         state_cov.name = Q.name
 
         new_ssm = PytensorRepresentation(
@@ -1326,7 +1309,7 @@ class FrequencySeasonality(Component):
         self.ssm["initial_state", init_state_idx] = init_state
 
         T_mats = [_frequency_transition_block(self.season_length, j + 1) for j in range(self.n)]
-        T = block_diagonal(T_mats)
+        T = pt.linalg.block_diag(*T_mats)
         self.ssm["transition", :, :] = T
 
         if self.innovations:
