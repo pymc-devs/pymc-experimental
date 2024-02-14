@@ -2,6 +2,7 @@ from typing import Any, Optional, Sequence, Tuple
 
 import numpy as np
 import pytensor.tensor as pt
+from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace, floatX
 from pymc_experimental.statespace.models.utilities import (
@@ -19,7 +20,6 @@ from pymc_experimental.statespace.utils.constants import (
     SEASONAL_AR_PARAM_DIM,
     SEASONAL_MA_PARAM_DIM,
 )
-from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lyapunov
 
 
 def _verify_order(p, d, q, P, D, Q, S):

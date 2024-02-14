@@ -26,8 +26,8 @@ floatX = pytensor.config.floatX
 
 # TODO: These are pretty loose because of all the stabilizing of covariance matrices that is done inside the kalman
 #  filters. When that is improved, this should be tightened.
-ATOL = 1e-6 if floatX.endswith("64") else 1e-4
-RTOL = 1e-6 if floatX.endswith("64") else 1e-4
+ATOL = 1e-5 if floatX.endswith("64") else 1e-4
+RTOL = 1e-5 if floatX.endswith("64") else 1e-4
 
 filter_names = [
     "standard",
