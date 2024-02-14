@@ -3,6 +3,7 @@ from typing import Any, Sequence, Tuple
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
+from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
 from pymc_experimental.statespace.models.utilities import make_default_coords
@@ -16,7 +17,6 @@ from pymc_experimental.statespace.utils.constants import (
     SHOCK_AUX_DIM,
     SHOCK_DIM,
 )
-from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_lyapunov
 
 floatX = pytensor.config.floatX
 

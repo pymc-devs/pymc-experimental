@@ -9,7 +9,7 @@ from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
 from pytensor.tensor.nlinalg import matrix_dot
-from pytensor.tensor.slinalg import solve_triangular
+from pytensor.tensor.slinalg import solve_discrete_are, solve_triangular
 
 from pymc_experimental.statespace.filters.utilities import (
     quad_form_sym,
@@ -17,7 +17,6 @@ from pymc_experimental.statespace.filters.utilities import (
     stabilize,
 )
 from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT, MISSING_FILL
-from pymc_experimental.statespace.utils.pytensor_scipy import solve_discrete_are
 
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
 PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
