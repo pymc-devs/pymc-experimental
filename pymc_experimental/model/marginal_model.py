@@ -1,4 +1,5 @@
 import warnings
+from itertools import zip_longest
 from typing import Sequence, Tuple, Union
 
 import numpy as np
@@ -25,11 +26,17 @@ from pytensor.graph import (
     clone_replace,
     vectorize_graph,
 )
+from pytensor.graph.basic import Variable, io_toposort
 from pytensor.scan import map as scan_map
-from pytensor.tensor import TensorVariable
-from pytensor.tensor.elemwise import Elemwise
+from pytensor.tensor import TensorType, TensorVariable
+from pytensor.tensor.blockwise import Blockwise
+from pytensor.tensor.elemwise import CAReduce, DimShuffle, Elemwise
+from pytensor.tensor.random.op import RandomVariable
+from pytensor.tensor.rewriting.subtensor import is_full_slice
 from pytensor.tensor.shape import Shape
 from pytensor.tensor.special import log_softmax
+from pytensor.tensor.subtensor import AdvancedSubtensor, Subtensor, get_idx_list
+from pytensor.tensor.type_other import NoneTypeT
 
 __all__ = ["MarginalModel"]
 
@@ -539,37 +546,285 @@ def find_conditional_dependent_rvs(dependable_rv, all_rvs):
     ]
 
 
-def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
-    # TODO: No need to consider apply nodes outside the subgraph...
-    fg = FunctionGraph(outputs=output_rvs, clone=False)
+def _advanced_indexing_axis_and_ndim(idxs) -> tuple[int, int]:
+    """Find the output axis and dimensionality of the advanced indexing group (i.e., array indexing).
 
-    non_elemwise_blockers = [
-        o for node in fg.apply_nodes if not isinstance(node.op, Elemwise) for o in node.outputs
-    ]
-    blocker_candidates = [rv_to_marginalize] + other_input_rvs + non_elemwise_blockers
-    blockers = [var for var in blocker_candidates if var not in output_rvs]
+    There is a special case: when there are non-consecutive advanced indexing groups, the advanced indexing
+    group is always moved to the front.
 
-    truncated_inputs = [
-        var
-        for var in ancestors(output_rvs, blockers=blockers)
-        if (
-            var in blockers
-            or (var.owner is None and not isinstance(var, (Constant, SharedVariable)))
+    See: https://numpy.org/doc/stable/user/basics.indexing.html#combining-advanced-and-basic-indexing
+    """
+    adv_group_axis = None
+    for axis, idx in enumerate(idxs):
+        if isinstance(idx.type, TensorType):
+            adv_group_axis = axis
+        elif adv_group_axis is not None:
+            # Special non-consecutive case
+            adv_group_axis = 0
+            break
+
+    adv_group_ndim = max(idx.type.ndim for idx in idxs if isinstance(idx.type, TensorType))
+    return adv_group_axis, adv_group_ndim
+
+
+# TODO: Use typevar for batch_dims
+def _broadcast_dims(
+    inputs_dims: Sequence[tuple[Union[int, None], ...]]
+) -> tuple[Union[int, None], ...]:
+    output_ndim = max((len(input_dim) for input_dim in inputs_dims), default=0)
+    output_dims = {
+        ((None,) * (output_ndim - len(input_dim))) + input_dim for input_dim in inputs_dims
+    }
+    if len(output_dims) > 1:
+        raise ValueError
+    return next(iter(output_dims))
+
+
+def _insert_implicit_expanded_dims(inputs_dims, ndims_params, op_batch_ndim):
+    """Insert implicit expanded dims for RandomVariable and SymbolicRandomVariable."""
+    new_inputs_dims = []
+    for input_dims, core_ndim in zip(inputs_dims, ndims_params):
+        if input_dims is None:
+            new_inputs_dims.append(None)
+        else:
+            missing_ndim = (op_batch_ndim + core_ndim) - len(input_dims)
+            new_input_dims = ((None,) * missing_ndim) + input_dims
+            new_inputs_dims.append(new_input_dims)
+    return new_inputs_dims
+
+
+def subgraph_dims(rv_to_marginalize, other_inputs_rvs, output_rvs) -> list[tuple[int, ...]]:
+    """Identify how the batch dims of rv_to_marginalize map to the batch dims of the output_rvs.
+
+    Raises
+    ------
+    ValueError
+        If information from batch_dims is mixed at any point in the subgraph
+    NotImplementedError
+        If variable related to marginalized batch_dims is used in an operation that is not yet supported
+
+    """
+
+    batch_bcast_axes = rv_to_marginalize.type.broadcastable
+    if rv_to_marginalize.owner.op.ndim_supp > 0:
+        batch_bcast_axes = batch_bcast_axes[: -rv_to_marginalize.owner.op.ndim_supp]
+
+    if any(batch_bcast_axes):
+        # Note: We could support this by distinguishing between original and broadcasted axis
+        # But for now this would complicate logic quite a lot for little gain.
+        # We could also just allow without a specific type, but we would need to check if they are ever broadcasted
+        # by any of the Ops that do implicit broadcasting (Alloc, Elemwise, Blockwise, AdvancedSubtensor, RandomVariable).
+        raise NotImplementedError(
+            "Marginalization of variables with broadcastable batch axes not supported."
         )
-    ]
 
-    # Check that we reach the marginalized rv following a pure elemwise graph
-    if rv_to_marginalize not in truncated_inputs:
-        return False
+    # Batch axes for core RVs are always on the left
+    # We will have info on SymbolicRVs at some point in PyMC
+    var_dims: dict[Variable, tuple[Union[int, None], ...]] = {
+        rv_to_marginalize: tuple(range(len(batch_bcast_axes)))
+    }
 
-    # Check that none of the truncated inputs depends on the marginalized_rv
-    other_truncated_inputs = [inp for inp in truncated_inputs if inp is not rv_to_marginalize]
-    # TODO: We don't need to go all the way to the root variables
-    if rv_to_marginalize in ancestors(
-        other_truncated_inputs, blockers=[rv_to_marginalize, *other_input_rvs]
-    ):
-        return False
-    return True
+    for node in io_toposort([rv_to_marginalize] + other_inputs_rvs, output_rvs):
+        inputs_dims = [var_dims.get(inp, None) for inp in node.inputs]
+
+        if not any(inputs_dims):
+            # None of the inputs are related to the batch_axes of the marginalized_rv
+            # We could pass `None` for everything, but for now that doesn't seem needed
+            continue
+
+        elif isinstance(node.op, DimShuffle):
+            [key_dims] = inputs_dims
+            if any(key_dims[dropped_dim] is not None for dropped_dim in node.op.drop):
+                # Note: This is currently not possible as we forbid marginalized variable with broadcasted dims
+                raise ValueError(f"{node} drops batch axes of the marginalized variable")
+
+            output_dims = tuple(
+                key_dims[i] if isinstance(i, int) else None for i in node.op.new_order
+            )
+            var_dims[node.outputs[0]] = output_dims
+
+        elif isinstance(node.op, (Elemwise, Blockwise, RandomVariable, SymbolicRandomVariable)):
+            # TODO: Add SymbolicRandomVariables to the mix?
+            if isinstance(node.op, Elemwise):
+                op_batch_ndim = node.outputs[0].type.ndim
+            elif isinstance(node.op, Blockwise):
+                op_batch_ndim = node.op.batch_ndim(node)
+            elif isinstance(node.op, RandomVariable):
+                op_batch_ndim = node.default_output().type.ndim
+                # The first 3 inputs (rng, size, dtype) don't behave like a regular gufunc
+                inputs_dims = [
+                    None,
+                    None,
+                    None,
+                    *_insert_implicit_expanded_dims(
+                        inputs_dims[3:], node.op.ndims_params, op_batch_ndim
+                    ),
+                ]
+            elif isinstance(node.op, SymbolicRandomVariable):
+                ndims_params = getattr(node.op, "ndims_params", None)
+                if ndims_params is None:
+                    raise NotImplementedError(
+                        "Dependent SymbolicRandomVariables without gufunc_signature are not supported"
+                    )
+                op_batch_ndim = node.op.batch_ndim(node)
+                inputs_dims = _insert_implicit_expanded_dims(
+                    inputs_dims, ndims_params, op_batch_ndim
+                )
+
+            if op_batch_ndim > 0:
+                if any(
+                    core_dim is not None
+                    for input_dims in inputs_dims
+                    if input_dims is not None
+                    for core_dim in input_dims[op_batch_ndim:]
+                ):
+                    raise ValueError(
+                        f"Node {node} uses batch dimensions of the marginalized variable as a core dimension"
+                    )
+
+            # Check batch dims are not broadcasted
+            try:
+                batch_dims = _broadcast_dims(
+                    tuple(
+                        input_dims[:op_batch_ndim]
+                        for input_dims in inputs_dims
+                        if input_dims is not None
+                    )
+                )
+            except ValueError:
+                raise NotImplementedError(
+                    f"Node {node} mixes batch dimensions of the marginalized variable"
+                )
+            for out in node.outputs:
+                if isinstance(out.type, TensorType):
+                    core_dims = out.type.ndim - op_batch_ndim
+                    var_dims[out] = batch_dims + (None,) * core_dims
+
+        elif isinstance(node.op, CAReduce):
+            # Only non batch_axes dims can be reduced
+            [key_dims] = inputs_dims
+
+            axes = node.op.axis
+            if isinstance(axes, int):
+                axes = (axes,)
+
+            if axes is None or any(key_dims[axis] is not None for axis in axes):
+                raise ValueError(
+                    f"Reduction node {node} mixes batch dimensions of the marginalized variable"
+                )
+
+            output_dims = list(key_dims)
+            for axis in sorted(axes, reverse=True):
+                output_dims.pop(axis)
+            var_dims[node.outputs[0]] = tuple(output_dims)
+
+        elif isinstance(node.op, Subtensor):
+            value_dims, *keys_dims = inputs_dims
+            # Batch dims in basic indexing must belong to the value variable, since indexing keys are always scalar
+            assert all(key_dims is None for key_dims in keys_dims)
+            keys = get_idx_list(node.inputs, node.op.idx_list)
+
+            output_dims = []
+            for value_dims, idx in zip_longest(value_dims, keys, fillvalue=slice(None)):
+                if is_full_slice(idx):
+                    output_dims.append(value_dims)
+                else:
+                    if value_dims is not None:
+                        # We are trying to slice or index a batch dim
+                        # This is not necessarily problematic, unless this indexed dim is later mixed with other dims
+                        # For now, we simply don't try to support it
+                        raise NotImplementedError(
+                            f"Indexing of batch dimensions of the marginalized variable in node {node} not supported"
+                        )
+                    if isinstance(idx, slice):
+                        # Slice keeps the dim, whereas integer drops it
+                        output_dims.append(None)
+
+            var_dims[node.outputs[0]] = tuple(output_dims)
+
+        elif isinstance(node.op, AdvancedSubtensor):
+            # AdvancedSubtensor batch axis can show up as both the indexed variable and indexing variable
+            value, *keys = node.inputs
+            value_dims, *keys_dims = inputs_dims
+
+            # Just to stay sane, we forbid any boolean indexing...
+            if any(isinstance(idx.type, TensorType) and idx.type.dtype == "bool" for idx in keys):
+                raise NotImplementedError(
+                    f"Array indexing with boolean variables in node {node} not supported."
+                )
+
+            if value_dims and any(keys_dims):
+                # Both indexed variable and indexing variables have batch dimensions
+                # I am to lazy to think through these, so we raise for now.
+                raise NotImplementedError(
+                    f"Simultaneous use of indexed and indexing variables in node {node}, "
+                    f"related to batch dimensions of the marginalized variable not supported"
+                )
+
+            adv_group_axis, adv_group_ndim = _advanced_indexing_axis_and_ndim(keys)
+
+            if value_dims:
+                # Indexed variable has batch dims
+
+                if any(isinstance(idx.type, NoneTypeT) for idx in keys):
+                    # TODO: Reason about these as AdvancedIndexing followed by ExpandDims
+                    #  (maybe that's how they should be represented in PyTensor?)
+                    # Only complication is when the NewAxis force the AdvancedGroup to go to the front
+                    # which changes the position of the output batch axes
+                    raise NotImplementedError(
+                        f"Advanced indexing in node {node} which introduces new axis is not supported"
+                    )
+
+                # TODO: refactor this code which is completely shared by the Subtensor Op
+                non_adv_dims = []
+                for value_dim, idx in zip_longest(value_dims, keys, fillvalue=slice(None)):
+                    if is_full_slice(idx):
+                        non_adv_dims.append(value_dim)
+                    else:
+                        if value_dim is not None:
+                            # We are trying to slice or index a batch dim
+                            raise NotImplementedError(
+                                f"Indexing of batch dimensions of the marginalized variable in node {node} not supported"
+                            )
+                        if isinstance(idx, slice):
+                            non_adv_dims.append(None)
+
+                # Insert dims corresponding to advanced indexing among the remaining ones
+                output_dims = tuple(
+                    non_adv_dims[adv_group_axis:]
+                    + [None] * adv_group_ndim
+                    + non_adv_dims[adv_group_axis:]
+                )
+
+            else:
+                # Indexing keys have batch dims.
+                # Only array indices can have batch_dims, the rest are just slices or new axis
+
+                # Advanced indexing variables broadcast together, so we apply same rules as in Elemwise
+                # However indexing is implicit, so we have to add None dims
+                try:
+                    adv_dims = _broadcast_dims(
+                        tuple(key_dim for key_dim in keys_dims if key_dim is not None)
+                    )
+                except ValueError:
+                    raise ValueError(
+                        f"Index node {node} mixes batch dimensions of the marginalized variable"
+                    )
+
+                start_non_adv_dims = (None,) * adv_group_axis
+                end_non_adv_dims = (None,) * (
+                    node.outputs[0].type.ndim - adv_group_axis - adv_group_ndim
+                )
+                output_dims = start_non_adv_dims + adv_dims + end_non_adv_dims
+
+            var_dims[node.outputs[0]] = output_dims
+
+        else:
+            # TODO: Assert, SpecifyShape: easy, batch dims can only be on the input,
+            # TODO: Alloc: Easy, core batch dims stay in the same position (because we raised before for bcastable dims)
+            raise NotImplementedError(f"Marginalization through operation {node} not supported")
+
+    return [var_dims[output_rv] for output_rv in output_rvs]
 
 
 def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs):
@@ -584,11 +839,11 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     ndim_supp = {rv.owner.op.ndim_supp for rv in dependent_rvs}
     if max(ndim_supp) > 0:
         raise NotImplementedError(
-            "Marginalization of withe dependent Multivariate RVs not implemented"
+            "Marginalization of with dependent Multivariate RVs not implemented"
         )
 
     marginalized_rv_input_rvs = find_conditional_input_rvs([rv_to_marginalize], all_rvs)
-    dependent_rvs_input_rvs = [
+    other_direct_rv_ancestors = [
         rv
         for rv in find_conditional_input_rvs(dependent_rvs, all_rvs)
         if rv is not rv_to_marginalize
@@ -600,20 +855,48 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     # can ultimately be generated that is proportional to the support domain and not
     # to the variables dimensions
     # We don't need to worry about this if the  RV is scalar.
-    if np.prod(constant_fold(tuple(rv_to_marginalize.shape), raise_not_constant=False)) != 1:
-        if not is_elemwise_subgraph(rv_to_marginalize, dependent_rvs_input_rvs, dependent_rvs):
-            raise NotImplementedError(
-                "The subgraph between a marginalized RV and its dependents includes non Elemwise operations. "
-                "This is currently not supported",
+    if any(not bcast for bcast in rv_to_marginalize.type.broadcastable):
+        # When there are batch dimensions, we call `batch_dims_subgraph` to make sure these are not mixed
+        try:
+            dependent_rvs_batch_dims = subgraph_dims(
+                rv_to_marginalize, other_direct_rv_ancestors, dependent_rvs
             )
+        except ValueError as err:
+            # This happens when information is mixed. From the user perspective this is a NotImplementedError
+            raise NotImplementedError from err
 
-    input_rvs = [*marginalized_rv_input_rvs, *dependent_rvs_input_rvs]
+        # We further check that any extra batch dimensions of dependnt RVs beyond those implied by the MarginalizedRV
+        # show up on the left, so that collapsing logic in logp can be more straightforward easily.
+        # This also ensures the MarginalizedRV still behaves as an RV itself
+        marginal_batch_ndim = rv_to_marginalize.type.ndim - rv_to_marginalize.owner.op.ndim_supp
+        marginal_batch_dims = tuple(range(marginal_batch_ndim))
+        for dependent_rv, dependent_rv_batch_dims in zip(dependent_rvs, dependent_rvs_batch_dims):
+            extra_batch_ndim = (
+                dependent_rv.type.ndim - marginal_batch_ndim - dependent_rv.owner.op.ndim_supp
+            )
+            valid_dependent_batch_dims = ((None,) * extra_batch_ndim) + marginal_batch_dims
+            if dependent_rv_batch_dims != valid_dependent_batch_dims:
+                raise NotImplementedError(
+                    "Any extra batch dimensions introduced by dependent RVs must be "
+                    "on the left of dimensions introduced by the marginalized RV"
+                )
+
+        for dependent_rv, dependent_rv_batch_dims in zip(dependent_rvs, dependent_rvs_batch_dims):
+            shared_batch_dims = [
+                batch_dim for batch_dim in dependent_rv_batch_dims if batch_dim is not None
+            ]
+            if shared_batch_dims != sorted(shared_batch_dims):
+                raise NotImplementedError(
+                    "Shared batch dimensions between marginalized RV and dependent RVs must be aligned positionally"
+                )
+
+    input_rvs = [*marginalized_rv_input_rvs, *other_direct_rv_ancestors]
     rvs_to_marginalize = [rv_to_marginalize, *dependent_rvs]
 
     outputs = rvs_to_marginalize
     # Clone replace inner RV rng inputs so that we can be sure of the update order
     # replace_inputs = {rng: rng.type() for rng in updates_rvs_to_marginalize.keys()}
-    # Clone replace outter RV inputs, so that their shared RNGs don't make it into
+    # Clone replace outer RV inputs, so that their shared RNGs don't make it into
     # the inner graph of the marginalized RVs
     # FIXME: This shouldn't be needed!
     replace_inputs = {}
@@ -660,16 +943,17 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
 
     # Reduce logp dimensions corresponding to broadcasted variables
     joint_logp = logps_dict[inner_rvs_to_values[marginalized_rv]]
+    joint_logp_ndim = joint_logp.type.ndim
     for inner_rv, inner_value in inner_rvs_to_values.items():
         if inner_rv is marginalized_rv:
             continue
-        vbcast = inner_value.type.broadcastable
-        mbcast = marginalized_rv.type.broadcastable
-        mbcast = (True,) * (len(vbcast) - len(mbcast)) + mbcast
-        values_axis_bcast = [i for i, (m, v) in enumerate(zip(mbcast, vbcast)) if m != v]
-        joint_logp += logps_dict[inner_value].sum(values_axis_bcast, keepdims=True)
+        dependent_logp = logps_dict[inner_value]
+        extra_dims = dependent_logp.type.ndim - joint_logp_ndim
+        if extra_dims:
+            dependent_logp = dependent_logp.sum(range(0, extra_dims))
+        joint_logp += dependent_logp
 
-    # Wrap the joint_logp graph in an OpFromGrah, so that we can evaluate it at different
+    # Wrap the joint_logp graph in an OpFromGraph, so that we can evaluate it at different
     # values of the marginalized RV
     # Some inputs are not root inputs (such as transformed projections of value variables)
     # Or cannot be used as inputs to an OpFromGraph (shared variables and constants)
