@@ -410,7 +410,7 @@ class MarginalModel(Model):
                 marginalized_rv.type, dependent_logps
             )
 
-            rv_shape = constant_fold(tuple(marginalized_rv.shape))
+            rv_shape = constant_fold(tuple(marginalized_rv.shape), raise_not_constant=False)
             rv_domain = get_domain_of_finite_discrete_rv(marginalized_rv)
             rv_domain_tensor = pt.moveaxis(
                 pt.full(
@@ -579,6 +579,15 @@ def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
     return True
 
 
+from pytensor.graph.basic import graph_inputs
+
+
+def collect_shared_vars(outputs, blockers):
+    return [
+        inp for inp in graph_inputs(outputs, blockers=blockers) if isinstance(inp, SharedVariable)
+    ]
+
+
 def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs):
     # TODO: This should eventually be integrated in a more general routine that can
     #  identify other types of supported marginalization, of which finite discrete
@@ -621,14 +630,8 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     rvs_to_marginalize = [rv_to_marginalize, *dependent_rvs]
 
     outputs = rvs_to_marginalize
-    # Clone replace inner RV rng inputs so that we can be sure of the update order
-    # replace_inputs = {rng: rng.type() for rng in updates_rvs_to_marginalize.keys()}
-    # Clone replace outter RV inputs, so that their shared RNGs don't make it into
-    # the inner graph of the marginalized RVs
-    # FIXME: This shouldn't be needed!
-    replace_inputs = {}
-    replace_inputs.update({input_rv: input_rv.type() for input_rv in input_rvs})
-    cloned_outputs = clone_replace(outputs, replace=replace_inputs)
+    # We are strict about shared variables in SymbolicRandomVariables
+    inputs = input_rvs + collect_shared_vars(rvs_to_marginalize, blockers=input_rvs)
 
     if isinstance(rv_to_marginalize.owner.op, DiscreteMarkovChain):
         marginalize_constructor = DiscreteMarginalMarkovChainRV
@@ -636,12 +639,12 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
         marginalize_constructor = FiniteDiscreteMarginalRV
 
     marginalization_op = marginalize_constructor(
-        inputs=list(replace_inputs.values()),
-        outputs=cloned_outputs,
+        inputs=inputs,
+        outputs=outputs,
         ndim_supp=ndim_supp,
     )
 
-    marginalized_rvs = marginalization_op(*replace_inputs.keys())
+    marginalized_rvs = marginalization_op(*inputs)
     fgraph.replace_all(tuple(zip(rvs_to_marginalize, marginalized_rvs)))
     return rvs_to_marginalize, marginalized_rvs
 

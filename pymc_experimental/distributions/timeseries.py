@@ -202,13 +202,13 @@ class DiscreteMarkovChain(Distribution):
         discrete_mc_ = pt.moveaxis(pt.concatenate([init_dist_, markov_chain], axis=0), 0, -1)
 
         discrete_mc_op = DiscreteMarkovChainRV(
-            inputs=[P_, steps_, init_dist_],
+            inputs=[P_, steps_, init_dist_, state_rng],
             outputs=[state_next_rng, discrete_mc_],
             ndim_supp=1,
             n_lags=n_lags,
         )
 
-        discrete_mc = discrete_mc_op(P, steps, init_dist)
+        discrete_mc = discrete_mc_op(P, steps, init_dist, state_rng)
         return discrete_mc
 
 
