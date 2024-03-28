@@ -193,12 +193,12 @@ class _LinearGaussianStateSpace(Continuous):
 
         (ss_rng,) = tuple(updates.values())
         linear_gaussian_ss_op = LinearGaussianStateSpaceRV(
-            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, steps_],
+            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, steps_, rng],
             outputs=[ss_rng, statespace_],
             ndim_supp=1,
         )
 
-        linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, steps)
+        linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, steps, rng)
         return linear_gaussian_ss
 
 
@@ -354,10 +354,10 @@ class SequenceMvNormal(Continuous):
         (seq_mvn_rng,) = tuple(updates.values())
 
         mvn_seq_op = KalmanFilterRV(
-            inputs=[mus_, covs_, logp_, steps_], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
+            inputs=[mus_, covs_, logp_, steps_, rng], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
         )
 
-        mvn_seq = mvn_seq_op(mus, covs, logp, steps)
+        mvn_seq = mvn_seq_op(mus, covs, logp, steps, rng)
         return mvn_seq
 
 
