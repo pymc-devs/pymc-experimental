@@ -758,3 +758,19 @@ def test_marginalized_hmm_multiple_emissions(batch_emission1, batch_emission2):
     test_value_emission2 = np.broadcast_to(-test_value, emission2_shape)
     test_point = {"emission_1": test_value_emission1, "emission_2": test_value_emission2}
     np.testing.assert_allclose(logp_fn(test_point), expected_logp)
+
+
+@pytest.importorskip("jax")
+def test_mutable_indexing_jax_backend():
+    from pymc.sampling.jax import get_jaxified_logp
+
+    with MarginalModel() as model:
+        data = pm.MutableData(f"data", np.zeros(10))
+
+        cat_effect = pm.Normal("cat_effect", sigma=1, shape=5)
+        cat_effect_idx = pm.MutableData("cat_effect_idx", np.array([0, 1] * 5))
+
+        is_outlier = pm.Bernoulli("is_outlier", 0.4, shape=10)
+        pm.LogNormal("y", mu=cat_effect[cat_effect_idx], sigma=1 + is_outlier, observed=data)
+    model.marginalize(["is_outlier"])
+    get_jaxified_logp(model)
