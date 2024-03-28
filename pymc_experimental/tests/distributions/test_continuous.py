@@ -33,7 +33,7 @@ from pymc.testing import (
 )
 
 # the distributions to be tested
-from pymc_experimental.distributions import Chi, GenExtreme, Maxwell
+from pymc_experimental.distributions import Chi, GenExtreme, Maxwell, GeneralizedNormal
 
 
 class TestGenExtremeClass:
@@ -182,3 +182,46 @@ class TestMaxwell:
             {"a": Rplus},
             lambda value, a: sp.maxwell.logcdf(value, scale=a),
         )
+
+
+class TestGeneralizedNormal:
+    """
+    Wrapper class so that tests of experimental additions can be dropped into
+    PyMC directly on adoption.
+    """
+
+    def test_logp(self):
+        check_logp(
+            pymc_dist=GeneralizedNormal,
+            domain=R,
+            paradomains={"mu": R, "alpha": Rplus, "beta": Rplus},
+            scipy_logp=lambda value, mu, alpha, beta: sp.gennorm.logpdf(value, beta, loc=mu, scale=alpha),
+        )
+
+    def test_logcdf(self):
+        check_logcdf(
+            pymc_dist=GeneralizedNormal,
+            domain=R,
+            paradomains={"mu": R, "alpha": Rplus, "beta": Rplus},
+            scipy_logcdf=lambda value, mu, alpha, beta: sp.gennorm.logcdf(value, beta, loc=mu, scale=alpha),
+        )
+
+
+    def test_gennorm_moment(self, mu, alpha, beta, size, expected):
+        with pm.Model() as model:
+            GeneralizedNormal("x", mu=mu, alpha=alpha, beta=beta, size=size)
+        assert_moment_is_expected(model, expected)
+
+
+
+class TestGeneralizedNormal(BaseTestDistributionRandom):
+    pymc_dist = GeneralizedNormal
+    pymc_dist_params = {"mu": 0, "alpha": 1, "beta": 2.0}
+    expected_rv_op_params = {"mu": 0, "alpha": 1, "beta": 2.0}
+    reference_dist_params = {"loc": 0, "scale": 1, "beta": 2.0}
+    reference_dist = seeded_scipy_distribution_builder("gennorm")
+    tests_to_run = [
+        "check_pymc_params_match_rv_op",
+        "check_pymc_draws_match_reference",
+        "check_rv_size",
+    ]
