@@ -23,7 +23,7 @@ from pymc.testing import (
     Domain,
     I,
     Rplus,
-    assert_moment_is_expected,
+    assert_support_point_is_expected,
     check_logp,
     discrete_random_tester,
 )
@@ -123,7 +123,7 @@ class TestGeneralizedPoisson:
     def test_moment(self, mu, lam, size, expected):
         with pm.Model() as model:
             GeneralizedPoisson("x", mu=mu, lam=lam, size=size)
-        assert_moment_is_expected(model, expected)
+        assert_support_point_is_expected(model, expected)
 
 
 class TestBetaNegativeBinomial:

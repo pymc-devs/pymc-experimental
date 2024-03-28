@@ -25,7 +25,7 @@ from pymc.testing import (
     R,
     Rplus,
     Rplusbig,
-    assert_moment_is_expected,
+    assert_support_point_is_expected,
     check_logcdf,
     check_logp,
     seeded_scipy_distribution_builder,
@@ -111,10 +111,10 @@ class TestGenExtremeClass:
             ),
         ],
     )
-    def test_genextreme_moment(self, mu, sigma, xi, size, expected):
+    def test_genextreme_support_point(self, mu, sigma, xi, size, expected):
         with pm.Model() as model:
             GenExtreme("x", mu=mu, sigma=sigma, xi=xi, size=size)
-        assert_moment_is_expected(model, expected)
+        assert_support_point_is_expected(model, expected)
 
     def test_gen_extreme_scipy_kwarg(self):
         dist = GenExtreme.dist(xi=1, scipy=False)
