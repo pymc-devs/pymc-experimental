@@ -9,8 +9,8 @@ from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import (
     Distribution,
     SymbolicRandomVariable,
-    _moment,
-    moment,
+    _support_point,
+    support_point,
 )
 from pymc.distributions.shape_utils import (
     _change_dist_size,
@@ -221,9 +221,9 @@ def change_mc_size(op, dist, new_size, expand=False):
     return DiscreteMarkovChain.rv_op(*dist.owner.inputs[:-1], size=new_size, n_lags=op.n_lags)
 
 
-@_moment.register(DiscreteMarkovChainRV)
+@_support_point.register(DiscreteMarkovChainRV)
 def discrete_mc_moment(op, rv, P, steps, init_dist, state_rng):
-    init_dist_moment = moment(init_dist)
+    init_dist_moment = support_point(init_dist)
     n_lags = op.n_lags
 
     def greedy_transition(*args):
