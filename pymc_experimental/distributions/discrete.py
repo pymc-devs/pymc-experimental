@@ -143,7 +143,7 @@ class GeneralizedPoisson(pm.distributions.Discrete):
         lam = pt.as_tensor_variable(lam)
         return super().dist([mu, lam], **kwargs)
 
-    def moment(rv, size, mu, lam):
+    def support_point(rv, size, mu, lam):
         mean = pt.floor(mu / (1 - lam))
         if not rv_size_is_none(size):
             mean = pt.full(size, mean)
