@@ -58,7 +58,7 @@ def test_marginalized_bernoulli_logp():
     marginal_rv_node = FiniteDiscreteMarginalRV(
         [mu],
         [idx, y],
-        ndim_supp=None,
+        ndim_supp=0,
         n_updates=0,
     )(
         mu
