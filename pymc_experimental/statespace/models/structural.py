@@ -40,8 +40,7 @@ def order_to_mask(order):
 def _frequency_transition_block(s, j):
     lam = 2 * np.pi * j / s
 
-    # Squeeze because otherwise if lamb has shape (1,), T will have shape (2, 2, 1)
-    return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]]).squeeze()
+    return pt.stack([[pt.cos(lam), pt.sin(lam)], [-pt.sin(lam), pt.cos(lam)]])
 
 
 class StructuralTimeSeries(PyMCStateSpace):
@@ -914,7 +913,7 @@ class MeasurementError(Component):
         self.param_dims = {f"sigma_{self.name}": (OBS_STATE_DIM,)}
         self.param_info = {
             f"sigma_{self.name}": {
-                "shape": (1,),
+                "shape": (self.k_endog,),
                 "constraints": "Positive",
                 "dims": (OBS_STATE_DIM,),
             }
@@ -1015,13 +1014,13 @@ class AutoregressiveComponent(Component):
                 "constraints": None,
                 "dims": (AR_PARAM_DIM,),
             },
-            "sigma_ar": {"shape": (1,), "constraints": "Positive", "dims": None},
+            "sigma_ar": {"shape": (), "constraints": "Positive", "dims": None},
         }
 
     def make_symbolic_graph(self) -> None:
         k_nonzero = int(sum(self.order))
         ar_params = self.make_and_register_variable("ar_params", shape=(k_nonzero,))
-        sigma_ar = self.make_and_register_variable("sigma_ar", shape=(1,))
+        sigma_ar = self.make_and_register_variable("sigma_ar", shape=())
 
         T = np.eye(self.k_states, k=-1)
         self.ssm["transition", :, :] = T
@@ -1194,7 +1193,7 @@ class TimeSeasonality(Component):
         if self.innovations:
             self.param_names += [f"sigma_{self.name}"]
             self.param_info[f"sigma_{self.name}"] = {
-                "shape": (1,),
+                "shape": (),
                 "constraints": "Positive",
                 "dims": None,
             }
@@ -1214,7 +1213,7 @@ class TimeSeasonality(Component):
 
         if self.innovations:
             self.ssm["selection", 0, 0] = 1
-            season_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+            season_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=())
             cov_idx = ("state_cov", *np.diag_indices(1))
             self.ssm[cov_idx] = season_sigma**2
 
@@ -1313,7 +1312,7 @@ class FrequencySeasonality(Component):
         self.ssm["transition", :, :] = T
 
         if self.innovations:
-            sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+            sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=())
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season**2
             self.ssm["selection", :, :] = np.eye(self.k_states)
 
@@ -1339,7 +1338,7 @@ class FrequencySeasonality(Component):
             self.shock_names = self.state_names.copy()
             self.param_names += [f"sigma_{self.name}"]
             self.param_info[f"sigma_{self.name}"] = {
-                "shape": (1,),
+                "shape": (),
                 "constraints": "Positive",
                 "dims": None,
             }
@@ -1480,12 +1479,12 @@ class CycleComponent(Component):
         self.ssm["initial_state", :] = init_state
 
         if self.estimate_cycle_length:
-            lamb = self.make_and_register_variable(f"{self.name}_length", shape=(1,))
+            lamb = self.make_and_register_variable(f"{self.name}_length", shape=())
         else:
             lamb = self.cycle_length
 
         if self.dampen:
-            rho = self.make_and_register_variable(f"{self.name}_dampening_factor", shape=(1,))
+            rho = self.make_and_register_variable(f"{self.name}_dampening_factor", shape=())
         else:
             rho = 1
 
@@ -1493,7 +1492,7 @@ class CycleComponent(Component):
         self.ssm["transition", :, :] = T
 
         if self.innovations:
-            sigma_cycle = self.make_and_register_variable(f"sigma_{self.name}", shape=(1,))
+            sigma_cycle = self.make_and_register_variable(f"sigma_{self.name}", shape=())
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_cycle**2
 
     def populate_component_properties(self):
@@ -1511,7 +1510,7 @@ class CycleComponent(Component):
         if self.estimate_cycle_length:
             self.param_names += [f"{self.name}_length"]
             self.param_info[f"{self.name}_length"] = {
-                "shape": (1,),
+                "shape": (),
                 "constraints": "Positive, non-zero",
                 "dims": None,
             }
@@ -1519,7 +1518,7 @@ class CycleComponent(Component):
         if self.dampen:
             self.param_names += [f"{self.name}_dampening_factor"]
             self.param_info[f"{self.name}_dampening_factor"] = {
-                "shape": (1,),
+                "shape": (),
                 "constraints": "0 < x ≤ 1",
                 "dims": None,
             }
@@ -1527,7 +1526,7 @@ class CycleComponent(Component):
         if self.innovations:
             self.param_names += [f"sigma_{self.name}"]
             self.param_info[f"sigma_{self.name}"] = {
-                "shape": (1,),
+                "shape": (),
                 "constraints": "Positive",
                 "dims": None,
             }
@@ -1609,7 +1608,11 @@ class RegressionComponent(Component):
         }
 
         self.param_info = {
-            f"beta_{self.name}": {"shape": (1,), "constraints": None, "dims": ("exog_state",)},
+            f"beta_{self.name}": {
+                "shape": (self.k_states,),
+                "constraints": None,
+                "dims": ("exog_state",),
+            },
         }
 
         self.data_info = {
@@ -1624,7 +1627,7 @@ class RegressionComponent(Component):
             self.param_names += [f"sigma_beta_{self.name}"]
             self.param_dims[f"sigma_beta_{self.name}"] = "exog_state"
             self.param_info[f"sigma_beta_{self.name}"] = {
-                "shape": (1,),
+                "shape": (),
                 "constraints": "Positive",
                 "dims": ("exog_state",),
             }
