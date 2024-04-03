@@ -130,7 +130,7 @@ def _assert_params_info_correct(param_info, coords, param_dims):
         else:
             inferred_dims = None
 
-        shape = tuple(len(label) for label in labels) if labels is not None else (1,)
+        shape = tuple(len(label) for label in labels) if labels is not None else ()
 
         assert info["shape"] == shape
         assert dims == inferred_dims
@@ -196,9 +196,9 @@ def create_structural_model_and_equivalent_statsmodel(
     components = []
 
     if irregular:
-        sigma2 = np.abs(rng.normal()).astype(floatX)
+        sigma2 = np.abs(rng.normal()).astype(floatX).item()
         params["sigma_irregular"] = np.sqrt(sigma2)
-        sm_params["sigma2.irregular"] = sigma2.item()
+        sm_params["sigma2.irregular"] = sigma2
         expected_param_dims["sigma_irregular"] += ("observed_state",)
 
         comp = st.MeasurementError("irregular")
@@ -298,7 +298,7 @@ def create_structural_model_and_equivalent_statsmodel(
         sm_init.update(seasonal_dict)
 
         if stochastic_seasonal:
-            sigma2 = np.abs(rng.normal(size=(1,))).astype(floatX)
+            sigma2 = np.abs(rng.normal()).astype(floatX)
             params["sigma_seasonal"] = np.sqrt(sigma2)
             sm_params["sigma2.seasonal"] = sigma2
             expected_coords[SHOCK_DIM] += [
@@ -322,9 +322,6 @@ def create_structural_model_and_equivalent_statsmodel(
             n_states = 2 * n - int(last_state_not_identified)
             state_names = [f"seasonal_{s}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
 
-            # if last_state_not_identified:
-            #     state_names.pop(-1)
-
             seasonal_params = rng.normal(size=n_states).astype(floatX)
 
             params[f"seasonal_{s}"] = seasonal_params
@@ -343,7 +340,7 @@ def create_structural_model_and_equivalent_statsmodel(
                 state_count += 1
 
             if has_innov:
-                sigma2 = np.abs(rng.normal(size=(1,))).astype(floatX)
+                sigma2 = np.abs(rng.normal()).astype(floatX)
                 params[f"sigma_seasonal_{s}"] = np.sqrt(sigma2)
                 sm_params[f"sigma2.freq_seasonal_{s}({n})"] = sigma2
                 expected_coords[SHOCK_DIM] += state_names
@@ -359,7 +356,7 @@ def create_structural_model_and_equivalent_statsmodel(
 
         # Statsmodels takes the frequency not the cycle length, so convert it.
         sm_params["frequency.cycle"] = 2.0 * np.pi / cycle_length
-        params["cycle_length"] = np.atleast_1d(cycle_length)
+        params["cycle_length"] = cycle_length
 
         init_cycle = rng.normal(size=(2,)).astype(floatX)
         params["cycle"] = init_cycle
@@ -374,7 +371,7 @@ def create_structural_model_and_equivalent_statsmodel(
         sm_init["cycle.auxilliary"] = init_cycle[1]
 
         if stochastic_cycle:
-            sigma2 = np.abs(rng.normal(size=(1,))).astype(floatX)
+            sigma2 = np.abs(rng.normal()).astype(floatX)
             params["sigma_cycle"] = np.sqrt(sigma2)
             expected_coords[SHOCK_DIM] += state_names
             expected_coords[SHOCK_AUX_DIM] += state_names
@@ -382,7 +379,7 @@ def create_structural_model_and_equivalent_statsmodel(
             sm_params["sigma2.cycle"] = sigma2
 
         if damped_cycle:
-            rho = rng.beta(1, 1, size=(1,)).astype(floatX)
+            rho = rng.beta(1, 1)
             params["cycle_dampening_factor"] = rho
             sm_params["damping.cycle"] = rho
 
@@ -398,7 +395,9 @@ def create_structural_model_and_equivalent_statsmodel(
     if autoregressive is not None:
         ar_names = [f"L{i+1}.data" for i in range(autoregressive)]
         ar_params = rng.normal(size=(autoregressive,)).astype(floatX)
-        sigma2 = np.abs(rng.normal(size=(1,))).astype(floatX)
+        if autoregressive == 1:
+            ar_params = ar_params.item()
+        sigma2 = np.abs(rng.normal()).astype(floatX)
 
         params["ar_params"] = ar_params
         params["sigma_ar"] = np.sqrt(sigma2)
@@ -550,8 +549,9 @@ def test_autoregressive_model(order, rng):
     ar = st.AutoregressiveComponent(order=order)
     params = {
         "ar_params": np.full((sum(ar.order),), 0.5, dtype=floatX),
-        "sigma_ar": np.array([0.0], dtype=floatX),
+        "sigma_ar": 0.0,
     }
+
     x, y = simulate_from_numpy_model(ar, rng, params, steps=100)
 
     # Check coords
@@ -578,7 +578,7 @@ def test_time_seasonality(s, innovations, rng):
 
     params = {"season_coefs": x0}
     if mod.innovations:
-        params["sigma_season"] = np.array([0.0], dtype=floatX)
+        params["sigma_season"] = 0.0
 
     x, y = simulate_from_numpy_model(mod, rng, params)
     y = y.ravel()
@@ -604,7 +604,7 @@ def get_shift_factor(s):
 def test_frequency_seasonality(n, s, rng):
     mod = st.FrequencySeasonality(season_length=s, n=n, name="season")
     x0 = rng.normal(size=mod.n_coefs).astype(floatX)
-    params = {"season": x0, "sigma_season": np.array([0.0], dtype=floatX)}
+    params = {"season": x0, "sigma_season": 0.0}
     k = get_shift_factor(s)
     T = int(s * k)
 
@@ -641,10 +641,7 @@ def test_cycle_component_with_dampening(rng):
     cycle = st.CycleComponent(
         name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False, dampen=True
     )
-    params = {
-        "cycle": np.array([10.0, 10.0], dtype=floatX),
-        "cycle_dampening_factor": np.array([0.75], dtype=floatX),
-    }
+    params = {"cycle": np.array([10.0, 10.0], dtype=floatX), "cycle_dampening_factor": 0.75}
     x, y = simulate_from_numpy_model(cycle, rng, params, steps=100)
 
     # Check that the cycle dampens to zero over time
@@ -657,9 +654,9 @@ def test_cycle_component_with_innovations_and_cycle_length(rng):
     )
     params = {
         "cycle": np.array([1.0, 1.0], dtype=floatX),
-        "cycle_length": np.array([12], dtype=floatX),
-        "cycle_dampening_factor": np.array([0.95], dtype=floatX),
-        "sigma_cycle": np.array([1.0], dtype=floatX),
+        "cycle_length": 12.0,
+        "cycle_dampening_factor": 0.95,
+        "sigma_cycle": 1.0,
     }
 
     x, y = simulate_from_numpy_model(cycle, rng, params)
@@ -707,7 +704,7 @@ def test_add_components():
     }
     se_params = {
         "seasonal_coefs": np.ones(11, dtype=floatX),
-        "sigma_seasonal": np.ones(1, dtype=floatX),
+        "sigma_seasonal": 1.0,
     }
     all_params = ll_params.copy()
     all_params.update(se_params)
