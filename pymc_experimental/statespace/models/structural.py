@@ -20,7 +20,6 @@ from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_DIM,
     AR_PARAM_DIM,
     LONG_MATRIX_NAMES,
-    OBS_STATE_DIM,
     POSITION_DERIVATIVE_NAMES,
     TIME_DIM,
 )
@@ -910,17 +909,17 @@ class MeasurementError(Component):
 
     def populate_component_properties(self):
         self.param_names = [f"sigma_{self.name}"]
-        self.param_dims = {f"sigma_{self.name}": (OBS_STATE_DIM,)}
+        self.param_dims = {}
         self.param_info = {
             f"sigma_{self.name}": {
-                "shape": (self.k_endog,),
+                "shape": (),
                 "constraints": "Positive",
-                "dims": (OBS_STATE_DIM,),
+                "dims": None,
             }
         }
 
     def make_symbolic_graph(self) -> None:
-        sigma_shape = () if self.k_endog == 1 else (self.k_endog,)
+        sigma_shape = ()
         error_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=sigma_shape)
         diag_idx = np.diag_indices(self.k_endog)
         idx = np.s_["obs_cov", diag_idx[0], diag_idx[1]]
