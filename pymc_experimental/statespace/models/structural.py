@@ -1148,6 +1148,7 @@ class TimeSeasonality(Component):
         innovations: bool = True,
         name: Optional[str] = None,
         state_names: Optional[list] = None,
+        pop_state: bool = True,
     ):
         if name is None:
             name = f"Seasonal[s={season_length}]"
@@ -1160,11 +1161,14 @@ class TimeSeasonality(Component):
                 )
             state_names = state_names.copy()
         self.innovations = innovations
+        self.pop_state = pop_state
 
-        # The first state doesn't get a coefficient, it is defined as -sum(state_coefs)
-        # TODO: Can I stash that information in the model somewhere so users don't have to know that?
-        state_0 = state_names.pop(0)
-        k_states = season_length - 1
+        if self.pop_state:
+            # In traditional models, the first state isn't identified, so we can help out the user by automatically
+            # discarding it.
+            # TODO: Can this be stashed and reconstructed automatically somehow?
+            state_names.pop(0)
+            k_states = season_length - 1
 
         super().__init__(
             name=name,
