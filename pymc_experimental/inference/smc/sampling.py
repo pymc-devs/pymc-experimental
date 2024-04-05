@@ -198,13 +198,13 @@ def arviz_from_particles(model, particles):
     -------
     """
     n_particles = jax.tree_util.tree_flatten(particles)[0][0].shape[0]
-    by_varname = {k.name: v.squeeze()[np.newaxis, :] for k, v in zip(model.value_vars, particles)}
+    by_varname = {k.name: v for k, v in zip(model.value_vars, particles)}
     varnames = [v.name for v in model.value_vars]
     with model:
         strace = NDArray(name=model.name)
         strace.setup(n_particles, 0)
     for particle_index in range(0, n_particles):
-        strace.record(point={k: by_varname[k][0][particle_index] for k in varnames})
+        strace.record(point={k: by_varname[k][particle_index] for k in varnames})
         multitrace = MultiTrace((strace,))
     return to_inference_data(multitrace, log_likelihood=False)
 
@@ -297,10 +297,10 @@ def blackjax_particles_from_pymc_population(model, pymc_population):
 
     def _format(var):
         variable = pymc_population[var.name]
-        if len(variable.shape) == 1:
-            return variable[:, np.newaxis]
-        else:
-            return variable
+        #if len(variable.shape) == 1:
+        #    return variable[:, np.newaxis]
+        #else:
+        return variable
 
     return [_format(var) for var in order_of_vars]
 
@@ -384,7 +384,7 @@ def get_jaxified_particles_fn(model, graph_outputs):
     logp_fn = get_jaxified_graph(inputs=model.value_vars, outputs=[graph_outputs])
 
     def logp_fn_wrap(particles):
-        return logp_fn(*[p.squeeze() for p in particles])[0]
+        return logp_fn(*particles)[0]
 
     return logp_fn_wrap
 
