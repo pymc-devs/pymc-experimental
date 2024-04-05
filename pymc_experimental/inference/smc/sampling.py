@@ -295,14 +295,7 @@ def blackjax_particles_from_pymc_population(model, pymc_population):
 
     order_of_vars = model.value_vars
 
-    def _format(var):
-        variable = pymc_population[var.name]
-        #if len(variable.shape) == 1:
-        #    return variable[:, np.newaxis]
-        #else:
-        return variable
-
-    return [_format(var) for var in order_of_vars]
+    return [pymc_population[var.name]for var in order_of_vars]
 
 
 def add_to_inference_data(
