@@ -199,7 +199,6 @@ def create_structural_model_and_equivalent_statsmodel(
         sigma2 = np.abs(rng.normal()).astype(floatX).item()
         params["sigma_irregular"] = np.sqrt(sigma2)
         sm_params["sigma2.irregular"] = sigma2
-        expected_param_dims["sigma_irregular"] += ("observed_state",)
 
         comp = st.MeasurementError("irregular")
         components.append(comp)
