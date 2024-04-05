@@ -211,7 +211,7 @@ class GenExtreme(Continuous):
             logc, sigma > 0, pt.and_(xi > -1, xi < 1), msg="sigma > 0 or -1 < xi < 1"
         )
 
-    def moment(rv, size, mu, sigma, xi):
+    def support_point(rv, size, mu, sigma, xi):
         r"""
         Using the mode, as the mean can be infinite when :math:`\xi > 1`
         """

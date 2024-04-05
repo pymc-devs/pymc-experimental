@@ -655,7 +655,7 @@ def get_domain_of_finite_discrete_rv(rv: TensorVariable) -> Tuple[int, ...]:
         return tuple(range(pt.get_vector_length(p_param)))
     elif isinstance(op, DiscreteUniform):
         lower, upper = constant_fold(rv.owner.inputs[3:])
-        return tuple(range(lower, upper + 1))
+        return tuple(np.arange(lower, upper + 1))
     elif isinstance(op, DiscreteMarkovChain):
         P = rv.owner.inputs[0]
         return tuple(range(pt.get_vector_length(P[-1])))

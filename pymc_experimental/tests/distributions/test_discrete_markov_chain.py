@@ -129,7 +129,7 @@ class TestDiscreteMarkovRV:
             state = chain_np[i]
             chain_np[i + 1] = np.argmax(P_np[state])
 
-        dmc_chain = pm.distributions.distribution.moment(chain).eval()
+        dmc_chain = pm.distributions.distribution.support_point(chain).eval()
 
         assert np.allclose(dmc_chain, chain_np)
 
