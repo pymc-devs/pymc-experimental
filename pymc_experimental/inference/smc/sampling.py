@@ -166,7 +166,7 @@ def sample_smc_blackjax(
         num_mcmc_steps,
         kernel,
         diagnosis,
-        total_iterations,
+        int(total_iterations),
         iterations_to_diagnose,
         inner_kernel_params,
         running_time,
