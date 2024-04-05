@@ -112,7 +112,18 @@ def add_data_to_active_model(values, index):
     if OBS_STATE_DIM in pymc_mod.coords:
         data_dims = [TIME_DIM, OBS_STATE_DIM]
 
-    pymc_mod.add_coord(TIME_DIM, index)
+    if TIME_DIM not in pymc_mod.coords:
+        pymc_mod.add_coord(TIME_DIM, index)
+    else:
+        found_time = pymc_mod.coords[TIME_DIM]
+        if found_time is None:
+            pymc_mod.coords.update({TIME_DIM: index})
+        elif not np.array_equal(found_time, index):
+            raise ValueError(
+                "Provided data has a different time index than the model. Please ensure that the time values "
+                "set on coords matches that of the exogenous data."
+            )
+
     data = pm.Data("data", values, dims=data_dims)
 
     return data
