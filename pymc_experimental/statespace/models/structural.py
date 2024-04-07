@@ -1499,7 +1499,7 @@ class CycleComponent(Component):
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_cycle**2
 
     def populate_component_properties(self):
-        self.state_names = [f"{self.name}_{f}" for f in ["Sin", "Cos"]]
+        self.state_names = [f"{self.name}_{f}" for f in ["Cos", "Sin"]]
         self.param_names = [f"{self.name}"]
 
         self.param_info = {
