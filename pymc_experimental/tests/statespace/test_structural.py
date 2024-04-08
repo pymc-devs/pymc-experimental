@@ -750,7 +750,7 @@ def test_filter_scans_time_varying_design_matrix(rng):
     mod = reg.build(verbose=False)
 
     with pm.Model(coords=mod.coords) as m:
-        data_exog = pm.MutableData("data_exog", data.values)
+        data_exog = pm.Data("data_exog", data.values)
 
         x0 = pm.Normal("x0", dims=["state"])
         P0 = pm.Deterministic("P0", pt.eye(mod.k_states), dims=["state", "state_aux"])
@@ -781,7 +781,7 @@ def test_extract_components_from_idata(rng):
     mod = (ll + season + reg + me).build(verbose=False)
 
     with pm.Model(coords=mod.coords) as m:
-        data_exog = pm.MutableData("data_exog", data.values)
+        data_exog = pm.Data("data_exog", data.values)
 
         x0 = pm.Normal("x0", dims=["state"])
         P0 = pm.Deterministic("P0", pt.eye(mod.k_states), dims=["state", "state_aux"])

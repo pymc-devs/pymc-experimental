@@ -608,8 +608,8 @@ def test_is_conditional_dependent_static_shape():
 
 def test_data_container():
     """Test that MarginalModel can handle Data containers."""
-    with MarginalModel(coords_mutable={"obs": [0]}) as marginal_m:
-        x = pm.MutableData("x", 2.5)
+    with MarginalModel(coords={"obs": [0]}) as marginal_m:
+        x = pm.Data("x", 2.5)
         idx = pm.Bernoulli("idx", p=0.7, dims="obs")
         y = pm.Normal("y", idx * x, dims="obs")
 
@@ -617,8 +617,8 @@ def test_data_container():
 
     logp_fn = marginal_m.compile_logp()
 
-    with pm.Model(coords_mutable={"obs": [0]}) as m_ref:
-        x = pm.MutableData("x", 2.5)
+    with pm.Model(coords={"obs": [0]}) as m_ref:
+        x = pm.Data("x", 2.5)
         y = pm.NormalMixture("y", w=[0.3, 0.7], mu=[0, x], dims="obs")
 
     ref_logp_fn = m_ref.compile_logp()

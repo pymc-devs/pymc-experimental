@@ -117,7 +117,7 @@ def exog_pymc_mod(exog_ss_mod, rng):
     X = rng.normal(size=(100, 3)).astype(floatX)
 
     with pm.Model(coords=exog_ss_mod.coords) as m:
-        exog_data = pm.MutableData("data_exog", X)
+        exog_data = pm.Data("data_exog", X)
         initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
         P0_sigma = pm.Exponential("P0_sigma", 1)
         P0 = pm.Deterministic(
