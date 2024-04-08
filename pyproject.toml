@@ -17,6 +17,9 @@ filterwarnings =[
 
   # JAX issues an over-eager warning if os.fork() is called when the JAX module is loaded, even if JAX isn't being used
   'ignore:os\.fork\(\) was called\.:RuntimeWarning',
+
+  # Warning coming from blackjax
+  'ignore:jax\.tree_map is deprecated:DeprecationWarning',
 ]
 
 [tool.black]
