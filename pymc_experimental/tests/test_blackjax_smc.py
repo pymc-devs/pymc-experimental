@@ -133,7 +133,7 @@ def test_blackjax_particles_from_pymc_population_univariate():
     model = fast_model()
     population = {"x": np.array([2, 3, 4])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    jax.tree_map(np.testing.assert_allclose, blackjax_particles, [np.array([[2], [3], [4]])])
+    jax.tree.map(np.testing.assert_allclose, blackjax_particles, [np.array([[2], [3], [4]])])
 
 
 def test_blackjax_particles_from_pymc_population_multivariate():
@@ -144,7 +144,7 @@ def test_blackjax_particles_from_pymc_population_multivariate():
 
     population = {"x": np.array([0.34614613, 1.09163261, -0.44526825]), "z": np.array([1, 2, 3])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    jax.tree_map(
+    jax.tree.map(
         np.testing.assert_allclose,
         blackjax_particles,
         [np.array([[0.34614613], [1.09163261], [-0.44526825]]), np.array([[1], [2], [3]])],
@@ -168,7 +168,7 @@ def test_blackjax_particles_from_pymc_population_multivariable():
     population = {"x": np.array([[2, 3], [5, 6], [7, 9]]), "z": np.array([11, 12, 13])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
 
-    jax.tree_map(
+    jax.tree.map(
         np.testing.assert_allclose,
         blackjax_particles,
         [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11], [12], [13]])],
@@ -196,7 +196,7 @@ def test_get_jaxified_logprior():
     """
     logprior = get_jaxified_logprior(fast_model())
     for point in [-0.5, 0.0, 0.5]:
-        jax.tree_map(
+        jax.tree.map(
             np.testing.assert_allclose,
             jax.vmap(logprior)([np.array([point])]),
             np.log(scipy.stats.norm(0, 1).pdf(point)),
@@ -212,7 +212,7 @@ def test_get_jaxified_loglikelihood():
     """
     loglikelihood = get_jaxified_loglikelihood(fast_model())
     for point in [-0.5, 0.0, 0.5]:
-        jax.tree_map(
+        jax.tree.map(
             np.testing.assert_allclose,
             jax.vmap(loglikelihood)([np.array([point])]),
             np.log(scipy.stats.norm(point, 1).pdf(0)),
