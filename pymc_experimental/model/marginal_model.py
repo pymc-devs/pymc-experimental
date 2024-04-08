@@ -6,7 +6,7 @@ import pymc
 import pytensor.tensor as pt
 from arviz import dict_to_dataset
 from pymc import SymbolicRandomVariable
-from pymc.backends.arviz import coords_and_dims_for_inferencedata
+from pymc.backends.arviz import coords_and_dims_for_inferencedata, dataset_to_point_list
 from pymc.distributions.discrete import Bernoulli, Categorical, DiscreteUniform
 from pymc.distributions.transforms import Chain
 from pymc.logprob.abstract import _logprob
@@ -14,7 +14,7 @@ from pymc.logprob.basic import conditional_logp, logp
 from pymc.logprob.transforms import IntervalTransform
 from pymc.model import Model
 from pymc.pytensorf import compile_pymc, constant_fold, inputvars
-from pymc.util import _get_seeds_per_chain, dataset_to_point_list, treedict
+from pymc.util import _get_seeds_per_chain, treedict
 from pytensor import Mode, scan
 from pytensor.compile import SharedVariable
 from pytensor.compile.builders import OpFromGraph
