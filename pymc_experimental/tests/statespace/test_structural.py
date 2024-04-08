@@ -361,7 +361,7 @@ def create_structural_model_and_equivalent_statsmodel(
         params["cycle"] = init_cycle
         expected_param_dims["cycle"] += ("cycle_state",)
 
-        state_names = ["cycle_Sin", "cycle_Cos"]
+        state_names = ["cycle_Cos", "cycle_Sin"]
         expected_coords["cycle_state"] += state_names
         expected_coords[ALL_STATE_DIM] += state_names
         expected_coords[ALL_STATE_AUX_DIM] += state_names
