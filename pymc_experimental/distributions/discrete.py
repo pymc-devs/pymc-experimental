@@ -20,6 +20,15 @@ from pytensor import tensor as pt
 from pytensor.tensor.random.op import RandomVariable
 
 
+def log1mexp(x):
+    cond = x < np.log(0.5)
+    return np.piecewise(
+        x,
+        [cond, ~cond],
+        [lambda x: np.log1p(-np.exp(x)), lambda x: np.log(-np.expm1(x))],
+    )
+
+
 class GeneralizedPoissonRV(RandomVariable):
     name = "generalized_poisson"
     ndim_supp = 0
@@ -74,7 +83,7 @@ class GeneralizedPoissonRV(RandomVariable):
                 log1p_lam_m_C = np.where(
                     pos_lam,
                     np.log1p(np.exp(abs_log_lam - log_c)),
-                    pm.math.log1mexp_numpy(abs_log_lam - log_c, negative_input=True),
+                    log1mexp(abs_log_lam - log_c),
                 )
                 log_p = log_c + log1p_lam_m_C * (x_ - 1) + log_p - np.log(x_) - lam
                 log_s = np.logaddexp(log_s, log_p)
