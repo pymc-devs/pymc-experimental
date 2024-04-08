@@ -291,7 +291,7 @@ class PyMCStateSpace:
         out = out.rstrip()
 
         _log.info(
-            "The following MutableData variables should be assigned to the model inside a PyMC "
+            "The following Data variables should be assigned to the model inside a PyMC "
             f"model block: \n"
             f"{out}"
         )
@@ -366,7 +366,7 @@ class PyMCStateSpace:
     @property
     def data_info(self) -> dict[str, dict[str, Any]]:
         """
-        Information about MutableData variables that need to be declared in the PyMC model block.
+        Information about Data variables that need to be declared in the PyMC model block.
 
         Returns a dictionary of data_name: dictionary of property-name:property description pairs. The return value is
         used by the ``_print_data_requirements`` method, to print a message telling users how to define the necessary
@@ -877,7 +877,7 @@ class PyMCStateSpace:
             or a Pytensor tensor variable.
 
         register_data : bool, optional, default=True
-            If True, the observed data will be registered with PyMC as a pm.MutableData variable. In addition,
+            If True, the observed data will be registered with PyMC as a pm.Data variable. In addition,
             a "time" dim will be created an added to the model's coords.
 
         mode : Optional[str], optional, default=None
