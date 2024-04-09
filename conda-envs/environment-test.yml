@@ -4,13 +4,12 @@ channels:
 - defaults
 dependencies:
 - pip
-
 - pytest-cov>=2.5
 - pytest>=3.0
 - dask
 - xhistogram
 - statsmodels
 - pip:
-  - pymc>=5.11.0  # CI was failing to resolve
+  - pymc>=5.13.0  # CI was failing to resolve
   - blackjax
   - scikit-learn
