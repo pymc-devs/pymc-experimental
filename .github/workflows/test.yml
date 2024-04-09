@@ -30,9 +30,9 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Cache conda
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         env:
           # Increase this value to reset cache if environment-test.yml has not changed
           CACHE_NUMBER: 0
@@ -41,7 +41,7 @@ jobs:
           key: ${{ runner.os }}-py${{matrix.python-version}}-conda-${{ env.CACHE_NUMBER }}-${{
             hashFiles('conda-envs/environment-test.yml') }}
       - name: Cache multiple paths
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         env:
           # Increase this value to reset cache if requirements.txt has not changed
           CACHE_NUMBER: 0
@@ -52,7 +52,7 @@ jobs:
             ~\AppData\Local\pip\Cache
           key: ${{ runner.os }}-build-${{ matrix.python-version }}-${{
             hashFiles('requirements.txt') }}
-      - uses: conda-incubator/setup-miniconda@v2
+      - uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-variant: Mambaforge
           miniforge-version: latest
@@ -94,9 +94,9 @@ jobs:
       run:
         shell: cmd
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Cache conda
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         env:
           # Increase this value to reset cache if conda-envs/windows-environment-test.yml has not changed
           CACHE_NUMBER: 0
@@ -105,7 +105,7 @@ jobs:
           key: ${{ runner.os }}-py${{matrix.python-version}}-conda-${{ env.CACHE_NUMBER }}-${{
             hashFiles('conda-envs/windows-environment-test.yml') }}
       - name: Cache multiple paths
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         env:
           # Increase this value to reset cache if requirements.txt has not changed
           CACHE_NUMBER: 0
@@ -116,7 +116,7 @@ jobs:
             ~\AppData\Local\pip\Cache
           key: ${{ runner.os }}-build-${{ matrix.python-version }}-${{
             hashFiles('requirements.txt') }}
-      - uses: conda-incubator/setup-miniconda@v2
+      - uses: conda-incubator/setup-miniconda@v3
         with:
           miniforge-variant: Mambaforge
           miniforge-version: latest
