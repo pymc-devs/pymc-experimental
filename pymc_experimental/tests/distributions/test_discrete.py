@@ -197,9 +197,11 @@ class TestBetaNegativeBinomial:
 
 class TestSkellam:
     def test_logp(self):
+        # Scipy Skellam underflows to -inf earlier than PyMC
+        Rplus_small = Domain([0, 0.01, 0.1, 0.9, 0.99, 1, 1.5, 2, 10, np.inf])
         check_logp(
             Skellam,
             I,
-            {"mu1": Rplus, "mu2": Rplus},
+            {"mu1": Rplus_small, "mu2": Rplus_small},
             lambda value, mu1, mu2: scipy.stats.skellam.logpmf(value, mu1, mu2),
         )
