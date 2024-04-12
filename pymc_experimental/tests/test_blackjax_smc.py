@@ -181,7 +181,7 @@ def test_arviz_from_particles():
     with model:
         inference_data = arviz_from_particles(model, particles)
 
-    assert inference_data.posterior.dims == Frozen({"chain": 1, "draw": 3, "x_dim_0": 2})
+    assert inference_data.posterior.sizes == Frozen({"chain": 1, "draw": 3, "x_dim_0": 2})
     assert inference_data.posterior.data_vars.dtypes == Frozen(
         {"x": dtype("float64"), "z": dtype("float64")}
     )
