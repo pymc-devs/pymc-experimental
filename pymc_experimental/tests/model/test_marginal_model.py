@@ -42,7 +42,9 @@ def disaster_model():
         early_rate = pm.Exponential("early_rate", 1.0, initval=3)
         late_rate = pm.Exponential("late_rate", 1.0, initval=1)
         rate = pm.math.switch(switchpoint >= years, early_rate, late_rate)
-        with pytest.warns(ImputationWarning):
+        with pytest.warns(ImputationWarning), pytest.warns(
+            RuntimeWarning, match="invalid value encountered in cast"
+        ):
             disasters = pm.Poisson("disasters", rate, observed=disaster_data)
 
     return disaster_model, years
