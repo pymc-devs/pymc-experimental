@@ -1,10 +1,10 @@
 import warnings
-from typing import Sequence, Tuple, Union
+from typing import Sequence
 
 import numpy as np
 import pymc
 import pytensor.tensor as pt
-from arviz import dict_to_dataset
+from arviz import InferenceData, dict_to_dataset
 from pymc import SymbolicRandomVariable
 from pymc.backends.arviz import coords_and_dims_for_inferencedata, dataset_to_point_list
 from pymc.distributions.discrete import Bernoulli, Categorical, DiscreteUniform
@@ -14,7 +14,7 @@ from pymc.logprob.basic import conditional_logp, logp
 from pymc.logprob.transforms import IntervalTransform
 from pymc.model import Model
 from pymc.pytensorf import compile_pymc, constant_fold
-from pymc.util import _get_seeds_per_chain, treedict
+from pymc.util import RandomState, _get_seeds_per_chain, treedict
 from pytensor import Mode, scan
 from pytensor.compile import SharedVariable
 from pytensor.graph import Constant, FunctionGraph, ancestors, clone_replace
@@ -235,7 +235,7 @@ class MarginalModel(Model):
 
     def marginalize(
         self,
-        rvs_to_marginalize: Union[TensorVariable, str, Sequence[TensorVariable], Sequence[str]],
+        rvs_to_marginalize: TensorVariable | Sequence[TensorVariable] | str | Sequence[str],
     ):
         if not isinstance(rvs_to_marginalize, Sequence):
             rvs_to_marginalize = (rvs_to_marginalize,)
@@ -292,7 +292,7 @@ class MarginalModel(Model):
         fn = self.compile_fn(inputs=self.free_RVs, outs=transformed_rvs)
         return fn, transformed_names
 
-    def unmarginalize(self, rvs_to_unmarginalize):
+    def unmarginalize(self, rvs_to_unmarginalize: Sequence[TensorVariable]):
         for rv in rvs_to_unmarginalize:
             self.marginalized_rvs.remove(rv)
             if rv.name in self._marginalized_named_vars_to_dims:
@@ -303,11 +303,11 @@ class MarginalModel(Model):
 
     def recover_marginals(
         self,
-        idata,
-        var_names=None,
-        return_samples=True,
-        extend_inferencedata=True,
-        random_seed=None,
+        idata: InferenceData,
+        var_names: Sequence[str] | None = None,
+        return_samples: bool = True,
+        extend_inferencedata: bool = True,
+        random_seed: RandomState = None,
     ):
         """Computes posterior log-probabilities and samples of marginalized variables
         conditioned on parameters of the model given InferenceData with posterior group
@@ -648,7 +648,7 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     return rvs_to_marginalize, marginalized_rvs
 
 
-def get_domain_of_finite_discrete_rv(rv: TensorVariable) -> Tuple[int, ...]:
+def get_domain_of_finite_discrete_rv(rv: TensorVariable) -> tuple[int, ...]:
     op = rv.owner.op
     if isinstance(op, Bernoulli):
         return (0, 1)
