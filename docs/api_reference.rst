@@ -10,6 +10,7 @@ methods in the current release of PyMC experimental.
 
    as_model
    MarginalModel
+   marginalize
    model_builder.ModelBuilder
 
 Inference
