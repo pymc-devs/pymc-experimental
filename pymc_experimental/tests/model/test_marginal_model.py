@@ -10,6 +10,7 @@ from arviz import InferenceData, dict_to_dataset
 from pymc import ImputationWarning, inputvars
 from pymc.distributions import transforms
 from pymc.logprob.abstract import _logprob
+from pymc.model.fgraph import fgraph_from_model
 from pymc.util import UNSET
 from scipy.special import log_softmax, logsumexp
 from scipy.stats import halfnorm, norm
@@ -19,7 +20,9 @@ from pymc_experimental.model.marginal_model import (
     FiniteDiscreteMarginalRV,
     MarginalModel,
     is_conditional_dependent,
+    marginalize,
 )
+from pymc_experimental.tests.utils import equal_computations_up_to_root
 
 
 @pytest.fixture
@@ -776,3 +779,33 @@ def test_mutable_indexing_jax_backend():
         pm.LogNormal("y", mu=cat_effect[cat_effect_idx], sigma=1 + is_outlier, observed=data)
     model.marginalize(["is_outlier"])
     get_jaxified_logp(model)
+
+
+def test_marginal_model_func():
+    def create_model(model_class):
+        with model_class(coords={"trial": range(10)}) as m:
+            idx = pm.Bernoulli("idx", p=0.5, dims="trial")
+            mu = pt.where(idx, 1, -1)
+            sigma = pm.HalfNormal("sigma")
+            y = pm.Normal("y", mu=mu, sigma=sigma, dims="trial", observed=[1] * 10)
+        return m
+
+    marginal_m = marginalize(create_model(pm.Model), ["idx"])
+    assert isinstance(marginal_m, MarginalModel)
+
+    reference_m = create_model(MarginalModel)
+    reference_m.marginalize(["idx"])
+
+    # Check forward graph representation is the same
+    marginal_fgraph, _ = fgraph_from_model(marginal_m)
+    reference_fgraph, _ = fgraph_from_model(reference_m)
+    assert equal_computations_up_to_root(marginal_fgraph.outputs, reference_fgraph.outputs)
+
+    # Check logp graph is the same
+    # This fails because OpFromGraphs comparison is broken
+    # assert equal_computations_up_to_root([marginal_m.logp()], [reference_m.logp()])
+    ip = marginal_m.initial_point()
+    np.testing.assert_allclose(
+        marginal_m.compile_logp()(ip),
+        reference_m.compile_logp()(ip),
+    )

@@ -1,5 +1,5 @@
 import warnings
-from typing import Sequence
+from typing import Sequence, Union
 
 import numpy as np
 import pymc
@@ -25,9 +25,11 @@ from pytensor.tensor.elemwise import Elemwise
 from pytensor.tensor.shape import Shape
 from pytensor.tensor.special import log_softmax
 
-__all__ = ["MarginalModel"]
+__all__ = ["MarginalModel", "marginalize"]
 
 from pymc_experimental.distributions import DiscreteMarkovChain
+
+ModelRVs = TensorVariable | Sequence[TensorVariable] | str | Sequence[str]
 
 
 class MarginalModel(Model):
@@ -207,35 +209,50 @@ class MarginalModel(Model):
             vars = [m[var.name] for var in vars]
         return m._logp(vars=vars, **kwargs)
 
-    def clone(self):
-        m = MarginalModel(coords=self.coords)
-        model_vars = self.basic_RVs + self.potentials + self.deterministics + self.marginalized_rvs
-        data_vars = [var for name, var in self.named_vars.items() if var not in model_vars]
+    @staticmethod
+    def from_model(model: Union[Model, "MarginalModel"]) -> "MarginalModel":
+        new_model = MarginalModel(coords=model.coords)
+        if isinstance(model, MarginalModel):
+            marginalized_rvs = model.marginalized_rvs
+            marginalized_named_vars_to_dims = model._marginalized_named_vars_to_dims
+        else:
+            marginalized_rvs = []
+            marginalized_named_vars_to_dims = {}
+
+        model_vars = model.basic_RVs + model.potentials + model.deterministics + marginalized_rvs
+        data_vars = [var for name, var in model.named_vars.items() if var not in model_vars]
         vars = model_vars + data_vars
         cloned_vars = clone_replace(vars)
         vars_to_clone = {var: cloned_var for var, cloned_var in zip(vars, cloned_vars)}
-        m.vars_to_clone = vars_to_clone
+        new_model.vars_to_clone = vars_to_clone
 
-        m.named_vars = treedict({name: vars_to_clone[var] for name, var in self.named_vars.items()})
-        m.named_vars_to_dims = self.named_vars_to_dims
-        m.values_to_rvs = {i: vars_to_clone[rv] for i, rv in self.values_to_rvs.items()}
-        m.rvs_to_values = {vars_to_clone[rv]: i for rv, i in self.rvs_to_values.items()}
-        m.rvs_to_transforms = {vars_to_clone[rv]: i for rv, i in self.rvs_to_transforms.items()}
-        m.rvs_to_initial_values = {
-            vars_to_clone[rv]: i for rv, i in self.rvs_to_initial_values.items()
+        new_model.named_vars = treedict(
+            {name: vars_to_clone[var] for name, var in model.named_vars.items()}
+        )
+        new_model.named_vars_to_dims = model.named_vars_to_dims
+        new_model.values_to_rvs = {vv: vars_to_clone[rv] for vv, rv in model.values_to_rvs.items()}
+        new_model.rvs_to_values = {vars_to_clone[rv]: vv for rv, vv in model.rvs_to_values.items()}
+        new_model.rvs_to_transforms = {
+            vars_to_clone[rv]: tr for rv, tr in model.rvs_to_transforms.items()
         }
-        m.free_RVs = [vars_to_clone[rv] for rv in self.free_RVs]
-        m.observed_RVs = [vars_to_clone[rv] for rv in self.observed_RVs]
-        m.potentials = [vars_to_clone[pot] for pot in self.potentials]
-        m.deterministics = [vars_to_clone[det] for det in self.deterministics]
+        new_model.rvs_to_initial_values = {
+            vars_to_clone[rv]: iv for rv, iv in model.rvs_to_initial_values.items()
+        }
+        new_model.free_RVs = [vars_to_clone[rv] for rv in model.free_RVs]
+        new_model.observed_RVs = [vars_to_clone[rv] for rv in model.observed_RVs]
+        new_model.potentials = [vars_to_clone[pot] for pot in model.potentials]
+        new_model.deterministics = [vars_to_clone[det] for det in model.deterministics]
 
-        m.marginalized_rvs = [vars_to_clone[rv] for rv in self.marginalized_rvs]
-        m._marginalized_named_vars_to_dims = self._marginalized_named_vars_to_dims
-        return m
+        new_model.marginalized_rvs = [vars_to_clone[rv] for rv in marginalized_rvs]
+        new_model._marginalized_named_vars_to_dims = marginalized_named_vars_to_dims
+        return new_model
+
+    def clone(self):
+        return self.from_model(self)
 
     def marginalize(
         self,
-        rvs_to_marginalize: TensorVariable | Sequence[TensorVariable] | str | Sequence[str],
+        rvs_to_marginalize: ModelRVs,
     ):
         if not isinstance(rvs_to_marginalize, Sequence):
             rvs_to_marginalize = (rvs_to_marginalize,)
@@ -489,6 +506,35 @@ class MarginalModel(Model):
             return idata
         else:
             return rv_dataset
+
+
+def marginalize(model: Model, rvs_to_marginalize: ModelRVs) -> MarginalModel:
+    """Marginalize a subset of variables in a PyMC model.
+
+    This creates a class of `MarginalModel` from an existing `Model`, with the specified
+    variables marginalized.
+
+    See documentation for `MarginalModel` for more information.
+
+    Parameters
+    ----------
+    model : Model
+        PyMC model to marginalize. Original variables well be cloned.
+    rvs_to_marginalize : Sequence[TensorVariable]
+        Variables to marginalize in the returned model.
+
+    Returns
+    -------
+    marginal_model: MarginalModel
+        Marginal model with the specified variables marginalized.
+    """
+    if not isinstance(rvs_to_marginalize, tuple | list):
+        rvs_to_marginalize = (rvs_to_marginalize,)
+    rvs_to_marginalize = [rv if isinstance(rv, str) else rv.name for rv in rvs_to_marginalize]
+
+    marginal_model = MarginalModel.from_model(model)
+    marginal_model.marginalize(rvs_to_marginalize)
+    return marginal_model
 
 
 class MarginalRV(SymbolicRandomVariable):
