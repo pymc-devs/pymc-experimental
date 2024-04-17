@@ -295,7 +295,7 @@ def blackjax_particles_from_pymc_population(model, pymc_population):
 
     order_of_vars = model.value_vars
 
-    return [pymc_population[var.name]for var in order_of_vars]
+    return [pymc_population[var.name] for var in order_of_vars]
 
 
 def add_to_inference_data(
