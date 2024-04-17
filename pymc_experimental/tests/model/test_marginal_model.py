@@ -42,7 +42,9 @@ def disaster_model():
         early_rate = pm.Exponential("early_rate", 1.0, initval=3)
         late_rate = pm.Exponential("late_rate", 1.0, initval=1)
         rate = pm.math.switch(switchpoint >= years, early_rate, late_rate)
-        with pytest.warns(ImputationWarning):
+        with pytest.warns(ImputationWarning), pytest.warns(
+            RuntimeWarning, match="invalid value encountered in cast"
+        ):
             disasters = pm.Poisson("disasters", rate, observed=disaster_data)
 
     return disaster_model, years
@@ -60,9 +62,9 @@ def test_marginalized_bernoulli_logp():
         [idx, y],
         ndim_supp=0,
         n_updates=0,
-    )(
-        mu
-    )[0].owner
+        # Ignore the fact we didn't specify shared RNG input/outputs for idx,y
+        strict=False,
+    )(mu)[0].owner
 
     y_vv = y.clone()
     (logp,) = _logprob(
@@ -608,8 +610,8 @@ def test_is_conditional_dependent_static_shape():
 
 def test_data_container():
     """Test that MarginalModel can handle Data containers."""
-    with MarginalModel(coords_mutable={"obs": [0]}) as marginal_m:
-        x = pm.MutableData("x", 2.5)
+    with MarginalModel(coords={"obs": [0]}) as marginal_m:
+        x = pm.Data("x", 2.5)
         idx = pm.Bernoulli("idx", p=0.7, dims="obs")
         y = pm.Normal("y", idx * x, dims="obs")
 
@@ -617,8 +619,8 @@ def test_data_container():
 
     logp_fn = marginal_m.compile_logp()
 
-    with pm.Model(coords_mutable={"obs": [0]}) as m_ref:
-        x = pm.MutableData("x", 2.5)
+    with pm.Model(coords={"obs": [0]}) as m_ref:
+        x = pm.Data("x", 2.5)
         y = pm.NormalMixture("y", w=[0.3, 0.7], mu=[0, x], dims="obs")
 
     ref_logp_fn = m_ref.compile_logp()
@@ -758,3 +760,19 @@ def test_marginalized_hmm_multiple_emissions(batch_emission1, batch_emission2):
     test_value_emission2 = np.broadcast_to(-test_value, emission2_shape)
     test_point = {"emission_1": test_value_emission1, "emission_2": test_value_emission2}
     np.testing.assert_allclose(logp_fn(test_point), expected_logp)
+
+
+def test_mutable_indexing_jax_backend():
+    pytest.importorskip("jax")
+    from pymc.sampling.jax import get_jaxified_logp
+
+    with MarginalModel() as model:
+        data = pm.Data(f"data", np.zeros(10))
+
+        cat_effect = pm.Normal("cat_effect", sigma=1, shape=5)
+        cat_effect_idx = pm.Data("cat_effect_idx", np.array([0, 1] * 5))
+
+        is_outlier = pm.Bernoulli("is_outlier", 0.4, shape=10)
+        pm.LogNormal("y", mu=cat_effect[cat_effect_idx], sigma=1 + is_outlier, observed=data)
+    model.marginalize(["is_outlier"])
+    get_jaxified_logp(model)

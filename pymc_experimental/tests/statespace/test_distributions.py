@@ -46,7 +46,7 @@ def data():
 @pytest.fixture(scope="session")
 def pymc_model(data):
     with pm.Model() as mod:
-        data = pm.ConstantData("data", data.values)
+        data = pm.Data("data", data.values)
         P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
         P0 = pm.Deterministic("P0", pt.diag(P0_diag))
         initial_trend = pm.Normal("initial_trend", shape=(2,))
@@ -172,7 +172,7 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
     }
 
     with pm.Model(coords=coords):
-        exog_data = pm.MutableData("data_exog", X)
+        exog_data = pm.Data("data_exog", X)
         P0_diag = pm.Exponential("P0_diag", 1, shape=(mod.k_states,))
         P0 = pm.Deterministic("P0", pt.diag(P0_diag))
         initial_trend = pm.Normal("initial_trend", shape=(2,))

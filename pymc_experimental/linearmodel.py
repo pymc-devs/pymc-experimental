@@ -69,8 +69,8 @@ class LinearModel(ModelBuilder):
 
         # Data array size can change but number of dimensions must stay the same.
         with pm.Model() as self.model:
-            x = pm.MutableData("x", np.zeros((1,)), dims="observation")
-            y_data = pm.MutableData("y_data", np.zeros((1,)), dims="observation")
+            x = pm.Data("x", np.zeros((1,)), dims="observation")
+            y_data = pm.Data("y_data", np.zeros((1,)), dims="observation")
 
             # priors
             intercept = pm.Normal(

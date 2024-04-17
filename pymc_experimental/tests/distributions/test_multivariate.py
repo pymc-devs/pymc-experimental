@@ -302,27 +302,3 @@ class TestR2D2M2CP:
             "b2", 1, [1, 1], r2=0.5, positive_probs=[1, 1], positive_probs_std=[0, 0], dims="a"
         )
         assert not model.free_RVs, model.free_RVs
-
-    def test_immutable_dims(self, model: pm.Model):
-        model.add_coord("a", range(2), mutable=True)
-        model.add_coord("b", range(2), mutable=False)
-        with pytest.raises(ValueError, match="should be constant length immutable dims"):
-            pmx.distributions.R2D2M2CP(
-                "beta0",
-                1,
-                [1, 1],
-                dims="a",
-                r2=0.8,
-                positive_probs=[0.5, 1],
-                positive_probs_std=[0.3, 0],
-            )
-        with pytest.raises(ValueError, match="should be constant length immutable dims"):
-            pmx.distributions.R2D2M2CP(
-                "beta0",
-                1,
-                [1, 1],
-                dims=("a", "b"),
-                r2=0.8,
-                positive_probs=[0.5, 1],
-                positive_probs_std=[0.3, 0],
-            )

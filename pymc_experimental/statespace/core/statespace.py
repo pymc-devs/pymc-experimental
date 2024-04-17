@@ -284,6 +284,8 @@ class PyMCStateSpace:
         Prints a short report to the terminal about the data needed for the model, including their names, shapes,
         and named dimensions.
         """
+        if not self.data_info:
+            return
 
         out = ""
         for data, info in self.data_info.items():
@@ -291,7 +293,7 @@ class PyMCStateSpace:
         out = out.rstrip()
 
         _log.info(
-            "The following MutableData variables should be assigned to the model inside a PyMC "
+            "The following Data variables should be assigned to the model inside a PyMC "
             f"model block: \n"
             f"{out}"
         )
@@ -366,7 +368,7 @@ class PyMCStateSpace:
     @property
     def data_info(self) -> dict[str, dict[str, Any]]:
         """
-        Information about MutableData variables that need to be declared in the PyMC model block.
+        Information about Data variables that need to be declared in the PyMC model block.
 
         Returns a dictionary of data_name: dictionary of property-name:property description pairs. The return value is
         used by the ``_print_data_requirements`` method, to print a message telling users how to define the necessary
@@ -618,63 +620,6 @@ class PyMCStateSpace:
 
         return shape, dims
 
-    def _get_output_shape_and_dims(
-        self, idata: InferenceData, filter_output: str
-    ) -> tuple[
-        Optional[tuple[int]], Optional[tuple[int]], Optional[tuple[str]], Optional[tuple[str]]
-    ]:
-        """
-        Get the shapes and dimensions of the output variables from the provided InferenceData.
-
-        This method extracts the shapes and dimensions of the output variables representing the state estimates
-        and covariances from the provided ArviZ InferenceData object. The state estimates are obtained from the
-        specified `filter_output` mode, which can be one of "filtered", "predicted", or "smoothed".
-
-        Parameters
-        ----------
-        idata : arviz.InferenceData
-            The ArviZ InferenceData object containing the posterior samples.
-
-        filter_output : str
-            The name of the filter output whose shape is being checked. It can be one of "filtered",
-            "predicted", or "smoothed".
-
-        Returns
-        -------
-        mu_shape: tuple(int, int) or None
-            Shape of the mean vectors returned by the Kalman filter. Should be (n_data_timesteps, k_states).
-            If named dimensions are found, this will be None.
-
-        cov_shape: tuple (int, int, int) or None
-            Shape of the hidden state covariance matrices returned by the Kalman filter. Should be
-            (n_data_timesteps, k_states, k_states).
-            If named dimensions are found, this will be None.
-
-        mu_dims: tuple(str, str) or None
-            *Default* named dimensions associated with the mean vectors returned by the Kalman filter, or None if
-            the default names are not found.
-
-        cov_dims: tuple (str, str, str) or None
-            *Default* named dimensions associated with the covariance matrices returned by the Kalman filter, or None if
-            the default names are not found.
-        """
-
-        mu_dims = None
-        cov_dims = None
-
-        mu_shape = idata[f"{filter_output}_state"].values.shape[2:]
-        cov_shape = idata[f"{filter_output}_covariance"].values.shape[2:]
-
-        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]]):
-            time_dim = TIME_DIM
-            mu_dims = [time_dim, ALL_STATE_DIM]
-            cov_dims = [time_dim, ALL_STATE_DIM, ALL_STATE_AUX_DIM]
-
-            mu_shape = None
-            cov_shape = None
-
-        return mu_shape, cov_shape, mu_dims, cov_dims
-
     def _insert_random_variables(self):
         """
         Replace pytensor symbolic variables with PyMC random variables.
@@ -877,7 +822,7 @@ class PyMCStateSpace:
             or a Pytensor tensor variable.
 
         register_data : bool, optional, default=True
-            If True, the observed data will be registered with PyMC as a pm.MutableData variable. In addition,
+            If True, the observed data will be registered with PyMC as a pm.Data variable. In addition,
             a "time" dim will be created an added to the model's coords.
 
         mode : Optional[str], optional, default=None
@@ -1506,11 +1451,11 @@ class PyMCStateSpace:
                 "Scenario-based forcasting with exogenous variables not currently supported"
             )
 
-        dims = None
         temp_coords = self._fit_coords.copy()
 
         filter_time_dim = TIME_DIM
 
+        dims = None
         if all([dim in temp_coords for dim in [filter_time_dim, ALL_STATE_DIM, OBS_STATE_DIM]]):
             dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
 
@@ -1544,14 +1489,10 @@ class PyMCStateSpace:
         temp_coords["data_time"] = time_index
         temp_coords[TIME_DIM] = forecast_index
 
-        mu_shape, cov_shape, mu_dims, cov_dims = self._get_output_shape_and_dims(
-            idata.posterior, filter_output
-        )
-
-        if mu_dims is not None:
-            mu_dims = ["data_time"] + mu_dims[1:]
-        if cov_dims is not None:
-            cov_dims = ["data_time"] + cov_dims[1:]
+        mu_dims, cov_dims = None, None
+        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]]):
+            mu_dims = ["data_time", ALL_STATE_DIM]
+            cov_dims = ["data_time", ALL_STATE_DIM, ALL_STATE_AUX_DIM]
 
         with pm.Model(coords=temp_coords):
             [

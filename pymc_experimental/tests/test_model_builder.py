@@ -100,8 +100,8 @@ class test_ModelBuilder(ModelBuilder):
         with pm.Model(coords=coords) as self.model:
             if model_config is None:
                 model_config = self.model_config
-            x = pm.MutableData("x", self.X["input"].values)
-            y_data = pm.MutableData("y_data", self.y)
+            x = pm.Data("x", self.X["input"].values)
+            y_data = pm.Data("y_data", self.y)
 
             # prior parameters
             a_loc = model_config["a"]["loc"]
@@ -238,8 +238,8 @@ def test_sample_posterior_predictive(fitted_model_instance, combined):
     pred = fitted_model_instance.sample_posterior_predictive(
         prediction_data["input"], combined=combined, extend_idata=True
     )
-    chains = fitted_model_instance.idata.sample_stats.dims["chain"]
-    draws = fitted_model_instance.idata.sample_stats.dims["draw"]
+    chains = fitted_model_instance.idata.sample_stats.sizes["chain"]
+    draws = fitted_model_instance.idata.sample_stats.sizes["draw"]
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
     assert pred[fitted_model_instance.output_var].shape == expected_shape
     assert np.issubdtype(pred[fitted_model_instance.output_var].dtype, np.floating)

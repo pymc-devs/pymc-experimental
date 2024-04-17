@@ -133,7 +133,7 @@ def test_blackjax_particles_from_pymc_population_univariate():
     model = fast_model()
     population = {"x": np.array([2, 3, 4])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    jax.tree_map(np.testing.assert_allclose, blackjax_particles, [np.array([2, 3, 4])])
+    jax.tree.map(np.testing.assert_allclose, blackjax_particles, [np.array([2, 3, 4])])
 
 
 def test_blackjax_particles_from_pymc_population_multivariate():
@@ -145,7 +145,7 @@ def test_blackjax_particles_from_pymc_population_multivariate():
     population = {"x": np.array([0.34614613, 1.09163261, -0.44526825]),
                   "z": np.array([1, 2, 3])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    jax.tree_map(
+    jax.tree.map(
         np.testing.assert_allclose,
         blackjax_particles,
         [np.array([0.34614613, 1.09163261, -0.44526825]), np.array([1, 2, 3])],
@@ -159,32 +159,30 @@ def simple_multivariable_model():
     """
     with pm.Model() as model:
         x = pm.Normal("x", 0, 1, shape=2)
-        z = pm.Normal("z", 0, 1, shape=(1,))
-        y = pm.Normal("y", z, np.array([1,]), observed=np.array([0,]))
-
+        z = pm.Normal("z", 0, 1)
+        y = pm.Normal("y", z, 1, observed=0)
     return model
 
 
 def test_blackjax_particles_from_pymc_population_multivariable():
     model = simple_multivariable_model()
-    population = {"x": np.array([[2, 3], [5, 6], [7, 9]]),
-                  "z": np.array([[11,], [12,], [13,]])}
+    population = {"x": np.array([[2, 3], [5, 6], [7, 9]]), "z": np.array([11, 12, 13])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
 
     jax.tree_map(
         np.testing.assert_allclose,
         blackjax_particles,
-        [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11,], [12,], [13,]])],
+        [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11], [12], [13]])],
     )
 
 
 def test_arviz_from_particles():
     model = simple_multivariable_model()
-    particles = [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11,],[12,],[13]])]
+    particles = [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11], [12], [13]])]
     with model:
         inference_data = arviz_from_particles(model, particles)
 
-    assert inference_data.posterior.dims == Frozen({"chain": 1, "draw": 3, "x_dim_0": 2, "z_dim_0":1})
+    assert inference_data.posterior.dims == Frozen({"chain": 1, "draw": 3, "x_dim_0": 2})
     assert inference_data.posterior.data_vars.dtypes == Frozen(
         {"x": dtype("float64"), "z": dtype("float64")}
     )

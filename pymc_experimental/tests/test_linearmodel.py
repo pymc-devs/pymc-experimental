@@ -142,8 +142,8 @@ def test_predict_posterior(fitted_linear_model_instance, combined):
     n_pred = 150
     X_pred = pd.DataFrame({"input": np.random.uniform(low=0, high=1, size=n_pred)})
     pred = model.predict_posterior(X_pred, combined=combined)
-    chains = model.idata.sample_stats.dims["chain"]
-    draws = model.idata.sample_stats.dims["draw"]
+    chains = model.idata.sample_stats.sizes["chain"]
+    draws = model.idata.sample_stats.sizes["draw"]
     expected_shape = (n_pred, chains * draws) if combined else (chains, draws, n_pred)
     assert pred.shape == expected_shape
     assert np.issubdtype(pred.dtype, np.floating)
