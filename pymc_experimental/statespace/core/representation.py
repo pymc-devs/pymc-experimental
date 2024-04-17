@@ -1,3 +1,4 @@
+import copy
 from typing import Optional, Type, Union
 
 import numpy as np
@@ -10,7 +11,7 @@ from pymc_experimental.statespace.utils.constants import (
 )
 
 floatX = pytensor.config.floatX
-KeyLike = Union[tuple[Union[str, int]], str]
+KeyLike = Union[tuple[str | int, ...], str]
 
 
 class PytensorRepresentation:
@@ -152,6 +153,22 @@ class PytensorRepresentation:
            http://www.chadfulton.com/files/fulton_statsmodels_2017_v1.pdf
     """
 
+    __slots__ = (
+        "k_endog",
+        "k_states",
+        "k_posdef",
+        "shapes",
+        "design",
+        "obs_intercept",
+        "obs_cov",
+        "transition",
+        "state_intercept",
+        "selection",
+        "state_cov",
+        "initial_state",
+        "initial_state_cov",
+    )
+
     def __init__(
         self,
         k_endog: int,
@@ -206,16 +223,17 @@ class PytensorRepresentation:
         if key not in self.shapes:
             raise IndexError(f"{key} is an invalid state space matrix name")
 
-    def _update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.TensorType]) -> None:
+    def _update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.Variable]) -> None:
         if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
             shape = value.type.shape
         else:
             shape = value.shape
 
         old_shape = self.shapes[key]
-        if not all([a == b for a, b in zip(shape[1:], old_shape[1:])]):
+        ndim_core = 1 if key in VECTOR_VALUED else 2
+        if not all([a == b for a, b in zip(shape[-ndim_core:], old_shape[-ndim_core:])]):
             raise ValueError(
-                f"The last two dimensions of {key} must be {old_shape[1:]}, found {shape[1:]}"
+                f"The last two dimensions of {key} must be {old_shape[-ndim_core:]}, found {shape[-ndim_core:]}"
             )
 
         # Add time dimension dummy if none present
@@ -229,7 +247,7 @@ class PytensorRepresentation:
 
     def _add_time_dim_to_slice(
         self, name: str, slice_: Union[list[int], tuple[int]], n_dim: int
-    ) -> tuple[int]:
+    ) -> tuple[int | slice, ...]:
         # Case 1: There is never a time dim. No changes needed.
         if name in NEVER_TIME_VARYING:
             return slice_
@@ -389,7 +407,7 @@ class PytensorRepresentation:
         else:
             raise IndexError("First index must the name of a valid state space matrix.")
 
-    def __setitem__(self, key: KeyLike, value: Union[float, int, np.ndarray]) -> None:
+    def __setitem__(self, key: KeyLike, value: Union[float, int, np.ndarray, pt.Variable]) -> None:
         _type = type(key)
 
         # Case 1: key is a string: we are setting an entire matrix.
@@ -416,3 +434,6 @@ class PytensorRepresentation:
             matrix.name = name
 
             setattr(self, name, matrix)
+
+    def copy(self):
+        return copy.copy(self)
