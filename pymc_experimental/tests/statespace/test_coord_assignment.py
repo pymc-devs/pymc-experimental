@@ -94,7 +94,7 @@ def test_filter_output_coord_assignment(f, warning, create_model):
     with warning:
         pymc_model = create_model(f)
 
-    for output in FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES + ["obs"]:
+    for output in FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES + ["predicted_observed_state"]:
         assert pymc_model.named_vars_to_dims[output] == FILTER_OUTPUT_DIMS[output]
 
 

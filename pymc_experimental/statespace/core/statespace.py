@@ -8,6 +8,7 @@ import pytensor
 import pytensor.tensor as pt
 from arviz import InferenceData
 from pymc.model import modelcontext
+from pymc.model.transform.optimization import freeze_dims_and_data
 from pymc.util import RandomState
 from pytensor import Variable, graph_replace
 from pytensor.compile import get_mode
@@ -223,8 +224,9 @@ class PyMCStateSpace:
         self._fit_dims: Optional[dict[str, Sequence[str]]] = None
         self._fit_data: Optional[pt.TensorVariable] = None
 
-        self._needs_exog_data = False
+        self._needs_exog_data = None
         self._exog_names = []
+        self._exog_data_info = {}
         self._name_to_variable = {}
         self._name_to_data = {}
 
@@ -348,7 +350,7 @@ class PyMCStateSpace:
         This does not include the observed data series, which is automatically handled by PyMC. This property only
         needs to be implemented for models that expect exogenous data.
         """
-        raise NotImplementedError("The data_names property has not been implemented!")
+        return []
 
     @property
     def param_info(self) -> dict[str, dict[str, Any]]:
@@ -620,6 +622,19 @@ class PyMCStateSpace:
 
         return shape, dims
 
+    def _save_exogenous_data_info(self):
+        """
+        Store exogenous data required by posterior sampling functions
+        """
+        pymc_mod = modelcontext(None)
+        for data_name in self.data_names:
+            data = pymc_mod[data_name]
+            self._exog_data_info[data_name] = {
+                "name": data_name,
+                "value": data.get_value(),
+                "dims": pymc_mod.named_vars_to_dims.get(data_name, None),
+            }
+
     def _insert_random_variables(self):
         """
         Replace pytensor symbolic variables with PyMC random variables.
@@ -743,63 +758,28 @@ class PyMCStateSpace:
     @staticmethod
     def _register_kalman_filter_outputs_with_pymc_model(outputs: tuple[pt.TensorVariable]) -> None:
         mod = modelcontext(None)
+        coords = mod.coords
+
         states, covs = outputs[:4], outputs[4:]
 
-        state_names = ["filtered_state", "predicted_state", "observed_state", "smoothed_state"]
+        state_names = [
+            "filtered_state",
+            "predicted_state",
+            "predicted_observed_state",
+            "smoothed_state",
+        ]
         cov_names = [
             "filtered_covariance",
             "predicted_covariance",
-            "observed_covariance",
+            "predicted_observed_covariance",
             "smoothed_covariance",
         ]
 
         with mod:
-            for state, name in zip(states, state_names):
-                pm.Deterministic(name, state, dims=FILTER_OUTPUT_DIMS.get(name, None))
-
-            for cov, name in zip(covs, cov_names):
-                pm.Deterministic(name, cov, dims=FILTER_OUTPUT_DIMS.get(name, None))
-
-    def add_exogenous(self, exog: pt.TensorVariable) -> None:
-        """
-        Add an exogenous process to the statespace model
-
-        Parameters
-        ----------
-        exog: TensorVariable
-            An (N, k_endog) tensor representing exogenous processes to be included in the statespace model
-
-        Notes
-        -----
-        This function can be used to "inject" absolutely any type of dynamics you wish into a statespace model.
-        Recall that a statespace model is a system of two matrix equations:
-
-        .. math::
-            \begin{align} X_t &= c_t + T_t x_{t-1} + R_t \varepsilon_t & \varepsilon_t &\\sim N(0, Q_t) \\
-                          y_t &= d_t + Z_t x_t + \\eta_t & \\eta_t &\\sim N(0, H_t)
-            \\end{align}
-
-        Any of the matrices :math:`c, d, T, Z, R, H, Q` can vary across time. When this function is invoked, the
-        provided exogenous data is set as the observation intercept, :math:`d_t`. This makes the statespace model
-        a model of the residuals :math:`y_t - d_t`. In fact, this is precisely the quantity that is used to compute
-        the likelihood of the data during Kalman filtering.
-        """
-        # User might pass a flat time-varying exog vector, need to make it a column
-        if exog.ndim == 1:
-            exog = pt.expand_dims(exog, -1)
-        elif (exog.ndim == 2) and (exog.type.shape[-1] != 1):
-            raise ValueError(
-                f"If exogenous data is 2d, it must have a single column, found {exog.type.shape[-1]}"
-            )
-        elif exog.ndim > 2:
-            raise ValueError(f"Exogenous data must be at most 2d, found {exog.ndim} dimensions")
-
-        # Need to specifically ask for the time dim (last one) when slicing into self.ssm
-        d = self.ssm["obs_intercept", :, :]
-        self.ssm["obs_intercept"] = d + exog
-
-        self._needs_exog_data = True
-        self._exog_names.append(exog.name)
+            for var, name in zip(states + covs, state_names + cov_names):
+                dim_names = FILTER_OUTPUT_DIMS.get(name, None)
+                dims = tuple([dim if dim in coords.keys() else None for dim in dim_names])
+                pm.Deterministic(name, var, dims=dims)
 
     def build_statespace_graph(
         self,
@@ -858,9 +838,11 @@ class PyMCStateSpace:
         pm_mod = modelcontext(None)
 
         self._insert_random_variables()
+        self._save_exogenous_data_info()
         self._insert_data_variables()
 
         obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
+        self._fit_data = data
 
         data, nan_mask = register_data_with_pymc(
             data,
@@ -890,7 +872,7 @@ class PyMCStateSpace:
             all_kf_outputs = states + [smooth_states] + covs + [smooth_covariances]
             self._register_kalman_filter_outputs_with_pymc_model(all_kf_outputs)
 
-        obs_dims = FILTER_OUTPUT_DIMS["obs"]
+        obs_dims = FILTER_OUTPUT_DIMS["predicted_observed_state"]
         obs_dims = obs_dims if all([dim in pm_mod.coords.keys() for dim in obs_dims]) else None
 
         SequenceMvNormal(
@@ -905,7 +887,6 @@ class PyMCStateSpace:
         self._fit_coords = pm_mod.coords.copy()
         self._fit_dims = pm_mod.named_vars_to_dims.copy()
         self._fit_mode = mode
-        self._fit_data = data
 
     def _build_smoother_graph(
         self,
@@ -977,10 +958,20 @@ class PyMCStateSpace:
 
     def _kalman_filter_outputs_from_dummy_graph(
         self,
+        data: pt.TensorLike | None = None,
+        data_dims: str | tuple[str] | list[str] | None = None,
     ) -> tuple[list[pt.TensorVariable], list[tuple[pt.TensorVariable, pt.TensorVariable]]]:
         """
         Builds a Kalman filter graph using "dummy" pm.Flat distributions for the model variables and sorts the returns
         into (mean, covariance) pairs for each of filtered, predicted, and smoothed output.
+
+        Parameters
+        ----------
+        data: pt.TensorLike, optional
+            Observed data on which to condition the model. If not provided, the function will use the data that was
+            provided when the model was built.
+        data_dims: str or tuple of str, optional
+            Dimension names associated with the model data. If None, defaults to ("time", "obs_state")
 
         Returns
         -------
@@ -990,11 +981,33 @@ class PyMCStateSpace:
         grouped_outputs: list of tuple of tensors
             A list of tuples, each containing the mean and covariance of the filtered, predicted, and smoothed states.
         """
+        pm_mod = modelcontext(None)
         self._build_dummy_graph()
+        self._insert_random_variables()
+
+        for name in self.data_names:
+            if name not in pm_mod:
+                pm.Data(**self._exog_data_info[name])
+
+        self._insert_data_variables()
+
         x0, P0, c, d, T, Z, R, H, Q = self.unpack_statespace()
 
+        if data is None:
+            data = self._fit_data
+
+        obs_coords = pm_mod.coords.get(OBS_STATE_DIM, None)
+
+        data, nan_mask = register_data_with_pymc(
+            data,
+            n_obs=self.ssm.k_endog,
+            obs_coords=obs_coords,
+            data_dims=data_dims,
+            register_data=True,
+        )
+
         filter_outputs = self.kalman_filter.build_graph(
-            pt.as_tensor_variable(self._fit_data),
+            data,
             x0,
             P0,
             c,
@@ -1026,7 +1039,12 @@ class PyMCStateSpace:
         return [x0, P0, c, d, T, Z, R, H, Q], grouped_outputs
 
     def _sample_conditional(
-        self, idata: InferenceData, group: str, random_seed: Optional[RandomState] = None, **kwargs
+        self,
+        idata: InferenceData,
+        group: str,
+        random_seed: RandomState | None = None,
+        data: pt.TensorLike | None = None,
+        **kwargs,
     ):
         """
         Common functionality shared between `sample_conditional_prior` and `sample_conditional_posterior`. See those
@@ -1043,6 +1061,10 @@ class PyMCStateSpace:
         random_seed : int, RandomState or Generator, optional
             Seed for the random number generator.
 
+        data: pt.TensorLike, optional
+            Observed data on which to condition the model. If not provided, the function will use the data that was
+            provided when the model was built.
+
         kwargs:
             Additional keyword arguments are passed to pymc.sample_posterior_predictive
 
@@ -1052,11 +1074,13 @@ class PyMCStateSpace:
             An Arviz InferenceData object containing sampled trajectories from the requested conditional distribution,
             with data variables "filtered_{group}", "predicted_{group}", and "smoothed_{group}".
         """
+        if data is None and self._fit_data is None:
+            raise ValueError("No data provided to condition the model")
 
         _verify_group(group)
         group_idata = getattr(idata, group)
 
-        with pm.Model(coords=self._fit_coords):
+        with pm.Model(coords=self._fit_coords) as forward_model:
             [
                 x0,
                 P0,
@@ -1067,7 +1091,7 @@ class PyMCStateSpace:
                 R,
                 H,
                 Q,
-            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph()
+            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph(data=data)
 
             for name, (mu, cov) in zip(FILTER_OUTPUT_TYPES, grouped_outputs):
                 dummy_ll = pt.zeros_like(mu)
@@ -1102,6 +1126,13 @@ class PyMCStateSpace:
                     dims=obs_dims,
                 )
 
+        # TODO: Remove this after pm.Flat initial values are fixed
+        forward_model.rvs_to_initial_values = {
+            rv: None for rv in forward_model.rvs_to_initial_values.keys()
+        }
+
+        frozen_model = freeze_dims_and_data(forward_model)
+        with frozen_model:
             idata_conditional = pm.sample_posterior_predictive(
                 group_idata,
                 var_names=[
@@ -1187,8 +1218,9 @@ class PyMCStateSpace:
         if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]]):
             dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
 
-        with pm.Model(coords=temp_coords if dims is not None else None):
+        with pm.Model(coords=temp_coords if dims is not None else None) as forward_model:
             self._build_dummy_graph()
+            self._insert_random_variables()
             matrices = [x0, P0, c, d, T, Z, R, H, Q] = self.unpack_statespace()
 
             if not self.measurement_error:
@@ -1204,8 +1236,16 @@ class PyMCStateSpace:
                 dims=dims,
                 mode=self._fit_mode,
                 sequence_names=self.kalman_filter.seq_names,
+                k_endog=self.k_endog,
             )
 
+        # TODO: Remove this after pm.Flat has its initial_value fixed
+        forward_model.rvs_to_initial_values = {
+            rv: None for rv in forward_model.rvs_to_initial_values.keys()
+        }
+        frozen_model = freeze_dims_and_data(forward_model)
+
+        with frozen_model:
             idata_unconditional = pm.sample_posterior_predictive(
                 group_idata,
                 var_names=[f"{group}_latent", f"{group}_observed"],
@@ -1494,7 +1534,7 @@ class PyMCStateSpace:
             mu_dims = ["data_time", ALL_STATE_DIM]
             cov_dims = ["data_time", ALL_STATE_DIM, ALL_STATE_AUX_DIM]
 
-        with pm.Model(coords=temp_coords):
+        with pm.Model(coords=temp_coords) as forecast_model:
             [
                 x0,
                 P0,
@@ -1505,7 +1545,9 @@ class PyMCStateSpace:
                 R,
                 H,
                 Q,
-            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph()
+            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph(
+                data_dims=["data_time", OBS_STATE_DIM]
+            )
             group_idx = FILTER_OUTPUT_TYPES.index(filter_output)
 
             mu, cov = grouped_outputs[group_idx]
@@ -1532,8 +1574,15 @@ class PyMCStateSpace:
                 dims=dims,
                 mode=self._fit_mode,
                 sequence_names=self.kalman_filter.seq_names,
+                k_endog=self.k_endog,
             )
 
+        forecast_model.rvs_to_initial_values = {
+            k: None for k in forecast_model.rvs_to_initial_values.keys()
+        }
+        frozen_model = freeze_dims_and_data(forecast_model)
+
+        with frozen_model:
             idata_forecast = pm.sample_posterior_predictive(
                 idata,
                 var_names=["forecast_latent", "forecast_observed"],
@@ -1542,7 +1591,7 @@ class PyMCStateSpace:
                 **kwargs,
             )
 
-            return idata_forecast.posterior_predictive
+        return idata_forecast.posterior_predictive
 
     def impulse_response_function(
         self,
@@ -1646,6 +1695,8 @@ class PyMCStateSpace:
 
         with pm.Model(coords=simulation_coords):
             self._build_dummy_graph()
+            self._insert_random_variables()
+
             P0, _, c, d, T, Z, R, H, post_Q = self.unpack_statespace()
             x0 = pm.Deterministic("x0_new", pt.zeros(self.k_states), dims=[ALL_STATE_DIM])
 

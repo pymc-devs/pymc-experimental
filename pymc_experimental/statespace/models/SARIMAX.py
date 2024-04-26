@@ -333,8 +333,9 @@ class BayesianSARIMA(PyMCStateSpace):
             "seasonal_ma_params": (SEASONAL_MA_PARAM_DIM,),
         }
         if self.k_endog == 1:
-            del coord_map["sigma_state"]
-        if not self.measurement_error or self.k_endog == 1:
+            coord_map["sigma_state"] = ()
+            coord_map["sigma_obs"] = ()
+        if not self.measurement_error:
             del coord_map["sigma_obs"]
         if self.p == 0:
             del coord_map["ar_params"]
