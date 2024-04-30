@@ -292,8 +292,10 @@ class MarginalModel(Model):
         fn = self.compile_fn(inputs=self.free_RVs, outs=transformed_rvs)
         return fn, transformed_names
 
-    def unmarginalize(self, rvs_to_unmarginalize: Sequence[TensorVariable]):
+    def unmarginalize(self, rvs_to_unmarginalize: Sequence[TensorVariable | str]):
         for rv in rvs_to_unmarginalize:
+            if isinstance(rv, str):
+                rv = self[rv]
             self.marginalized_rvs.remove(rv)
             if rv.name in self._marginalized_named_vars_to_dims:
                 dims = self._marginalized_named_vars_to_dims.pop(rv.name)
