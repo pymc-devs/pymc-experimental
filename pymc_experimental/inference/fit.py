@@ -38,7 +38,7 @@ def fit(method, **kwargs):
         from pymc_experimental.inference.pathfinder import fit_pathfinder
 
         return fit_pathfinder(**kwargs)
-    
+
     if method == "quadratic":
 
         from pymc_experimental.inference.quadratic import quadratic
