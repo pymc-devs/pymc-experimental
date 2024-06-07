@@ -21,7 +21,7 @@ def fit(method, **kwargs):
     ----------
     method : str
         Which inference method to run.
-        Supported: pathfinder or quadratic
+        Supported: pathfinder or laplace
 
     kwargs are passed on.
 
@@ -39,8 +39,8 @@ def fit(method, **kwargs):
 
         return fit_pathfinder(**kwargs)
 
-    if method == "quadratic":
+    if method == "laplace":
 
-        from pymc_experimental.inference.quadratic import quadratic
+        from pymc_experimental.inference.laplace import laplace
 
-        return quadratic(**kwargs)
+        return laplace(**kwargs)
