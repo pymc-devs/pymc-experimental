@@ -124,10 +124,9 @@ def laplace(
         ds = xr.Dataset(data_vars, coords=coords)
 
         idata = az.convert_to_inference_data(ds)
+        idata = addDataToInferenceData(model, idata, progressbar)
     else:
-        idata = az.InferenceData
-
-    idata = addDataToInferenceData(model, idata, progressbar)
+        idata = az.InferenceData()
 
     idata = addFitToInferenceData(vars, idata, mean, cov)
 
