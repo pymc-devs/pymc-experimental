@@ -109,8 +109,11 @@ def laplace(
             var_value = m.rvs_to_values[var]
             var_value.name = var.name
 
-    H = pm.find_hessian(point=map, vars=vars)
-    cov = np.linalg.inv(H)
+    hessian = pm.find_hessian(point=map, vars=vars)
+    if np.linalg.det(hessian) == 0:
+        raise np.linalg.LinAlgError("Hessian is singular.")
+
+    cov = np.linalg.inv(hessian)
     mean = np.concatenate([np.atleast_1d(map[v.name]) for v in vars])
 
     if chains != 0:
