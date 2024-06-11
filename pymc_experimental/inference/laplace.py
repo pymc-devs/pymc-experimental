@@ -39,7 +39,7 @@ def laplace(
     progressbar=True,
 ):
     """
-    Create a Laplace approximation for a posterior distribution.
+    Create a Laplace (quadratic) approximation for a posterior distribution.
 
     This function generates a Laplace approximation for a given posterior distribution using a specified
     number of draws. This is useful for obtaining a parametric approximation to the posterior distribution
