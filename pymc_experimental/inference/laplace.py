@@ -100,13 +100,13 @@ def laplace(
 
     rng = np.random.default_rng(seed=random_seed)
 
-    with pm.modelcontext(model) as transformed_m:
-        map = pm.find_MAP(vars=vars, progressbar=progressbar)
+    transformed_m = pm.modelcontext(model)
+    map = pm.find_MAP(vars=vars, progressbar=progressbar, model=transformed_m)
 
     # See https://www.pymc.io/projects/docs/en/stable/api/model/generated/pymc.model.transform.conditioning.remove_value_transforms.html
-    with remove_value_transforms(transformed_m) as untransformed_m:
-        untransformed_vars = [untransformed_m[v.name] for v in vars]
-        hessian = pm.find_hessian(point=map, vars=untransformed_vars)
+    untransformed_m = remove_value_transforms(transformed_m)
+    untransformed_vars = [untransformed_m[v.name] for v in vars]
+    hessian = pm.find_hessian(point=map, vars=untransformed_vars, model=untransformed_m)
 
     if np.linalg.det(hessian) == 0:
         raise np.linalg.LinAlgError("Hessian is singular.")
