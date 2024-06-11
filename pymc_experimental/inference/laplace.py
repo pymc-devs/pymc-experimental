@@ -25,6 +25,7 @@ from pymc.backends.arviz import (
     find_constants,
     find_observations,
 )
+from pymc.model.transform.conditioning import remove_value_transforms
 from pymc.util import RandomSeed
 from pytensor import Variable
 
@@ -83,7 +84,7 @@ def laplace(
     >>>     logsigma = pm.Uniform("logsigma", 1, 100)
     >>>     mu = pm.Uniform("mu", -10000, 10000)
     >>>     yobs = pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
-    >>>     idata = laplace([mu, logsigma])
+    >>> idata = laplace([mu, logsigma], model=m)
 
     Notes
     -----
@@ -99,17 +100,14 @@ def laplace(
 
     rng = np.random.default_rng(seed=random_seed)
 
-    map = pm.find_MAP(vars=vars, progressbar=progressbar)
+    with pm.modelcontext(model) as transformed_m:
+        map = pm.find_MAP(vars=vars, progressbar=progressbar)
 
-    m = pm.modelcontext(model)
+    # See https://www.pymc.io/projects/docs/en/stable/api/model/generated/pymc.model.transform.conditioning.remove_value_transforms.html
+    with remove_value_transforms(transformed_m) as untransformed_m:
+        untransformed_vars = [untransformed_m[v.name] for v in vars]
+        hessian = pm.find_hessian(point=map, vars=untransformed_vars)
 
-    for var in vars:
-        if m.rvs_to_transforms[var] is not None:
-            m.rvs_to_transforms[var] = None
-            var_value = m.rvs_to_values[var]
-            var_value.name = var.name
-
-    hessian = pm.find_hessian(point=map, vars=vars)
     if np.linalg.det(hessian) == 0:
         raise np.linalg.LinAlgError("Hessian is singular.")
 

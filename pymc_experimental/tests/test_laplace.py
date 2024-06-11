@@ -42,14 +42,15 @@ def test_laplace():
         mu = pm.Uniform("mu", -10000, 10000)
         yobs = pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
         vars = [mu, logsigma]
-        idata = pmx.fit(
-            method="laplace",
-            vars=vars,
-            model=m,
-            draws=draws,
-            chains=chains,
-            random_seed=173300,
-        )
+
+    idata = pmx.fit(
+        method="laplace",
+        vars=vars,
+        model=m,
+        draws=draws,
+        chains=chains,
+        random_seed=173300,
+    )
 
     assert idata.posterior["mu"].shape == (1, draws)
     assert idata.posterior["logsigma"].shape == (1, draws)
