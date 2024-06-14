@@ -205,7 +205,9 @@ class GenExtreme(Continuous):
             pt.isclose(xi, 0), -pt.exp(-scaled), -pt.pow(1 + xi * scaled, -1 / xi)
         )
 
-        logc = pt.switch(1 + xi * (value - mu) / sigma > 0, logc_expression, pt.switch(xi>0,-np.inf,0))
+        logc = pt.switch(
+            1 + xi * (value - mu) / sigma > 0, logc_expression, pt.switch(xi > 0, -np.inf, 0)
+        )
 
         return check_parameters(
             logc, sigma > 0, pt.and_(xi > -1, xi < 1), msg="sigma > 0 or -1 < xi < 1"
