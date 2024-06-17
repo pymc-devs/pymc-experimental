@@ -35,7 +35,6 @@ def test_laplace():
     y = np.array([2642, 3503, 4358], dtype=np.float64)
     n = y.size
     draws = 100000
-    chains = 1
 
     with pm.Model() as m:
         logsigma = pm.Uniform("logsigma", 1, 100)
@@ -48,7 +47,6 @@ def test_laplace():
         vars=vars,
         model=m,
         draws=draws,
-        chains=chains,
         random_seed=173300,
     )
 
