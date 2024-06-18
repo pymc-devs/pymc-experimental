@@ -32,7 +32,7 @@ from pytensor import Variable
 
 def laplace(
     vars: Sequence[Variable],
-    draws=1_000,
+    draws: Optional[int] = 1000,
     model=None,
     random_seed: Optional[RandomSeed] = None,
     progressbar=True,
@@ -49,9 +49,9 @@ def laplace(
     vars : Sequence[Variable]
         A sequence of variables for which the Laplace approximation of the posterior distribution
         is to be created.
-    draws : int, optional, default=1_000
+    draws : Optional[int] with default=1_000
         The number of draws to sample from the posterior distribution for creating the approximation.
-        For draws=0 only the fit of the Laplace approximation is returned
+        For draws=None only the fit of the Laplace approximation is returned
     model : object, optional, default=None
         The model object that defines the posterior distribution. If None, the default model will be used.
     random_seed : Optional[RandomSeed], optional, default=None
@@ -103,7 +103,8 @@ def laplace(
     # See https://www.pymc.io/projects/docs/en/stable/api/model/generated/pymc.model.transform.conditioning.remove_value_transforms.html
     untransformed_m = remove_value_transforms(transformed_m)
     untransformed_vars = [untransformed_m[v.name] for v in vars]
-    hessian = pm.find_hessian(point=map, vars=untransformed_vars, model=untransformed_m)
+    hessian = pm.find_hessian(
+        point=map, vars=untransformed_vars, model=untransformed_m)
 
     if np.linalg.det(hessian) == 0:
         raise np.linalg.LinAlgError("Hessian is singular.")
@@ -113,12 +114,13 @@ def laplace(
 
     chains = 1
 
-    if draws != 0:
+    if draws is not None:
         samples = rng.multivariate_normal(mean, cov, size=(chains, draws))
 
         data_vars = {}
         for i, var in enumerate(vars):
-            data_vars[str(var)] = xr.DataArray(samples[:, :, i], dims=("chain", "draw"))
+            data_vars[str(var)] = xr.DataArray(
+                samples[:, :, i], dims=("chain", "draw"))
 
         coords = {"chain": np.arange(chains), "draw": np.arange(draws)}
         ds = xr.Dataset(data_vars, coords=coords)
@@ -136,13 +138,15 @@ def laplace(
 def addFitToInferenceData(vars, idata, mean, covariance):
     coord_names = [v.name for v in vars]
     # Convert to xarray DataArray
-    mean_dataarray = xr.DataArray(mean, dims=["rows"], coords={"rows": coord_names})
+    mean_dataarray = xr.DataArray(
+        mean, dims=["rows"], coords={"rows": coord_names})
     cov_dataarray = xr.DataArray(
         covariance, dims=["rows", "columns"], coords={"rows": coord_names, "columns": coord_names}
     )
 
     # Create xarray dataset
-    dataset = xr.Dataset({"mean_vector": mean_dataarray, "covariance_matrix": cov_dataarray})
+    dataset = xr.Dataset({"mean_vector": mean_dataarray,
+                         "covariance_matrix": cov_dataarray})
 
     idata.add_groups(fit=dataset)
 
