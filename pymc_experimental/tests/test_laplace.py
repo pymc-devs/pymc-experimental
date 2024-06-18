@@ -60,8 +60,7 @@ def test_laplace():
     bda_cov = np.array([[y.var() / n, 0], [0, 1 / (2 * n)]])
 
     assert np.allclose(idata.fit["mean_vector"].values, bda_map)
-    assert np.allclose(
-        idata.fit["covariance_matrix"].values, bda_cov, atol=1e-4)
+    assert np.allclose(idata.fit["covariance_matrix"].values, bda_cov, atol=1e-4)
 
 
 @pytest.mark.filterwarnings(
@@ -99,5 +98,4 @@ def test_laplace_only_fit():
     bda_cov = np.array([[y.var() / n, 0], [0, 1 / (2 * n)]])
 
     assert np.allclose(idata.fit["mean_vector"].values, bda_map)
-    assert np.allclose(
-        idata.fit["covariance_matrix"].values, bda_cov, atol=1e-4)
+    assert np.allclose(idata.fit["covariance_matrix"].values, bda_cov, atol=1e-4)
