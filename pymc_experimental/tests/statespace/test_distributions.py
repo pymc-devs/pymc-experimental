@@ -7,7 +7,11 @@ from numpy.testing import assert_allclose
 from scipy.stats import multivariate_normal
 
 from pymc_experimental.statespace import structural
-from pymc_experimental.statespace.filters.distributions import LinearGaussianStateSpace
+from pymc_experimental.statespace.filters.distributions import (
+    LinearGaussianStateSpace,
+    SequenceMvNormal,
+    _LinearGaussianStateSpace,
+)
 from pymc_experimental.statespace.utils.constants import (
     ALL_STATE_DIM,
     OBS_STATE_DIM,
@@ -116,6 +120,30 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
     assert_allclose(test_ll, np.array(scipy_lls).ravel(), atol=ATOL, rtol=RTOL)
 
 
+def test_sequence_mvn_distribution():
+    # Base Case
+    mu_sequence = pt.tensor("mu_sequence", shape=(100, 3))
+    cov_sequence = pt.tensor("cov_sequence", shape=(100, 3, 3))
+    logp = pt.tensor("logp", shape=(100,))
+
+    dist = SequenceMvNormal.dist(mu_sequence, cov_sequence, logp)
+    assert dist.type.shape == (100, 3)
+
+    # With batch dimension
+    mu_sequence = pt.tensor("mu_sequence", shape=(10, 100, 3))
+    cov_sequence = pt.tensor("cov_sequence", shape=(10, 100, 3, 3))
+    logp = pt.tensor(
+        "logp",
+        shape=(
+            10,
+            100,
+        ),
+    )
+
+    dist = SequenceMvNormal.dist(mu_sequence, cov_sequence, logp)
+    assert dist.type.shape == (10, 100, 3)
+
+
 @pytest.mark.parametrize("output_name", ["states_latent", "states_observed"])
 def test_lgss_distribution_from_steps(output_name, ss_mod_me, pymc_model_2):
     with pymc_model_2:
@@ -141,7 +169,12 @@ def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
 
         # pylint: disable=unpacking-non-sequence
         latent_states, obs_states = LinearGaussianStateSpace(
-            "states", *matrices, steps=100, dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+            "states",
+            *matrices,
+            steps=100,
+            dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM],
+            sequence_names=[],
+            k_endog=ss_mod_me.k_endog
         )
         # pylint: enable=unpacking-non-sequence
         idata = pm.sample_prior_predictive(draws=10)
@@ -179,14 +212,8 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
         sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
         beta_exog = pm.Normal("beta_exog", shape=(3,))
 
-        intercept = pm.Normal("intercept")
-        slope = pm.Normal("slope")
-        trend = intercept + slope * pt.arange(10, dtype=floatX)
-        mod.add_exogenous(trend)
-
         mod._insert_random_variables()
         mod._insert_data_variables()
-
         matrices = mod.unpack_statespace()
 
         # pylint: disable=unpacking-non-sequence
@@ -208,3 +235,37 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
         [dim in idata.prior.states_observed.coords.keys() for dim in [TIME_DIM, OBS_STATE_DIM]]
     )
     assert not np.any(np.isnan(idata.prior[output_name].values))
+
+
+def test_lgss_signature():
+    # Base case
+    x0 = pt.tensor("x0", shape=(None,))
+    P0 = pt.tensor("P0", shape=(None, None))
+    c = pt.tensor("c", shape=(None,))
+    d = pt.tensor("d", shape=(None,))
+    T = pt.tensor("T", shape=(None, None))
+    Z = pt.tensor("Z", shape=(None, None))
+    R = pt.tensor("R", shape=(None, None))
+    H = pt.tensor("H", shape=(None, None))
+    Q = pt.tensor("Q", shape=(None, None))
+
+    lgss = _LinearGaussianStateSpace.dist(x0, P0, c, d, T, Z, R, H, Q, steps=100)
+    assert (
+        lgss.owner.op.signature
+        == "(s),(s,s),(s),(p),(s,s),(p,s),(s,r),(p,p),(r,r),[rng]->[rng],(t,n)"
+    )
+    assert lgss.owner.op.ndim_supp == 2
+    assert lgss.owner.op.ndims_params == [1, 2, 1, 1, 2, 2, 2, 2, 2]
+
+    # Case with time-varying matrices
+    T = pt.tensor("T", shape=(None, None, None))
+    lgss = _LinearGaussianStateSpace.dist(
+        x0, P0, c, d, T, Z, R, H, Q, steps=100, sequence_names=["T"]
+    )
+
+    assert (
+        lgss.owner.op.signature
+        == "(s),(s,s),(s),(p),(t,s,s),(p,s),(s,r),(p,p),(r,r),[rng]->[rng],(t,n)"
+    )
+    assert lgss.owner.op.ndim_supp == 2
+    assert lgss.owner.op.ndims_params == [1, 2, 1, 1, 3, 2, 2, 2, 2]

@@ -1,3 +1,4 @@
+import jax.random
 import numpy as np
 import pymc as pm
 import pytensor
@@ -5,9 +6,12 @@ import pytensor.tensor as pt
 from pymc import intX
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous, SymbolicRandomVariable
+from pymc.distributions.multivariate import MvNormal
 from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
+from pytensor.link.jax.dispatch.random import jax_sample_fn
+from pytensor.tensor.random.basic import MvNormalRV
 
 floatX = pytensor.config.floatX
 COV_ZERO_TOL = 0
@@ -16,6 +20,64 @@ lgss_shape_message = (
     "The LinearGaussianStateSpace distribution needs shape information to be constructed. "
     "Ensure that all input matrices have shape information specified."
 )
+
+
+def make_signature(sequence_names):
+    states = "s"
+    obs = "p"
+    exog = "r"
+    time = "t"
+    state_and_obs = "n"
+
+    matrix_to_shape = {
+        "x0": (states,),
+        "P0": (states, states),
+        "c": (states,),
+        "d": (obs,),
+        "T": (states, states),
+        "Z": (obs, states),
+        "R": (states, exog),
+        "H": (obs, obs),
+        "Q": (exog, exog),
+    }
+
+    for matrix in sequence_names:
+        base_shape = matrix_to_shape[matrix]
+        matrix_to_shape[matrix] = (time,) + base_shape
+
+    signature = ",".join(["(" + ",".join(shapes) + ")" for shapes in matrix_to_shape.values()])
+
+    return f"{signature},[rng]->[rng],({time},{state_and_obs})"
+
+
+class MvNormalSVDRV(MvNormalRV):
+    name = "multivariate_normal"
+    signature = "(n),(n,n)->(n)"
+    dtype = "floatX"
+    _print_name = ("MultivariateNormal", "\\operatorname{MultivariateNormal}")
+
+
+class MvNormalSVD(MvNormal):
+    """Dummy distribution intended to be rewritten into a JAX multivariate_normal with method="svd".
+
+    A JAX MvNormal robust to low-rank covariance matrices
+    """
+
+    rv_op = MvNormalSVDRV()
+
+
+@jax_sample_fn.register(MvNormalSVDRV)
+def jax_sample_fn_mvnormal_svd(op, node):
+    def sample_fn(rng, size, dtype, *parameters):
+        rng_key = rng["jax_state"]
+        rng_key, sampling_key = jax.random.split(rng_key, 2)
+        sample = jax.random.multivariate_normal(
+            sampling_key, *parameters, shape=size, dtype=dtype, method="svd"
+        )
+        rng["jax_state"] = rng_key
+        return (rng, sample)
+
+    return sample_fn
 
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
@@ -28,6 +90,7 @@ class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
 
 class _LinearGaussianStateSpace(Continuous):
     rv_op = LinearGaussianStateSpaceRV
+    ndim_supp = 2
 
     def __new__(
         cls,
@@ -92,24 +155,7 @@ class _LinearGaussianStateSpace(Continuous):
         )
 
     @classmethod
-    def _get_k_states(cls, T):
-        k_states = T.type.shape[0]
-        if k_states is None:
-            raise ValueError(lgss_shape_message)
-        return k_states
-
-    @classmethod
-    def _get_k_endog(cls, H):
-        k_endog = H.type.shape[0]
-        if k_endog is None:
-            raise ValueError(lgss_shape_message)
-
-        return k_endog
-
-    @classmethod
     def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, size=None, mode=None, sequence_names=None):
-        if size is not None:
-            batch_size = size
         if sequence_names is None:
             sequence_names = []
 
@@ -125,7 +171,6 @@ class _LinearGaussianStateSpace(Continuous):
         H_.name = "H"
         Q_.name = "Q"
 
-        n_seq = len(sequence_names)
         sequences = [
             x
             for x, name in zip([c_, d_, T_, Z_, R_, H_, Q_], ["c", "d", "T", "Z", "R", "H", "Q"])
@@ -133,50 +178,51 @@ class _LinearGaussianStateSpace(Continuous):
         ]
         non_sequences = [x for x in [c_, d_, T_, Z_, R_, H_, Q_] if x not in sequences]
 
-        steps_ = steps.type()
         rng = pytensor.shared(np.random.default_rng())
 
         def sort_args(args):
             sorted_args = []
+
+            # Inside the scan, outputs_info variables get a time step appended to their name
+            # e.g. x -> x[t]. Remove this so we can identify variables by name.
             arg_names = [x.name.replace("[t]", "") for x in args]
 
+            # c, d ,T, Z, R, H, Q is the "canonical" ordering
             for name in ["c", "d", "T", "Z", "R", "H", "Q"]:
                 idx = arg_names.index(name)
                 sorted_args.append(args[idx])
 
             return sorted_args
 
+        n_seq = len(sequence_names)
+
         def step_fn(*args):
             seqs, state, non_seqs = args[:n_seq], args[n_seq], args[n_seq + 1 :]
             non_seqs, rng = non_seqs[:-1], non_seqs[-1]
 
             c, d, T, Z, R, H, Q = sort_args(seqs + non_seqs)
-
             k = T.shape[0]
             a = state[:k]
 
-            middle_rng, a_innovation = pm.MvNormal.dist(mu=0, cov=Q, rng=rng).owner.outputs
-            next_rng, y_innovation = pm.MvNormal.dist(mu=0, cov=H, rng=middle_rng).owner.outputs
+            middle_rng, a_innovation = MvNormalSVD.dist(mu=0, cov=Q, rng=rng).owner.outputs
+            next_rng, y_innovation = MvNormalSVD.dist(mu=0, cov=H, rng=middle_rng).owner.outputs
 
             a_mu = c + T @ a
-            a_next = pt.switch(pt.all(pt.le(Q, COV_ZERO_TOL)), a_mu, a_mu + R @ a_innovation)
+            a_next = a_mu + R @ a_innovation
 
             y_mu = d + Z @ a_next
-            y_next = pt.switch(pt.all(pt.le(H, COV_ZERO_TOL)), y_mu, y_mu + y_innovation)
+            y_next = y_mu + y_innovation
 
             next_state = pt.concatenate([a_next, y_next], axis=0)
 
             return next_state, {rng: next_rng}
 
-        init_x_ = pm.MvNormal.dist(a0_, P0_, rng=rng)
         Z_init = Z_ if Z_ in non_sequences else Z_[0]
         H_init = H_ if H_ in non_sequences else H_[0]
 
-        init_y_ = pt.switch(
-            pt.all(pt.le(H_init, COV_ZERO_TOL)),
-            Z_init @ init_x_,
-            pm.MvNormal.dist(Z_init @ init_x_, H_init, rng=rng),
-        )
+        init_x_ = MvNormalSVD.dist(a0_, P0_, rng=rng)
+        init_y_ = MvNormalSVD.dist(Z_init @ init_x_, H_init, rng=rng)
+
         init_dist_ = pt.concatenate([init_x_, init_y_], axis=0)
 
         statespace, updates = pytensor.scan(
@@ -184,18 +230,19 @@ class _LinearGaussianStateSpace(Continuous):
             outputs_info=[init_dist_],
             sequences=None if len(sequences) == 0 else sequences,
             non_sequences=non_sequences + [rng],
-            n_steps=steps_,
+            n_steps=steps,
             mode=mode,
             strict=True,
         )
 
         statespace_ = pt.concatenate([init_dist_[None], statespace], axis=0)
+        statespace_ = pt.specify_shape(statespace_, (steps + 1, None))
 
         (ss_rng,) = tuple(updates.values())
         linear_gaussian_ss_op = LinearGaussianStateSpaceRV(
-            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, steps_, rng],
+            inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, steps, rng],
             outputs=[ss_rng, statespace_],
-            ndim_supp=1,
+            signature=make_signature(sequence_names),
         )
 
         linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, steps, rng)
@@ -221,10 +268,10 @@ class LinearGaussianStateSpace(Continuous):
         H,
         Q,
         *,
-        steps=None,
-        mode=None,
-        sequence_names=None,
+        steps,
         k_endog=None,
+        sequence_names=None,
+        mode=None,
         **kwargs,
     ):
         dims = kwargs.pop("dims", None)
@@ -239,35 +286,29 @@ class LinearGaussianStateSpace(Continuous):
             latent_dims = [time_dim, state_dim]
             obs_dims = [time_dim, obs_dim]
 
-        matrices = (a0, P0, c, d, T, Z, R, H, Q)
+        matrices = ()
+
         latent_obs_combined = _LinearGaussianStateSpace(
             f"{name}_combined",
-            *matrices,
+            a0,
+            P0,
+            c,
+            d,
+            T,
+            Z,
+            R,
+            H,
+            Q,
             steps=steps,
             mode=mode,
             sequence_names=sequence_names,
             **kwargs,
         )
-        k_states = T.type.shape[0]
-
-        if k_endog is None and k_states is None:
-            raise ValueError("Could not infer number of observed states, explicitly pass k_endog.")
-        if k_endog is not None and k_states is not None:
-            total_shape = latent_obs_combined.type.shape[-1]
-            inferred_endog = total_shape - k_states
-            if inferred_endog != k_endog:
-                raise ValueError(
-                    f"Inferred k_endog does not agree with provided value ({inferred_endog} != {k_endog}). "
-                    f"It is not necessary to provide k_endog when the value can be inferred."
-                )
-            latent_slice = slice(None, -k_endog)
-            obs_slice = slice(-k_endog, None)
-        elif k_endog is None:
-            latent_slice = slice(None, k_states)
-            obs_slice = slice(k_states, None)
-        else:
-            latent_slice = slice(None, -k_endog)
-            obs_slice = slice(-k_endog, None)
+        latent_obs_combined = pt.specify_shape(latent_obs_combined, (steps + 1, None))
+        if k_endog is None:
+            k_endog = cls._get_k_endog(H)
+        latent_slice = slice(None, -k_endog)
+        obs_slice = slice(-k_endog, None)
 
         latent_states = latent_obs_combined[..., latent_slice]
         obs_states = latent_obs_combined[..., obs_slice]
@@ -289,10 +330,26 @@ class LinearGaussianStateSpace(Continuous):
 
         return latent_states, obs_states
 
+    @classmethod
+    def _get_k_states(cls, T):
+        k_states = T.type.shape[0]
+        if k_states is None:
+            raise ValueError(lgss_shape_message)
+        return k_states
+
+    @classmethod
+    def _get_k_endog(cls, H):
+        k_endog = H.type.shape[0]
+        if k_endog is None:
+            raise ValueError(lgss_shape_message)
+
+        return k_endog
+
 
 class KalmanFilterRV(SymbolicRandomVariable):
     default_output = 1
     _print_name = ("KalmanFilter", "\\operatorname{KalmanFilter}")
+    signature = "(t,s),(t,s,s),(t),[rng]->[rng],(t,s)"
 
     def update(self, node: Node):
         return {node.inputs[-1]: node.outputs[0]}
@@ -325,48 +382,45 @@ class SequenceMvNormal(Continuous):
         if support_shape is None:
             support_shape = pt.as_tensor_variable(())
 
-        steps = pm.intX(mus.shape[0])
-
-        return super().dist([mus, covs, logp, steps, support_shape], **kwargs)
+        return super().dist([mus, covs, logp, support_shape], **kwargs)
 
     @classmethod
-    def rv_op(cls, mus, covs, logp, steps, support_shape, size=None):
+    def rv_op(cls, mus, covs, logp, support_shape, size=None):
         if size is not None:
             batch_size = size
         else:
             batch_size = support_shape
 
-        # mus_, covs_ = mus.type(), covs.type()
         mus_, covs_, support_shape_ = mus.type(), covs.type(), support_shape.type()
-        steps_ = steps.type()
-        logp_ = logp.type()
 
+        logp_ = logp.type()
         rng = pytensor.shared(np.random.default_rng())
 
         def step(mu, cov, rng):
-            new_rng, mvn = pm.MvNormal.dist(mu=mu, cov=cov, rng=rng, size=batch_size).owner.outputs
+            new_rng, mvn = MvNormalSVD.dist(mu=mu, cov=cov, rng=rng, size=batch_size).owner.outputs
             return mvn, {rng: new_rng}
 
         mvn_seq, updates = pytensor.scan(
-            step, sequences=[mus_, covs_], non_sequences=[rng], n_steps=steps_, strict=True
+            step, sequences=[mus_, covs_], non_sequences=[rng], strict=True
         )
+        mvn_seq = pt.specify_shape(mvn_seq, mus.type.shape)
 
         (seq_mvn_rng,) = tuple(updates.values())
 
         mvn_seq_op = KalmanFilterRV(
-            inputs=[mus_, covs_, logp_, steps_, rng], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
+            inputs=[mus_, covs_, logp_, rng], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
         )
 
-        mvn_seq = mvn_seq_op(mus, covs, logp, steps, rng)
+        mvn_seq = mvn_seq_op(mus, covs, logp, rng)
+
         return mvn_seq
 
 
 @_logprob.register(KalmanFilterRV)
-def sequence_mvnormal_logp(op, values, mus, covs, logp, steps, rng, **kwargs):
+def sequence_mvnormal_logp(op, values, mus, covs, logp, rng, **kwargs):
     return check_parameters(
         logp,
-        pt.eq(values[0].shape[0], steps),
-        pt.eq(mus.shape[0], steps),
-        pt.eq(covs.shape[0], steps),
+        pt.eq(values[0].shape[0], mus.shape[0]),
+        pt.eq(covs.shape[0], mus.shape[0]),
         msg="Observed data and parameters must have the same number of timesteps (dimension 0)",
     )
