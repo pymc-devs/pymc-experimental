@@ -145,7 +145,7 @@ class PyMCStateSpace:
         \end{align}
 
     With the remaining statespace matrices as zero matrices of the appropriate sizes. The model has two states,
-    two shocks, and one observed state. Knowing all this, a very simple  local level model can be implemented as
+    two shocks, and one observed state. Knowing all this, a very simple local level model can be implemented as
     follows:
 
     .. code:: python
@@ -167,17 +167,18 @@ class PyMCStateSpace:
             def param_names(self):
                 return ['x0', 'P0', 'sigma_nu', 'sigma_eta']
 
-            def update(self, theta, mode=None):
-                # Since the param_names are ['x0', 'P0', 'sigma_nu', 'sigma_eta'], theta will come in as
-                # [x0.ravel(), P0.ravel(), sigma_nu, sigma_eta]
-                # It will have length 2 + 4 + 1 + 1 = 8
+            def make_symbolic_graph(self):
+                # Declare symbolic variables that represent parameters of the model
+                # In this case, we have 4: x0 (initial state), P0 (initial state covariance), sigma_nu, and sigma_eta
 
-                x0 = theta[:2]
-                P0 = theta[2:6].reshape(2,2)
-                sigma_nu = theta[6]
-                sigma_eta = theta[7]
+                x0 = self.make_and_register_variable('x0', shape=(2,))
+                P0 = self.make_and_register_variable('P0', shape=(2,2))
+                sigma_mu = self.make_and_register_variable('sigma_nu')
+                sigma_eta = self.make_and_register_variable('sigma_eta')
 
-                # Assign parameters to their correct locations
+                # Next, use these symbolic variables to build the statespace matrices by assigning each parameter
+                # to its correct location in the correct matrix
+
                 self.ssm['initial_state', :] = x0
                 self.ssm['initial_state_cov', :, :] = P0
                 self.ssm['state_cov', 0, 0] = sigma_nu
@@ -443,7 +444,9 @@ class PyMCStateSpace:
         """
         raise NotImplementedError("The add_default_priors property has not been implemented!")
 
-    def make_and_register_variable(self, name, shape, dtype=floatX) -> Variable:
+    def make_and_register_variable(
+        self, name, shape: int | tuple[int] | None = None, dtype=floatX
+    ) -> Variable:
         """
         Helper function to create a pytensor symbolic variable and register it in the _name_to_variable dictionary
 
@@ -1221,6 +1224,12 @@ class PyMCStateSpace:
         with pm.Model(coords=temp_coords if dims is not None else None) as forward_model:
             self._build_dummy_graph()
             self._insert_random_variables()
+
+            for name in self.data_names:
+                pm.Data(**self._exog_data_info[name])
+
+            self._insert_data_variables()
+
             matrices = [x0, P0, c, d, T, Z, R, H, Q] = self.unpack_statespace()
 
             if not self.measurement_error:
@@ -1418,6 +1427,66 @@ class PyMCStateSpace:
         return self._sample_unconditional(
             idata, "posterior", steps, use_data_time_dim, random_seed, **kwargs
         )
+
+    def sample_statespace_matrices(
+        self, idata, matrix_names: str | list[str] | None, group: str = "posterior"
+    ):
+        """
+        Draw samples of requested statespace matrices from provided idata
+
+        Parameters
+        ----------
+        matrix_names: str, list[str], optional
+            Statespace matrices to be sampled. Valid names are short names: x0, P0, c, d, T, Z, R, H, Q, or
+             "formal" names: initial_state, initial_state_cov, state_intercept, obs_intercept, transition, design,
+                             selection, obs_cov, state_cov
+        idata: az.InferenceData
+            InferenceData from which to sample
+
+        group: str, one of "posterior" or "prior"
+            Whether to sample from priors or posteriors
+
+        Returns
+        -------
+        idata_matrices: az.InterenceData
+        """
+        _verify_group(group)
+
+        if matrix_names is None:
+            matrix_names = MATRIX_NAMES
+        elif isinstance(matrix_names, str):
+            matrix_names = [matrix_names]
+
+        with pm.Model(coords=self._fit_coords) as forward_model:
+            self._build_dummy_graph()
+            self._insert_random_variables()
+
+            for name in self.data_names:
+                pm.Data(**self._exog_data_info[name])
+
+            self._insert_data_variables()
+            matrices = self.unpack_statespace()
+            for short_name, matrix in zip(MATRIX_NAMES, matrices):
+                long_name = SHORT_NAME_TO_LONG[short_name]
+                if (long_name in matrix_names) or (short_name in matrix_names):
+                    name = long_name if long_name in matrix_names else short_name
+                    dims = [x if x in self._fit_coords else None for x in MATRIX_DIMS[short_name]]
+                    pm.Deterministic(name, matrix, dims=dims)
+
+        # TODO: Remove this after pm.Flat has its initial_value fixed
+        forward_model.rvs_to_initial_values = {
+            rv: None for rv in forward_model.rvs_to_initial_values.keys()
+        }
+        frozen_model = freeze_dims_and_data(forward_model)
+        with frozen_model:
+            matrix_idata = pm.sample_posterior_predictive(
+                idata if group == "posterior" else idata.prior,
+                var_names=matrix_names,
+                compile_kwargs={"mode": self._fit_mode},
+                extend_inferencedata=False,
+            )
+
+        return matrix_idata
 
     def forecast(
         self,
