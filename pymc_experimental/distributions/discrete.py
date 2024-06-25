@@ -31,8 +31,7 @@ def log1mexp(x):
 
 class GeneralizedPoissonRV(RandomVariable):
     name = "generalized_poisson"
-    ndim_supp = 0
-    ndims_params = [0, 0]
+    signature = "(),()->()"
     dtype = "int64"
     _print_name = ("GeneralizedPoisson", "\\operatorname{GeneralizedPoisson}")
 

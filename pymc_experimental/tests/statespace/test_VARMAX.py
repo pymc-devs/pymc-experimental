@@ -71,7 +71,7 @@ def pymc_mod(varma_mod, data):
 @pytest.fixture(scope="session")
 def idata(pymc_mod, rng):
     with pymc_mod:
-        idata = pm.sample_prior_predictive(samples=10, random_seed=rng)
+        idata = pm.sample_prior_predictive(draws=10, random_seed=rng)
 
     return idata
 
