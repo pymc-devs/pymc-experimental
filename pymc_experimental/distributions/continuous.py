@@ -19,7 +19,7 @@ Experimental probability distributions for stochastic nodes in PyMC.
 The imports from pymc are not fully replicated here: add imports as necessary.
 """
 
-from typing import List, Tuple, Union
+from typing import Tuple, Union
 
 import numpy as np
 import pytensor.tensor as pt
@@ -37,8 +37,7 @@ from scipy import stats
 
 class GenExtremeRV(RandomVariable):
     name: str = "Generalized Extreme Value"
-    ndim_supp: int = 0
-    ndims_params: List[int] = [0, 0, 0]
+    signature = "(),(),()->()"
     dtype: str = "floatX"
     _print_name: Tuple[str, str] = ("Generalized Extreme Value", "\\operatorname{GEV}")
 
@@ -275,7 +274,7 @@ class Chi:
 
     def __new__(cls, name, nu, **kwargs):
         if "observed" not in kwargs:
-            kwargs.setdefault("transform", transforms.log)
+            kwargs.setdefault("default_transform", transforms.log)
         return CustomDist(name, nu, dist=cls.chi_dist, class_name="Chi", **kwargs)
 
     @classmethod

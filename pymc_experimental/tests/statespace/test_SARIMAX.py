@@ -331,7 +331,7 @@ def test_interpretable_raises_if_d_nonzero():
 
 def test_interpretable_states_are_interpretable(arima_mod_interp, pymc_mod_interp):
     with pymc_mod_interp:
-        prior = pm.sample_prior_predictive(samples=10)
+        prior = pm.sample_prior_predictive(draws=10)
 
     prior_outputs = arima_mod_interp.sample_unconditional_prior(prior)
     ar_lags = prior.prior.coords["ar_lag"].values - 1

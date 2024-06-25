@@ -21,7 +21,7 @@ from pytensor.graph import Constant, FunctionGraph, ancestors, clone_replace
 from pytensor.graph.replace import graph_replace, vectorize_graph
 from pytensor.scan import map as scan_map
 from pytensor.tensor import TensorType, TensorVariable
-from pytensor.tensor.elemwise import Elemwise
+from pytensor.tensor.elemwise import DimShuffle, Elemwise
 from pytensor.tensor.shape import Shape
 from pytensor.tensor.special import log_softmax
 
@@ -598,7 +598,18 @@ def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
     fg = FunctionGraph(outputs=output_rvs, clone=False)
 
     non_elemwise_blockers = [
-        o for node in fg.apply_nodes if not isinstance(node.op, Elemwise) for o in node.outputs
+        o
+        for node in fg.apply_nodes
+        if not (
+            isinstance(node.op, Elemwise)
+            # Allow expand_dims on the left
+            or (
+                isinstance(node.op, DimShuffle)
+                and not node.op.drop
+                and node.op.shuffle == sorted(node.op.shuffle)
+            )
+        )
+        for o in node.outputs
     ]
     blocker_candidates = [rv_to_marginalize] + other_input_rvs + non_elemwise_blockers
     blockers = [var for var in blocker_candidates if var not in output_rvs]
@@ -698,16 +709,17 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
 
 def get_domain_of_finite_discrete_rv(rv: TensorVariable) -> tuple[int, ...]:
     op = rv.owner.op
+    dist_params = rv.owner.op.dist_params(rv.owner)
     if isinstance(op, Bernoulli):
         return (0, 1)
     elif isinstance(op, Categorical):
-        p_param = rv.owner.inputs[3]
+        [p_param] = dist_params
         return tuple(range(pt.get_vector_length(p_param)))
     elif isinstance(op, DiscreteUniform):
-        lower, upper = constant_fold(rv.owner.inputs[3:])
+        lower, upper = constant_fold(dist_params)
         return tuple(np.arange(lower, upper + 1))
     elif isinstance(op, DiscreteMarkovChain):
-        P = rv.owner.inputs[0]
+        P, *_ = dist_params
         return tuple(range(pt.get_vector_length(P[-1])))
 
     raise NotImplementedError(f"Cannot compute domain for op {op}")
@@ -827,11 +839,15 @@ def marginal_hmm_logp(op, values, *inputs, **kwargs):
     # This is the "forward algorithm", alpha_t = p(y | s_t) * sum_{s_{t-1}}(p(s_t | s_{t-1}) * alpha_{t-1})
     # We do it entirely in logs, though.
 
-    # To compute the prior probabilities of each state, we evaluate the logp of the domain (all possible states) under
-    # the initial distribution. This is robust to everything the user can throw at it.
-    batch_logp_init_dist = pt.vectorize(lambda x: logp(init_dist_, x), "()->()")(
-        batch_chain_value[..., 0]
-    )
+    # To compute the prior probabilities of each state, we evaluate the logp of the domain (all possible states)
+    # under the initial distribution. This is robust to everything the user can throw at it.
+    init_dist_value = init_dist_.type()
+    logp_init_dist = logp(init_dist_, init_dist_value)
+    # There is a degerate batch dim for lags=1 (the only supported case),
+    # that we have to work around, by expanding the batch value and then squeezing it out of the logp
+    batch_logp_init_dist = vectorize_graph(
+        logp_init_dist, {init_dist_value: batch_chain_value[:, None, ..., 0]}
+    ).squeeze(1)
     log_alpha_init = batch_logp_init_dist + batch_logp_emissions[..., 0]
 
     def step_alpha(logp_emission, log_alpha, log_P):

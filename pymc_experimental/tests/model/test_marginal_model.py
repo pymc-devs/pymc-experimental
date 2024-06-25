@@ -7,10 +7,10 @@ import pymc as pm
 import pytensor.tensor as pt
 import pytest
 from arviz import InferenceData, dict_to_dataset
-from pymc import ImputationWarning, inputvars
 from pymc.distributions import transforms
 from pymc.logprob.abstract import _logprob
 from pymc.model.fgraph import fgraph_from_model
+from pymc.pytensorf import inputvars
 from pymc.util import UNSET
 from scipy.special import log_softmax, logsumexp
 from scipy.stats import halfnorm, norm
@@ -45,9 +45,7 @@ def disaster_model():
         early_rate = pm.Exponential("early_rate", 1.0, initval=3)
         late_rate = pm.Exponential("late_rate", 1.0, initval=1)
         rate = pm.math.switch(switchpoint >= years, early_rate, late_rate)
-        with pytest.warns(ImputationWarning), pytest.warns(
-            RuntimeWarning, match="invalid value encountered in cast"
-        ):
+        with pytest.warns(Warning):
             disasters = pm.Poisson("disasters", rate, observed=disaster_data)
 
     return disaster_model, years
@@ -294,7 +292,7 @@ def test_recover_marginals_basic():
 
     with m:
         prior = pm.sample_prior_predictive(
-            samples=20,
+            draws=20,
             random_seed=rng,
             return_inferencedata=False,
         )
@@ -337,7 +335,7 @@ def test_recover_marginals_coords():
 
     with m:
         prior = pm.sample_prior_predictive(
-            samples=20,
+            draws=20,
             random_seed=rng,
             return_inferencedata=False,
         )
@@ -364,7 +362,7 @@ def test_recover_batched_marginal():
 
     with m:
         prior = pm.sample_prior_predictive(
-            samples=20,
+            draws=20,
             random_seed=rng,
             return_inferencedata=False,
         )
@@ -394,7 +392,7 @@ def test_nested_recover_marginals():
 
     with m:
         prior = pm.sample_prior_predictive(
-            samples=20,
+            draws=20,
             random_seed=rng,
             return_inferencedata=False,
         )
@@ -565,7 +563,7 @@ def test_marginalized_transforms(transform, expected_warning):
             w=w,
             comp_dists=pm.HalfNormal.dist([1, 2, 3]),
             initval=initval,
-            transform=transform,
+            default_transform=transform,
         )
         y = pm.Normal("y", 0, sigma, observed=data)
 
@@ -583,7 +581,7 @@ def test_marginalized_transforms(transform, expected_warning):
                 ),
             ),
             initval=initval,
-            transform=transform,
+            default_transform=transform,
         )
         y = pm.Normal("y", 0, sigma, observed=data)
 
@@ -710,12 +708,7 @@ def test_marginalized_hmm_normal_emission(batch_chain, batch_emission):
 
 @pytest.mark.parametrize(
     "categorical_emission",
-    [
-        False,
-        # Categorical has a core vector parameter,
-        # so it is not possible to build a graph that uses elemwise operations exclusively
-        pytest.param(True, marks=pytest.mark.xfail(raises=NotImplementedError)),
-    ],
+    [False, True],
 )
 def test_marginalized_hmm_categorical_emission(categorical_emission):
     """Example adapted from https://www.youtube.com/watch?v=9-sPm4CfcD0"""

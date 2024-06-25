@@ -135,7 +135,7 @@ def exog_pymc_mod(exog_ss_mod, rng):
 def idata(pymc_mod, rng):
     with pymc_mod:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
-        idata_prior = pm.sample_prior_predictive(samples=10, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
 
     idata.extend(idata_prior)
     return idata
@@ -145,7 +145,7 @@ def idata(pymc_mod, rng):
 def idata_exog(exog_pymc_mod, rng):
     with exog_pymc_mod:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
-        idata_prior = pm.sample_prior_predictive(samples=10, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
     idata.extend(idata_prior)
     return idata
 

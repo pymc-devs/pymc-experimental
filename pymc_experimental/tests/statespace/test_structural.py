@@ -756,7 +756,7 @@ def test_filter_scans_time_varying_design_matrix(rng):
         x0, P0, c, d, T, Z, R, H, Q = mod.unpack_statespace()
         pm.Deterministic("Z", Z)
 
-        prior = pm.sample_prior_predictive(samples=10)
+        prior = pm.sample_prior_predictive(draws=10)
 
     prior_Z = prior.prior.Z.values
     assert prior_Z.shape == (1, 10, 100, 1, 2)
@@ -790,7 +790,7 @@ def test_extract_components_from_idata(rng):
         mod.build_statespace_graph(y)
 
         x0, P0, c, d, T, Z, R, H, Q = mod.unpack_statespace()
-        prior = pm.sample_prior_predictive(samples=10)
+        prior = pm.sample_prior_predictive(draws=10)
 
     filter_prior = mod.sample_conditional_prior(prior)
     comp_prior = mod.extract_components_from_idata(filter_prior)
