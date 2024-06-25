@@ -7,6 +7,8 @@ import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 import scipy.special
+from pymc.distributions import SymbolicRandomVariable
+from pymc.exceptions import NotConstantValueError
 from pymc.logprob.transforms import Transform
 from pymc.model.fgraph import (
     ModelDeterministic,
@@ -17,7 +19,7 @@ from pymc.model.fgraph import (
     model_from_fgraph,
     model_named,
 )
-from pymc.pytensorf import toposort_replace
+from pymc.pytensorf import constant_fold, toposort_replace
 from pytensor.graph.basic import Apply, Variable
 from pytensor.tensor.random.op import RandomVariable
 
@@ -170,14 +172,16 @@ def vip_reparam_node(
     dims: List[Variable],
     transform: Optional[Transform],
 ) -> Tuple[ModelDeterministic, ModelNamed]:
-    if not isinstance(node.op, RandomVariable):
+    if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
-    size = node.inputs[1]
-    if not isinstance(size, pt.TensorConstant):
+    rv = node.default_output()
+    try:
+        [rv_shape] = constant_fold([rv.shape])
+    except NotConstantValueError:
         raise ValueError("Size should be static for autoreparametrization.")
     logit_lam_ = pytensor.shared(
-        np.zeros(size.data),
-        shape=size.data,
+        np.zeros(rv_shape),
+        shape=rv_shape,
         name=f"{name}::lam_logit__",
     )
     logit_lam = model_named(logit_lam_, *dims)
@@ -216,7 +220,7 @@ def _(
     transform: Optional[Transform],
     lam: pt.TensorVariable,
 ) -> ModelDeterministic:
-    rng, size, _, loc, scale = node.inputs
+    rng, size, loc, scale = node.inputs
     if transform is not None:
         raise NotImplementedError("Reparametrization of Normal with Transform is not implemented")
     vip_rv_ = pm.Normal.dist(
