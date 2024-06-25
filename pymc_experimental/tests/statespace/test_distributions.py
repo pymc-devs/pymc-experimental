@@ -126,7 +126,7 @@ def test_lgss_distribution_from_steps(output_name, ss_mod_me, pymc_model_2):
         latent_states, obs_states = LinearGaussianStateSpace("states", *matrices, steps=100)
         # pylint: enable=unpacking-non-sequence
 
-        idata = pm.sample_prior_predictive(samples=10)
+        idata = pm.sample_prior_predictive(draws=10)
         delete_rvs_from_model(["states_latent", "states_observed", "states_combined"])
 
     assert idata.prior.coords["states_latent_dim_0"].shape == (101,)
@@ -144,7 +144,7 @@ def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
             "states", *matrices, steps=100, dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
         )
         # pylint: enable=unpacking-non-sequence
-        idata = pm.sample_prior_predictive(samples=10)
+        idata = pm.sample_prior_predictive(draws=10)
         delete_rvs_from_model(["states_latent", "states_observed", "states_combined"])
 
     assert idata.prior.coords["time"].shape == (101,)
@@ -198,7 +198,7 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
             dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
         )
         # pylint: enable=unpacking-non-sequence
-        idata = pm.sample_prior_predictive(samples=10)
+        idata = pm.sample_prior_predictive(draws=10)
 
     assert idata.prior.coords["time"].shape == (10,)
     assert all(
