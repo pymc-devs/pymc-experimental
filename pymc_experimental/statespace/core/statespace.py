@@ -1664,7 +1664,9 @@ class PyMCStateSpace:
                     init_shock = pm.MvNormal("initial_shock", mu=0, cov=Q, dims=[SHOCK_DIM])
                 else:
                     init_shock = pm.Deterministic(
-                        "initial_shock", pt.as_tensor_variable(shock_size), dims=[SHOCK_DIM]
+                        "initial_shock",
+                        pt.as_tensor_variable(np.atleast_1d(shock_size)),
+                        dims=[SHOCK_DIM],
                     )
                 shock_trajectory = pt.set_subtensor(shock_trajectory[0], init_shock)
 
