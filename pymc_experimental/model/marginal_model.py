@@ -4,16 +4,18 @@ from typing import Sequence, Union
 import numpy as np
 import pymc
 import pytensor.tensor as pt
+import scipy
 from arviz import InferenceData, dict_to_dataset
-from pymc import SymbolicRandomVariable
 from pymc.backends.arviz import coords_and_dims_for_inferencedata, dataset_to_point_list
+from pymc.distributions import MvNormal, SymbolicRandomVariable
+from pymc.distributions.continuous import Continuous
 from pymc.distributions.discrete import Bernoulli, Categorical, DiscreteUniform
 from pymc.distributions.transforms import Chain
 from pymc.logprob.abstract import _logprob
-from pymc.logprob.basic import conditional_logp, logp
+from pymc.logprob.basic import conditional_logp, icdf, logp
 from pymc.logprob.transforms import IntervalTransform
 from pymc.model import Model
-from pymc.pytensorf import compile_pymc, constant_fold
+from pymc.pytensorf import collect_default_updates, compile_pymc, constant_fold
 from pymc.util import RandomState, _get_seeds_per_chain, treedict
 from pytensor import Mode, scan
 from pytensor.compile import SharedVariable
@@ -159,16 +161,16 @@ class MarginalModel(Model):
                         f"Cannot marginalize {rv_to_marginalize} due to dependent Potential {pot}"
                     )
 
-            old_rvs, new_rvs = replace_finite_discrete_marginal_subgraph(
-                fg, rv_to_marginalize, self.basic_RVs + rvs_left_to_marginalize
+            if isinstance(rv_to_marginalize.owner.op, Continuous):
+                subgraph_builder_fn = replace_continuous_marginal_subgraph
+            else:
+                subgraph_builder_fn = replace_finite_discrete_marginal_subgraph
+            old_rvs, new_rvs = subgraph_builder_fn(
+                fg,
+                rv_to_marginalize,
+                self.basic_RVs + rvs_left_to_marginalize,
+                user_warnings=user_warnings,
             )
-
-            if user_warnings and len(new_rvs) > 2:
-                warnings.warn(
-                    "There are multiple dependent variables in a FiniteDiscreteMarginalRV. "
-                    f"Their joint logp terms will be assigned to the first RV: {old_rvs[1]}",
-                    UserWarning,
-                )
 
             rvs_left_to_marginalize.remove(rv_to_marginalize)
 
@@ -267,7 +269,11 @@ class MarginalModel(Model):
                 )
 
             rv_op = rv_to_marginalize.owner.op
-            if isinstance(rv_op, DiscreteMarkovChain):
+
+            if isinstance(rv_op, (Bernoulli, Categorical, DiscreteUniform)):
+                pass
+
+            elif isinstance(rv_op, DiscreteMarkovChain):
                 if rv_op.n_lags > 1:
                     raise NotImplementedError(
                         "Marginalization for DiscreteMarkovChain with n_lags > 1 is not supported"
@@ -276,7 +282,11 @@ class MarginalModel(Model):
                     raise NotImplementedError(
                         "Marginalization for DiscreteMarkovChain with non-matrix transition probability is not supported"
                     )
-            elif not isinstance(rv_op, (Bernoulli, Categorical, DiscreteUniform)):
+
+            elif isinstance(rv_op, Continuous):
+                pass
+
+            else:
                 raise NotImplementedError(
                     f"Marginalization of RV with distribution {rv_to_marginalize.owner.op} is not supported"
                 )
@@ -449,7 +459,7 @@ class MarginalModel(Model):
             rv_loglike_fn = None
             joint_logps_norm = log_softmax(joint_logps, axis=-1)
             if return_samples:
-                sample_rv_outs = pymc.Categorical.dist(logit_p=joint_logps)
+                sample_rv_outs = Categorical.dist(logit_p=joint_logps)
                 if isinstance(marginalized_rv.owner.op, DiscreteUniform):
                     sample_rv_outs += rv_domain[0]
 
@@ -549,6 +559,16 @@ class DiscreteMarginalMarkovChainRV(MarginalRV):
     """Base class for Discrete Marginal Markov Chain RVs"""
 
 
+class QMCMarginalNormalRV(MarginalRV):
+    """Basec class for QMC Marginalized RVs"""
+
+    __props__ = ("qmc_order",)
+
+    def __init__(self, *args, qmc_order: int, **kwargs):
+        self.qmc_order = qmc_order
+        super().__init__(*args, **kwargs)
+
+
 def static_shape_ancestors(vars):
     """Identify ancestors Shape Ops of static shapes (therefore constant in a valid graph)."""
     return [
@@ -646,7 +666,9 @@ def collect_shared_vars(outputs, blockers):
     ]
 
 
-def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs):
+def replace_finite_discrete_marginal_subgraph(
+    fgraph, rv_to_marginalize, all_rvs, user_warnings: bool = False
+):
     # TODO: This should eventually be integrated in a more general routine that can
     #  identify other types of supported marginalization, of which finite discrete
     #  RVs is just one
@@ -654,6 +676,13 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     dependent_rvs = find_conditional_dependent_rvs(rv_to_marginalize, all_rvs)
     if not dependent_rvs:
         raise ValueError(f"No RVs depend on marginalized RV {rv_to_marginalize}")
+
+    if user_warnings and len(dependent_rvs) > 1:
+        warnings.warn(
+            "There are multiple dependent variables in a FiniteDiscreteMarginalRV. "
+            f"Their joint logp terms will be assigned to the first RV: {dependent_rvs[0]}",
+            UserWarning,
+        )
 
     ndim_supp = {rv.owner.op.ndim_supp for rv in dependent_rvs}
     if len(ndim_supp) != 1:
@@ -703,6 +732,39 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     )
 
     marginalized_rvs = marginalization_op(*inputs)
+    fgraph.replace_all(tuple(zip(rvs_to_marginalize, marginalized_rvs)))
+    return rvs_to_marginalize, marginalized_rvs
+
+
+def replace_continuous_marginal_subgraph(
+    fgraph, rv_to_marginalize, all_rvs, user_warnings: bool = False
+):
+    dependent_rvs = find_conditional_dependent_rvs(rv_to_marginalize, all_rvs)
+    if not dependent_rvs:
+        raise ValueError(f"No RVs depend on marginalized RV {rv_to_marginalize}")
+
+    marginalized_rv_input_rvs = find_conditional_input_rvs([rv_to_marginalize], all_rvs)
+    dependent_rvs_input_rvs = [
+        rv
+        for rv in find_conditional_input_rvs(dependent_rvs, all_rvs)
+        if rv is not rv_to_marginalize
+    ]
+
+    input_rvs = [*marginalized_rv_input_rvs, *dependent_rvs_input_rvs]
+    rvs_to_marginalize = [rv_to_marginalize, *dependent_rvs]
+
+    outputs = rvs_to_marginalize
+    # We are strict about shared variables in SymbolicRandomVariables
+    inputs = input_rvs + collect_shared_vars(rvs_to_marginalize, blockers=input_rvs)
+
+    # TODO: Assert no non-marginalized variables depend on the rng output of the marginalized variables!!!
+    marginalized_rvs = QMCMarginalNormalRV(
+        inputs=inputs,
+        outputs=[*outputs, *collect_default_updates(inputs=inputs, outputs=outputs).values()],
+        ndim_supp=max([rv.owner.op.ndim_supp for rv in dependent_rvs]),
+        qmc_order=13,
+    )(*inputs)[: len(outputs)]
+
     fgraph.replace_all(tuple(zip(rvs_to_marginalize, marginalized_rvs)))
     return rvs_to_marginalize, marginalized_rvs
 
@@ -870,3 +932,68 @@ def marginal_hmm_logp(op, values, *inputs, **kwargs):
     # return is the joint probability of everything together, but PyMC still expects one logp for each one.
     dummy_logps = (pt.constant(0),) * (len(values) - 1)
     return joint_logp, *dummy_logps
+
+
+@_logprob.register(QMCMarginalNormalRV)
+def qmc_marginal_rv_logp(op, values, *inputs, **kwargs):
+    # Clone the inner RV graph of the Marginalized RV
+    marginalized_rvs_node = op.make_node(*inputs)
+    # The MarginalizedRV contains the following outputs:
+    # 1. The variable we marginalized
+    # 2. The dependent variables
+    # 3. The updates for the marginalized and dependent variables
+    marginalized_rv, *inner_rvs_and_updates = clone_replace(
+        op.inner_outputs,
+        replace={u: v for u, v in zip(op.inner_inputs, marginalized_rvs_node.inputs)},
+    )
+    inner_rvs = inner_rvs_and_updates[: (len(inner_rvs_and_updates) - 1) // 2]
+
+    marginalized_vv = marginalized_rv.clone()
+    marginalized_rv_node = marginalized_rv.owner
+    marginalized_rv_op = marginalized_rv_node.op
+
+    # GET QMC draws from the marginalized RV
+    # TODO: Make this an Op
+    rng = marginalized_rv_op.rng_param(marginalized_rv_node)
+    shape = constant_fold(tuple(marginalized_rv.shape))
+    size = np.prod(shape).astype(int)
+    n_draws = 2**op.qmc_order
+
+    # TODO: Wrap Sobol in an Op so we can control the RNG and change whenever
+    qmc_engine = scipy.stats.qmc.Sobol(d=size, seed=rng.get_value(borrow=False))
+    uniform_draws = qmc_engine.random(n_draws).reshape((n_draws, *shape))
+
+    if isinstance(marginalized_rv_op, MvNormal):
+        # Adapted from https://github.com/scipy/scipy/blob/87c46641a8b3b5b47b81de44c07b840468f7ebe7/scipy/stats/_qmc.py#L2211-L2298
+        mean, cov = marginalized_rv_op.dist_params(marginalized_rv_node)
+        corr_matrix = pt.linalg.cholesky(cov).mT
+        base_draws = pt.as_tensor(scipy.stats.norm.ppf(0.5 + (1 - 1e-10) * (uniform_draws - 0.5)))
+        qmc_draws = base_draws @ corr_matrix + mean
+    else:
+        qmc_draws = vectorize_graph(
+            icdf(marginalized_rv, marginalized_vv),
+            replace={marginalized_vv: uniform_draws},
+        )
+
+    qmc_draws.name = f"QMC_{marginalized_rv_op.name}_draws"
+
+    # Obtain the logp of the dependent variables
+    # We need to include the marginalized RV for correctness, we remove it later.
+    inner_rv_values = dict(zip(inner_rvs, values))
+    rv_values = inner_rv_values | {marginalized_rv: marginalized_vv}
+    logps_dict = conditional_logp(rv_values=rv_values, **kwargs)
+    # Pop the logp term corresponding to the marginalized RV
+    # (it already got accounted for in the bias of the QMC draws)
+    logps_dict.pop(marginalized_vv)
+
+    # Vectorize across QMC draws and take the mean on log scale
+    core_marginalized_logps = list(logps_dict.values())
+    batched_marginalized_logps = vectorize_graph(
+        core_marginalized_logps, replace={marginalized_vv: qmc_draws}
+    )
+
+    # Take the mean in log scale
+    return tuple(
+        pt.logsumexp(batched_marginalized_logp, axis=0) - pt.log(n_draws)
+        for batched_marginalized_logp in batched_marginalized_logps
+    )
