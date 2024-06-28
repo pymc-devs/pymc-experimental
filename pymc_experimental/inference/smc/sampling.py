@@ -427,7 +427,7 @@ def build_smc_with_kernel(
     kernel_parameters,
     mcmc_kernel,
 ):
-    return blackjax.smc.adaptive_tempered.adaptive_tempered_smc(
+    return blackjax.adaptive_tempered_smc(
         prior_log_prob,
         loglikelihood,
         mcmc_kernel.build_kernel(),
