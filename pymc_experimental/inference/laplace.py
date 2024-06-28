@@ -12,6 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import warnings
 from collections.abc import Sequence
 from typing import Optional
 
@@ -98,6 +99,13 @@ def laplace(
     rng = np.random.default_rng(seed=random_seed)
 
     transformed_m = pm.modelcontext(model)
+
+    if len(vars) != len(transformed_m.free_RVs):
+        warnings.warn(
+            "Number of variables in vars does not eqaul the number of variables in the model.",
+            UserWarning,
+        )
+
     map = pm.find_MAP(vars=vars, progressbar=progressbar, model=transformed_m)
 
     # See https://www.pymc.io/projects/docs/en/stable/api/model/generated/pymc.model.transform.conditioning.remove_value_transforms.html
