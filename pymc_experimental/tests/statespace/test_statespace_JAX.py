@@ -25,6 +25,7 @@ from pymc_experimental.tests.statespace.utilities.test_helpers import (
 )
 
 pytest.importorskip("jax")
+pytest.importorskip("numpyro")
 
 
 floatX = pytensor.config.floatX
