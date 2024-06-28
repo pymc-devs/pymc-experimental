@@ -1,4 +1,3 @@
-import jax.random
 import numpy as np
 import pymc as pm
 import pytensor
@@ -10,7 +9,6 @@ from pymc.distributions.multivariate import MvNormal
 from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
-from pytensor.link.jax.dispatch.random import jax_sample_fn
 from pytensor.tensor.random.basic import MvNormalRV
 
 floatX = pytensor.config.floatX
@@ -66,18 +64,25 @@ class MvNormalSVD(MvNormal):
     rv_op = MvNormalSVDRV()
 
 
-@jax_sample_fn.register(MvNormalSVDRV)
-def jax_sample_fn_mvnormal_svd(op, node):
-    def sample_fn(rng, size, dtype, *parameters):
-        rng_key = rng["jax_state"]
-        rng_key, sampling_key = jax.random.split(rng_key, 2)
-        sample = jax.random.multivariate_normal(
-            sampling_key, *parameters, shape=size, dtype=dtype, method="svd"
-        )
-        rng["jax_state"] = rng_key
-        return (rng, sample)
+try:
+    import jax.random
+    from pytensor.link.jax.dispatch.random import jax_sample_fn
 
-    return sample_fn
+    @jax_sample_fn.register(MvNormalSVDRV)
+    def jax_sample_fn_mvnormal_svd(op, node):
+        def sample_fn(rng, size, dtype, *parameters):
+            rng_key = rng["jax_state"]
+            rng_key, sampling_key = jax.random.split(rng_key, 2)
+            sample = jax.random.multivariate_normal(
+                sampling_key, *parameters, shape=size, dtype=dtype, method="svd"
+            )
+            rng["jax_state"] = rng_key
+            return (rng, sample)
+
+        return sample_fn
+
+except ImportError:
+    pass
 
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
@@ -90,7 +95,6 @@ class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
 
 class _LinearGaussianStateSpace(Continuous):
     rv_op = LinearGaussianStateSpaceRV
-    ndim_supp = 2
 
     def __new__(
         cls,
