@@ -70,7 +70,8 @@ def exog_pymc_mod(exog_ss_mod, rng):
 
 @pytest.fixture(scope="session")
 def idata(pymc_mod, rng):
-    with warnings.catch_warnings(action="ignore"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
         with pymc_mod:
             idata = pm.sample(
                 draws=10,
@@ -91,7 +92,9 @@ def idata(pymc_mod, rng):
 
 @pytest.fixture(scope="session")
 def idata_exog(exog_pymc_mod, rng):
-    with warnings.catch_warnings(action="ignore"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
         with exog_pymc_mod:
             idata = pm.sample(
                 draws=10,
