@@ -37,11 +37,11 @@ univariate_inout = initialize_filter(UnivariateFilter())
 single_inout = initialize_filter(SingleTimeseriesFilter())
 steadystate_inout = initialize_filter(SteadyStateFilter())
 
-f_standard = pytensor.function(*standard_inout)
-f_cholesky = pytensor.function(*cholesky_inout)
-f_univariate = pytensor.function(*univariate_inout)
-f_single_ts = pytensor.function(*single_inout)
-f_steady = pytensor.function(*steadystate_inout)
+f_standard = pytensor.function(*standard_inout, on_unused_input="ignore")
+f_cholesky = pytensor.function(*cholesky_inout, on_unused_input="ignore")
+f_univariate = pytensor.function(*univariate_inout, on_unused_input="ignore")
+f_single_ts = pytensor.function(*single_inout, on_unused_input="ignore")
+f_steady = pytensor.function(*steadystate_inout, on_unused_input="ignore")
 
 filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts, f_steady]
 
@@ -315,3 +315,37 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
             atol=ATOL,
             err_msg=f"{name} is not symmetrical",
         )
+
+
+@pytest.mark.parametrize(
+    "filter",
+    [StandardFilter, SingleTimeseriesFilter, CholeskyFilter],
+    ids=["standard", "single_ts", "cholesky"],
+)
+def test_kalman_filter_jax(filter):
+    pytest.importorskip("jax")
+    from pymc.sampling.jax import get_jaxified_graph
+
+    # TODO: Add UnivariateFilter to test; need to figure out the broadcasting issue when 2nd data dim is defined
+
+    p, m, r, n = 1, 5, 1, 10
+    inputs, outputs = initialize_filter(filter(), mode="JAX")
+
+    # Shape of the data must be static for jax to know how long the scan is
+    data = inputs.pop(0)
+    data_specified = pt.specify_shape(data, (n, None))
+    data_specified.name = "data"
+    inputs = [data] + inputs
+
+    outputs = pytensor.graph.clone_replace(outputs, {data: data_specified})
+
+    inputs_np = make_test_inputs(p, m, r, n, rng)
+
+    f_jax = get_jaxified_graph(inputs, outputs)
+    f_pt = pytensor.function(inputs, outputs, mode="FAST_COMPILE")
+
+    jax_outputs = f_jax(*inputs_np)
+    pt_outputs = f_pt(*inputs_np)
+
+    for name, jax_res, pt_res in zip(output_names, jax_outputs, pt_outputs):
+        assert_allclose(jax_res, pt_res, atol=ATOL, rtol=RTOL, err_msg=f"{name} failed!")

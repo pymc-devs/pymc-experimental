@@ -105,26 +105,31 @@ def preprocess_pandas_data(data, n_obs, obs_coords=None, check_column_names=Fals
         )
 
 
-def add_data_to_active_model(values, index):
+def add_data_to_active_model(values, index, data_dims=None):
     pymc_mod = modelcontext(None)
-    data_dims = None
-
-    if OBS_STATE_DIM in pymc_mod.coords:
+    if data_dims is None:
         data_dims = [TIME_DIM, OBS_STATE_DIM]
+    time_dim = data_dims[0]
 
-    if TIME_DIM not in pymc_mod.coords:
-        pymc_mod.add_coord(TIME_DIM, index)
+    if time_dim not in pymc_mod.coords:
+        pymc_mod.add_coord(time_dim, index)
     else:
-        found_time = pymc_mod.coords[TIME_DIM]
+        found_time = pymc_mod.coords[time_dim]
         if found_time is None:
-            pymc_mod.coords.update({TIME_DIM: index})
-        elif not np.array_equal(found_time, index):
+            pymc_mod.coords.update({time_dim: index})
+        elif not np.array_equal(found_time, tuple(index)):
             raise ValueError(
                 "Provided data has a different time index than the model. Please ensure that the time values "
                 "set on coords matches that of the exogenous data."
             )
 
-    data = pm.Data("data", values, dims=data_dims)
+    # If the data has just one column, we need to specify the shape as (None, 1), or else the JAX backend will
+    # raise a broadcasting error.
+    data_shape = None
+    if values.shape[-1] == 1:
+        data_shape = (None, 1)
+
+    data = pm.Data("data", values, dims=data_dims, shape=data_shape)
 
     return data
 
@@ -155,7 +160,9 @@ def mask_missing_values_in_data(values, missing_fill_value=None):
     return filled_values, nan_mask
 
 
-def register_data_with_pymc(data, n_obs, obs_coords, register_data=True, missing_fill_value=None):
+def register_data_with_pymc(
+    data, n_obs, obs_coords, register_data=True, missing_fill_value=None, data_dims=None
+):
     if isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
         values, index = preprocess_tensor_data(data, n_obs, obs_coords)
     elif isinstance(data, np.ndarray):
@@ -168,7 +175,7 @@ def register_data_with_pymc(data, n_obs, obs_coords, register_data=True, missing
     data, nan_mask = mask_missing_values_in_data(values, missing_fill_value)
 
     if register_data:
-        data = add_data_to_active_model(data, index)
+        data = add_data_to_active_model(data, index, data_dims)
     else:
         data = pytensor.shared(data, name="data")
     return data, nan_mask

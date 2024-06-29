@@ -61,21 +61,21 @@ class StructuralTimeSeries(PyMCStateSpace):
     def __init__(
         self,
         ssm: PytensorRepresentation,
-        state_names,
-        data_names,
-        shock_names,
-        param_names,
-        exog_names,
-        param_dims,
-        coords,
-        param_info,
-        data_info,
-        component_info,
-        measurement_error,
-        name_to_variable,
-        name_to_data,
-        name=None,
-        verbose=True,
+        state_names: list[str],
+        data_names: list[str],
+        shock_names: list[str],
+        param_names: list[str],
+        exog_names: list[str],
+        param_dims: dict[str, tuple[int]],
+        coords: dict[str, Sequence],
+        param_info: dict[str, dict[str, Any]],
+        data_info: dict[str, dict[str, Any]],
+        component_info: dict[str, dict[str, Any]],
+        measurement_error: bool,
+        name_to_variable: dict[str, Variable],
+        name_to_data: dict[str, Variable] | None = None,
+        name: str | None = None,
+        verbose: bool = True,
         filter_type: str = "standard",
     ):
         # Add the initial state covariance to the parameters
@@ -87,36 +87,46 @@ class StructuralTimeSeries(PyMCStateSpace):
         param_names, param_dims, param_info = self._add_inital_state_cov_to_properties(
             param_names, param_dims, param_info, k_states
         )
-        self._state_names = state_names
-        self._data_names = data_names
-        self._shock_names = shock_names
-        self._param_names = param_names
-        self._param_dims = param_dims
+        self._state_names = state_names.copy()
+        self._data_names = data_names.copy()
+        self._shock_names = shock_names.copy()
+        self._param_names = param_names.copy()
+        self._param_dims = param_dims.copy()
 
         default_coords = make_default_coords(self)
         coords.update(default_coords)
 
         self._coords = coords
-        self._param_info = param_info
-        self._data_info = data_info
+        self._param_info = param_info.copy()
+        self._data_info = data_info.copy()
         self.measurement_error = measurement_error
 
         super().__init__(
             k_endog,
             k_states,
-            k_posdef,
+            max(1, k_posdef),
             filter_type=filter_type,
             verbose=verbose,
             measurement_error=measurement_error,
         )
+        self.ssm = ssm.copy()
 
-        self.ssm = ssm
-        self._component_info = component_info
+        if k_posdef == 0:
+            # If there is no randomness in the model, add dummy matrices to the representation to avoid errors
+            # when we go to construct random variables from the matrices
+            self.ssm.k_posdef = self.k_posdef
+            self.ssm.shapes["state_cov"] = (1, 1, 1)
+            self.ssm["state_cov"] = pt.zeros((1, 1, 1))
 
-        self._name_to_variable = name_to_variable
-        self._name_to_data = name_to_data
+            self.ssm.shapes["selection"] = (1, self.k_states, 1)
+            self.ssm["selection"] = pt.zeros((1, self.k_states, 1))
 
-        self._exog_names = exog_names
+        self._component_info = component_info.copy()
+
+        self._name_to_variable = name_to_variable.copy()
+        self._name_to_data = name_to_data.copy()
+
+        self._exog_names = exog_names.copy()
         self._needs_exog_data = len(exog_names) > 0
 
         P0 = self.make_and_register_variable("P0", shape=(self.k_states, self.k_states))

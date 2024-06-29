@@ -64,19 +64,45 @@ def _assert_coord_shapes_match_matrices(mod, params):
         params["initial_state_cov"] = np.eye(mod.k_states)
 
     x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, params)
+
     n_states = len(mod.coords[ALL_STATE_DIM])
-    n_shocks = len(mod.coords[SHOCK_DIM])
+
+    # There will always be one shock dimension -- dummies are inserted into fully deterministic models to avoid errors
+    # in the state space representation.
+    n_shocks = max(1, len(mod.coords[SHOCK_DIM]))
     n_obs = len(mod.coords[OBS_STATE_DIM])
 
-    assert x0.shape[-1:] == (n_states,)
-    assert P0.shape[-2:] == (n_states, n_states)
-    assert c.shape[-1:] == (n_states,)
-    assert d.shape[-1:] == (n_obs,)
-    assert T.shape[-2:] == (n_states, n_states)
-    assert Z.shape[-2:] == (n_obs, n_states)
-    assert R.shape[-2:] == (n_states, n_shocks)
-    assert H.shape[-2:] == (n_obs, n_obs)
-    assert Q.shape[-2:] == (n_shocks, n_shocks)
+    assert x0.shape[-1:] == (
+        n_states,
+    ), f"x0 expected to have shape (n_states, ), found {x0.shape[-1:]}"
+    assert P0.shape[-2:] == (
+        n_states,
+        n_states,
+    ), f"P0 expected to have shape (n_states, n_states), found {P0.shape[-2:]}"
+    assert c.shape[-1:] == (
+        n_states,
+    ), f"c expected to have shape (n_states, ), found {c.shape[-1:]}"
+    assert d.shape[-1:] == (n_obs,), f"d expected to have shape (n_obs, ), found {d.shape[-1:]}"
+    assert T.shape[-2:] == (
+        n_states,
+        n_states,
+    ), f"T expected to have shape (n_states, n_states), found {T.shape[-2:]}"
+    assert Z.shape[-2:] == (
+        n_obs,
+        n_states,
+    ), f"Z expected to have shape (n_obs, n_states), found {Z.shape[-2:]}"
+    assert R.shape[-2:] == (
+        n_states,
+        n_shocks,
+    ), f"R expected to have shape (n_states, n_shocks), found {R.shape[-2:]}"
+    assert H.shape[-2:] == (
+        n_obs,
+        n_obs,
+    ), f"H expected to have shape (n_obs, n_obs), found {H.shape[-2:]}"
+    assert Q.shape[-2:] == (
+        n_shocks,
+        n_shocks,
+    ), f"Q expected to have shape (n_shocks, n_shocks), found {Q.shape[-2:]}"
 
 
 def _assert_basic_coords_correct(mod):
@@ -514,12 +540,12 @@ def test_structural_model_against_statsmodels(
 
     _assert_all_statespace_matrices_match(mod, params, sm_mod)
 
-    mod.build(verbose=False)
+    built_model = mod.build(verbose=False)
 
-    _assert_coord_shapes_match_matrices(mod, params)
-    _assert_param_dims_correct(mod.param_dims, expected_dims)
-    _assert_coords_correct(mod.coords, expected_coords)
-    _assert_params_info_correct(mod.param_info, mod.coords, mod.param_dims)
+    _assert_coord_shapes_match_matrices(built_model, params)
+    _assert_param_dims_correct(built_model.param_dims, expected_dims)
+    _assert_coords_correct(built_model.coords, expected_coords)
+    _assert_params_info_correct(built_model.param_info, built_model.coords, built_model.param_dims)
 
 
 def test_level_trend_model(rng):

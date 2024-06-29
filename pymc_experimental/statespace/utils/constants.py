@@ -44,7 +44,7 @@ FILTER_OUTPUT_NAMES = [
 ]
 
 SMOOTHER_OUTPUT_NAMES = ["smoothed_state", "smoothed_covariance"]
-OBSERVED_OUTPUT_NAMES = ["observed_state", "observed_covariance"]
+OBSERVED_OUTPUT_NAMES = ["predicted_observed_state", "predicted_observed_covariance"]
 
 MATRIX_DIMS = {
     "x0": (ALL_STATE_DIM,),
@@ -65,7 +65,8 @@ FILTER_OUTPUT_DIMS = {
     "filtered_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
     "smoothed_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
     "predicted_covariance": (TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM),
-    "obs": (TIME_DIM, OBS_STATE_DIM),
+    "predicted_observed_state": (TIME_DIM, OBS_STATE_DIM),
+    "predicted_observed_covariance": (TIME_DIM, OBS_STATE_DIM, OBS_STATE_AUX_DIM),
 }
 
 POSITION_DERIVATIVE_NAMES = ["level", "trend", "acceleration", "jerk", "snap", "crackle", "pop"]
