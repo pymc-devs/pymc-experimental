@@ -6,11 +6,9 @@ from pymc import intX
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous, SymbolicRandomVariable
 from pymc.distributions.multivariate import MvNormal
-from pymc.distributions.shape_utils import get_support_shape_1d, rv_size_is_none
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
 from pytensor.tensor.random.basic import MvNormalRV
-from pytensor.tensor.random.utils import normalize_size_param
 
 floatX = pytensor.config.floatX
 COV_ZERO_TOL = 0
@@ -372,20 +370,6 @@ class SequenceMvNormal(Continuous):
 
     @classmethod
     def rv_op(cls, mus, covs, logp, size=None):
-
-        # TODO: None of this does anything -- what am I doing wrong?
-        size = normalize_size_param(size)
-        if rv_size_is_none(size):
-            # In this case the size of the init_dist depends on the parameters shape
-            # The last dimension of rho and init_dist does not matter
-            batch_size = pt.broadcast_shape(
-                tuple(mus.shape)[:-2],
-                tuple(covs.shape)[:-3],
-                arrays_are_shapes=True,
-            )
-        else:
-            batch_size = size
-
         # Batch dimensions (if any) will be on the far left, but scan requires time to be there instead
         if mus.ndim > 2:
             mus = pt.moveaxis(mus, -2, 0)
