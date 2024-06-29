@@ -225,7 +225,9 @@ def unpack_symbolic_matrices_with_params(mod, param_dict, data_dict=None, mode="
         on_unused_input="raise",
         mode=mode,
     )
+
     x0, P0, c, d, T, Z, R, H, Q = f_matrices(**param_dict, **data_dict)
+
     return x0, P0, c, d, T, Z, R, H, Q
 
 

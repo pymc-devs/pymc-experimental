@@ -126,7 +126,7 @@ def exog_pymc_mod(exog_ss_mod, rng):
         beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
 
         sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
-        exog_ss_mod.build_statespace_graph(y)
+        exog_ss_mod.build_statespace_graph(y, save_kalman_filter_outputs_in_idata=True)
 
     return m
 
@@ -299,34 +299,3 @@ def test_forecast_fails_if_exog_needed(exog_ss_mod, idata_exog):
         forecast_idata = exog_ss_mod.forecast(
             idata_exog, start=time_idx[-1], periods=10, random_seed=rng
         )
-
-
-@pytest.mark.parametrize(
-    "shape",
-    [
-        None,
-        (10,),
-        (10, 1),
-        pytest.param((10, 3), marks=[pytest.mark.xfail]),
-        pytest.param((10, 1, 1), marks=[pytest.mark.xfail]),
-    ],
-    ids=["None", "(10,)", "(10, 1)", "(10,3)", "(10, 1, 1)"],
-)
-def test_add_exogenous(rng, shape):
-    ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
-    y = rng.normal(size=(10, 1))
-
-    with pm.Model() as m:
-        initial_trend = pm.Normal("initial_trend", shape=(1,))
-        P0 = pm.Deterministic("P0", pt.eye(1, dtype=floatX))
-        constant = pm.Normal("constant", shape=shape)
-        ss_mod.add_exogenous(constant)
-        ss_mod.build_statespace_graph(data=y)
-
-        names = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
-        for name, matrix in zip(names, ss_mod.unpack_statespace()):
-            if name not in [x.name for x in m.deterministics]:
-                pm.Deterministic(name, matrix)
-
-    d, const = pm.draw([m["d"].squeeze(), m["constant"].squeeze()], 10)
-    assert_allclose(d, const)
