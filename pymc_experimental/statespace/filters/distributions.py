@@ -6,10 +6,11 @@ from pymc import intX
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous, SymbolicRandomVariable
 from pymc.distributions.multivariate import MvNormal
-from pymc.distributions.shape_utils import get_support_shape, get_support_shape_1d
+from pymc.distributions.shape_utils import get_support_shape_1d, rv_size_is_none
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
 from pytensor.tensor.random.basic import MvNormalRV
+from pytensor.tensor.random.utils import normalize_size_param
 
 floatX = pytensor.config.floatX
 COV_ZERO_TOL = 0
@@ -246,7 +247,7 @@ class _LinearGaussianStateSpace(Continuous):
         linear_gaussian_ss_op = LinearGaussianStateSpaceRV(
             inputs=[a0_, P0_, c_, d_, T_, Z_, R_, H_, Q_, steps, rng],
             outputs=[ss_rng, statespace_],
-            signature=make_signature(sequence_names),
+            extended_signature=make_signature(sequence_names),
         )
 
         linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, steps, rng)
@@ -353,7 +354,7 @@ class LinearGaussianStateSpace(Continuous):
 class KalmanFilterRV(SymbolicRandomVariable):
     default_output = 1
     _print_name = ("KalmanFilter", "\\operatorname{KalmanFilter}")
-    signature = "(t,s),(t,s,s),(t),[rng]->[rng],(t,s)"
+    extended_signature = "(t,s),(t,s,s),(t),[rng]->[rng],(t,s)"
 
     def update(self, node: Node):
         return {node.inputs[-1]: node.outputs[0]}
@@ -363,51 +364,51 @@ class SequenceMvNormal(Continuous):
     rv_op = KalmanFilterRV
 
     def __new__(cls, *args, **kwargs):
-        support_shape = get_support_shape(
-            support_shape=None,
-            shape=None,
-            dims=kwargs.get("dims", None),
-            observed=None,
-            ndim_supp=2,
-        )
-
-        return super().__new__(cls, *args, support_shape=support_shape, **kwargs)
+        return super().__new__(cls, *args, **kwargs)
 
     @classmethod
-    def dist(cls, mus, covs, logp, support_shape=None, **kwargs):
-        support_shape = get_support_shape(
-            support_shape=None,
-            shape=None,
-            dims=kwargs.get("dims", None),
-            observed=kwargs.get("observed", None),
-            ndim_supp=2,
-        )
-
-        if support_shape is None:
-            support_shape = pt.as_tensor_variable(())
-
-        return super().dist([mus, covs, logp, support_shape], **kwargs)
+    def dist(cls, mus, covs, logp, **kwargs):
+        return super().dist([mus, covs, logp], **kwargs)
 
     @classmethod
-    def rv_op(cls, mus, covs, logp, support_shape, size=None):
-        if size is not None:
-            batch_size = size
+    def rv_op(cls, mus, covs, logp, size=None):
+
+        # TODO: None of this does anything -- what am I doing wrong?
+        size = normalize_size_param(size)
+        if rv_size_is_none(size):
+            # In this case the size of the init_dist depends on the parameters shape
+            # The last dimension of rho and init_dist does not matter
+            batch_size = pt.broadcast_shape(
+                tuple(mus.shape)[:-2],
+                tuple(covs.shape)[:-3],
+                arrays_are_shapes=True,
+            )
         else:
-            batch_size = support_shape
+            batch_size = size
 
-        mus_, covs_, support_shape_ = mus.type(), covs.type(), support_shape.type()
+        # Batch dimensions (if any) will be on the far left, but scan requires time to be there instead
+        if mus.ndim > 2:
+            mus = pt.moveaxis(mus, -2, 0)
+        if covs.ndim > 3:
+            covs = pt.moveaxis(covs, -3, 0)
+
+        mus_, covs_ = mus.type(), covs.type()
 
         logp_ = logp.type()
         rng = pytensor.shared(np.random.default_rng())
 
         def step(mu, cov, rng):
-            new_rng, mvn = MvNormalSVD.dist(mu=mu, cov=cov, rng=rng, size=batch_size).owner.outputs
+            new_rng, mvn = MvNormalSVD.dist(mu=mu, cov=cov, rng=rng).owner.outputs
             return mvn, {rng: new_rng}
 
         mvn_seq, updates = pytensor.scan(
-            step, sequences=[mus_, covs_], non_sequences=[rng], strict=True
+            step, sequences=[mus_, covs_], non_sequences=[rng], strict=True, n_steps=mus_.shape[0]
         )
         mvn_seq = pt.specify_shape(mvn_seq, mus.type.shape)
+
+        # Move time axis back to position -2 so batches are on the left
+        if mvn_seq.ndim > 2:
+            mvn_seq = pt.moveaxis(mvn_seq, 0, -2)
 
         (seq_mvn_rng,) = tuple(updates.values())
 
@@ -416,7 +417,6 @@ class SequenceMvNormal(Continuous):
         )
 
         mvn_seq = mvn_seq_op(mus, covs, logp, rng)
-
         return mvn_seq
 
 

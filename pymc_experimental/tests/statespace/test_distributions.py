@@ -251,7 +251,7 @@ def test_lgss_signature():
 
     lgss = _LinearGaussianStateSpace.dist(x0, P0, c, d, T, Z, R, H, Q, steps=100)
     assert (
-        lgss.owner.op.signature
+        lgss.owner.op.extended_signature
         == "(s),(s,s),(s),(p),(s,s),(p,s),(s,r),(p,p),(r,r),[rng]->[rng],(t,n)"
     )
     assert lgss.owner.op.ndim_supp == 2
@@ -264,7 +264,7 @@ def test_lgss_signature():
     )
 
     assert (
-        lgss.owner.op.signature
+        lgss.owner.op.extended_signature
         == "(s),(s,s),(s),(p),(t,s,s),(p,s),(s,r),(p,p),(r,r),[rng]->[rng],(t,n)"
     )
     assert lgss.owner.op.ndim_supp == 2
