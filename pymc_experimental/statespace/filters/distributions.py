@@ -6,6 +6,7 @@ from pymc import intX
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous, SymbolicRandomVariable
 from pymc.distributions.multivariate import MvNormal
+from pymc.distributions.shape_utils import get_support_shape_1d
 from pymc.logprob.abstract import _logprob
 from pytensor.graph.basic import Node
 from pytensor.tensor.random.basic import MvNormalRV
