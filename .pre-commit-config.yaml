@@ -1,6 +1,6 @@
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.5.0
+  rev: v4.6.0
   hooks:
     -   id: check-merge-conflict
     -   id: check-toml
@@ -16,17 +16,17 @@ repos:
     - id: isort
       name: isort
 - repo: https://github.com/asottile/pyupgrade
-  rev: v3.15.0
+  rev: v3.16.0
   hooks:
     - id: pyupgrade
       args: [--py37-plus]
 - repo: https://github.com/psf/black
-  rev: 24.1.1
+  rev: 24.4.2
   hooks:
     - id: black
     - id: black-jupyter
 - repo: https://github.com/PyCQA/pylint
-  rev: v3.0.3
+  rev: v3.2.4
   hooks:
     - id: pylint
       args: [--rcfile=.pylintrc]
