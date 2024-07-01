@@ -21,7 +21,6 @@ import pymc_experimental as pmx
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Model.model property is deprecated. Just use Model.:FutureWarning",
     "ignore:hessian will stop negating the output in a future version of PyMC.\n"
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
@@ -64,7 +63,6 @@ def test_laplace():
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Model.model property is deprecated. Just use Model.:FutureWarning",
     "ignore:hessian will stop negating the output in a future version of PyMC.\n"
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
@@ -103,7 +101,6 @@ def test_laplace_only_fit():
 
 
 @pytest.mark.filterwarnings(
-    "ignore:Model.model property is deprecated. Just use Model.:FutureWarning",
     "ignore:hessian will stop negating the output in a future version of PyMC.\n"
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
@@ -131,7 +128,7 @@ def test_laplace_subset_of_rv(recwarn):
         random_seed=173300,
     )
 
-    assert len(recwarn) == 4
+    assert len(recwarn) == 3
     w = recwarn.pop(UserWarning)
     assert issubclass(w.category, UserWarning)
     assert (
