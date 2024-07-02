@@ -6,6 +6,7 @@ import pandas as pd
 import pymc as pm
 import pytensor.tensor as pt
 import pytest
+import scipy
 from arviz import InferenceData, dict_to_dataset
 from pymc.distributions import transforms
 from pymc.logprob.abstract import _logprob
@@ -802,4 +803,20 @@ def test_marginal_model_func():
     np.testing.assert_allclose(
         marginal_m.compile_logp()(ip),
         reference_m.compile_logp()(ip),
+    )
+
+
+def test_marginalize_normal_via_qmc():
+    with MarginalModel() as m:
+        SD = pm.HalfNormal("SD", default_transform=None)
+        X = pm.Normal("X", sigma=SD)
+        Y = pm.Normal("Y", mu=(2 * X + 1), sigma=1, observed=[1, 2, 3])
+
+    m.marginalize([X])  # ideally method="qmc"
+
+    # P(Y=[1, 2, 3] | SD = 1) = int_x P(Y=[1, 2, 3] | SD=1, X=x) P(X=x | SD=1) = Norm([1, 2, 3], 0.5, sqrt(2))
+    [logp_eval] = m.compile_logp(vars=[Y], sum=False)({"SD": 1})
+    np.testing.assert_allclose(
+        logp_eval,
+        scipy.stats.norm.logpdf([1, 2, 3], 0.5, np.sqrt(2) / 2),
     )
