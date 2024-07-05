@@ -134,7 +134,7 @@ def test_blackjax_particles_from_pymc_population_univariate():
     model = fast_model()
     population = {"x": np.array([2, 3, 4])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    jax.tree.map(np.testing.assert_allclose, blackjax_particles, [np.array([[2], [3], [4]])])
+    jax.tree.map(np.testing.assert_allclose, blackjax_particles, [np.array([2, 3, 4])])
 
 
 def test_blackjax_particles_from_pymc_population_multivariate():
@@ -148,7 +148,7 @@ def test_blackjax_particles_from_pymc_population_multivariate():
     jax.tree.map(
         np.testing.assert_allclose,
         blackjax_particles,
-        [np.array([[0.34614613], [1.09163261], [-0.44526825]]), np.array([[1], [2], [3]])],
+        [np.array([0.34614613, 1.09163261, -0.44526825]), np.array([1, 2, 3])],
     )
 
 
@@ -169,7 +169,7 @@ def test_blackjax_particles_from_pymc_population_multivariable():
     population = {"x": np.array([[2, 3], [5, 6], [7, 9]]), "z": np.array([11, 12, 13])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
 
-    jax.tree.map(
+    jax.tree_map(
         np.testing.assert_allclose,
         blackjax_particles,
         [np.array([[2, 3], [5, 6], [7, 9]]), np.array([[11], [12], [13]])],
@@ -182,7 +182,7 @@ def test_arviz_from_particles():
     with model:
         inference_data = arviz_from_particles(model, particles)
 
-    assert inference_data.posterior.sizes == Frozen({"chain": 1, "draw": 3, "x_dim_0": 2})
+    assert inference_data.posterior.dims == Frozen({"chain": 1, "draw": 3, "x_dim_0": 2})
     assert inference_data.posterior.data_vars.dtypes == Frozen(
         {"x": dtype("float64"), "z": dtype("float64")}
     )
@@ -197,7 +197,7 @@ def test_get_jaxified_logprior():
     """
     logprior = get_jaxified_logprior(fast_model())
     for point in [-0.5, 0.0, 0.5]:
-        jax.tree.map(
+        jax.tree_map(
             np.testing.assert_allclose,
             jax.vmap(logprior)([np.array([point])]),
             np.log(scipy.stats.norm(0, 1).pdf(point)),
@@ -213,7 +213,7 @@ def test_get_jaxified_loglikelihood():
     """
     loglikelihood = get_jaxified_loglikelihood(fast_model())
     for point in [-0.5, 0.0, 0.5]:
-        jax.tree.map(
+        jax.tree_map(
             np.testing.assert_allclose,
             jax.vmap(loglikelihood)([np.array([point])]),
             np.log(scipy.stats.norm(point, 1).pdf(0)),
