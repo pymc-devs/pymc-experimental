@@ -6,12 +6,14 @@ import pandas as pd
 import pymc as pm
 import pytensor.tensor as pt
 import pytest
+import scipy
 from arviz import InferenceData, dict_to_dataset
 from pymc.distributions import transforms
 from pymc.logprob.abstract import _logprob
 from pymc.model.fgraph import fgraph_from_model
 from pymc.pytensorf import inputvars
 from pymc.util import UNSET
+from pytensor.graph import FunctionGraph
 from scipy.special import log_softmax, logsumexp
 from scipy.stats import halfnorm, norm
 
@@ -21,6 +23,7 @@ from pymc_experimental.model.marginal_model import (
     MarginalModel,
     is_conditional_dependent,
     marginalize,
+    replace_continuous_marginal_subgraph,
 )
 from pymc_experimental.tests.utils import equal_computations_up_to_root
 
@@ -803,3 +806,63 @@ def test_marginal_model_func():
         marginal_m.compile_logp()(ip),
         reference_m.compile_logp()(ip),
     )
+
+
+@pytest.mark.parametrize("univariate", (True, False), ids=["univariate", "multivariate"])
+@pytest.mark.parametrize(
+    "multiple_dependent", (False, True), ids=["single-dependent", "multiple-dependent"]
+)
+def test_marginalize_normal_qmc(univariate, multiple_dependent):
+    with MarginalModel() as m:
+        SD = pm.HalfNormal("SD", default_transform=None)
+        if univariate:
+            X = pm.Normal("X", sigma=SD, shape=(3,))
+        else:
+            X = pm.MvNormal("X", mu=[0, 0, 0], cov=np.eye(3) * SD**2)
+
+        if multiple_dependent:
+            Y = [
+                pm.Normal("Y[0]", mu=(2 * X[0] + 1), sigma=1, observed=1),
+                pm.Normal("Y[1:]", mu=(2 * X[1:] + 1), sigma=1, observed=[2, 3]),
+            ]
+        else:
+            Y = [pm.Normal("Y", mu=(2 * X + 1), sigma=1, observed=[1, 2, 3])]
+
+    m.marginalize([X])  # ideally method="qmc"
+
+    logp_eval = np.hstack(m.compile_logp(vars=Y, sum=False)({"SD": 2.0}))
+
+    np.testing.assert_allclose(
+        logp_eval,
+        scipy.stats.norm.logpdf([1, 2, 3], 1, np.sqrt(17)),
+        rtol=1e-5,
+    )
+
+
+def test_marginalize_non_trivial_mvnormal_qmc():
+    with MarginalModel() as m:
+        SD = pm.HalfNormal("SD", default_transform=None)
+        X = pm.MvNormal("X", cov=[[1.0, 0.5], [0.5, 1.0]] * SD**2)
+        Y = pm.MvNormal("Y", mu=2 * X + 1, cov=np.eye(2), observed=[1, 2])
+
+    m.marginalize([X])
+
+    [logp_eval] = m.compile_logp(vars=Y, sum=False)({"SD": 1})
+
+    np.testing.assert_allclose(
+        logp_eval,
+        scipy.stats.multivariate_normal.logpdf([1, 2], [1, 1], [[5, 2], [2, 5]]),
+        rtol=1e-5,
+    )
+
+
+def test_marginalize_sample():
+    with pm.Model() as m:
+        SD = pm.HalfNormal("SD")
+        X = pm.Normal.dist(sigma=SD, name="X")
+        Y = pm.Normal("Y", mu=(2 * X + 1), sigma=1, observed=[1, 2, 3])
+
+    fg = FunctionGraph(outputs=[SD, Y, X], clone=False)
+    old_rvs, new_rvs = replace_continuous_marginal_subgraph(fg, X, [Y, SD, X])
+    res1, res2 = pm.draw(new_rvs, draws=2)
+    assert not np.allclose(res1, res2)
