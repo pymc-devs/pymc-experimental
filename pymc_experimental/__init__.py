@@ -13,7 +13,8 @@
 #   limitations under the License.
 import logging
 
-from pymc_experimental import distributions, gp, statespace, utils
+from pymc_experimental import gp, statespace, utils
+from pymc_experimental.distributions import *
 from pymc_experimental.inference.fit import fit
 from pymc_experimental.model.marginal_model import MarginalModel
 from pymc_experimental.model.model_api import as_model
@@ -26,15 +27,3 @@ if not logging.root.handlers:
     if len(_log.handlers) == 0:
         handler = logging.StreamHandler()
         _log.addHandler(handler)
-
-
-__all__ = [
-    "distributions",
-    "gp",
-    "statespace",
-    "utils",
-    "fit",
-    "MarginalModel",
-    "as_model",
-    "__version__",
-]
