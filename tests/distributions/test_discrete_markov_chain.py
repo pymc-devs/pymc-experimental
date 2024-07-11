@@ -5,10 +5,15 @@ import pymc as pm
 import pytensor.tensor as pt
 import pytest
 
+from pymc.distributions import Categorical
 from pymc.distributions.shape_utils import change_dist_size
 from pymc.logprob.utils import ParameterValueError
+from pymc.sampling.mcmc import assign_step_methods
 
-from pymc_experimental.distributions.timeseries import DiscreteMarkovChain
+from pymc_experimental.distributions.timeseries import (
+    DiscreteMarkovChain,
+    DiscreteMarkovChainGibbsMetropolis,
+)
 
 
 def transition_probability_tests(steps, n_states, n_lags, n_draws, atol):
@@ -216,3 +221,36 @@ class TestDiscreteMarkovRV:
 
         new_rw = change_dist_size(chain, new_size=(4, 3), expand=True)
         assert tuple(new_rw.shape.eval()) == (4, 3, 100, 5)
+
+    def test_mcmc_sampling(self):
+        with pm.Model(coords={"step": range(100)}) as model:
+            init_dist = Categorical.dist(p=[0.5, 0.5])
+            DiscreteMarkovChain(
+                "markov_chain",
+                P=[[0.1, 0.9], [0.1, 0.9]],
+                init_dist=init_dist,
+                shape=(100,),
+                dims="step",
+            )
+
+            step_method = assign_step_methods(model)
+            assert isinstance(step_method, DiscreteMarkovChainGibbsMetropolis)
+
+            # Sampler needs no tuning
+            idata = pm.sample(
+                tune=0, chains=4, draws=250, progressbar=False, compute_convergence_checks=False
+            )
+
+        np.testing.assert_allclose(
+            idata.posterior["markov_chain"].isel(step=0).mean(("chain", "draw")),
+            0.5,
+            atol=0.05,
+        )
+
+        np.testing.assert_allclose(
+            idata.posterior["markov_chain"].isel(step=slice(1, None)).mean(("chain", "draw")),
+            0.9,
+            atol=0.05,
+        )
+
+        assert pm.stats.ess(idata, method="tail").min() > 950
