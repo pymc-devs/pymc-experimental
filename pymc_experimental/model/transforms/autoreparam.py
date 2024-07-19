@@ -177,7 +177,7 @@ def vip_reparam_node(
     if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
     _, size, *_ = node.inputs
-    eval_size = size.eval()
+    eval_size = size.eval(mode="FAST_COMPILE")
     if eval_size is not None:
         rv_shape = tuple(eval_size)
     else:
