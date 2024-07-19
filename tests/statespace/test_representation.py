@@ -6,11 +6,8 @@ import pytensor.tensor as pt
 from numpy.testing import assert_allclose
 
 from pymc_experimental.statespace.core.representation import PytensorRepresentation
-from pymc_experimental.tests.statespace.utilities.shared_fixtures import TEST_SEED
-from pymc_experimental.tests.statespace.utilities.test_helpers import (
-    fast_eval,
-    make_test_inputs,
-)
+from tests.statespace.utilities.shared_fixtures import TEST_SEED
+from tests.statespace.utilities.test_helpers import fast_eval, make_test_inputs
 
 floatX = pytensor.config.floatX
 atol = 1e-12 if floatX == "float64" else 1e-6

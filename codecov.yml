@@ -22,7 +22,7 @@ coverage:
         base: auto
 
 ignore:
-  - "pymc_experimental/tests/*"
+  - "tests/*"
 
 comment:
   layout: "reach, diff, flags, files"

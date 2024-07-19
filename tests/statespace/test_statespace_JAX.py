@@ -12,17 +12,14 @@ from pymc_experimental.statespace.utils.constants import (
     MATRIX_NAMES,
     SMOOTHER_OUTPUT_NAMES,
 )
-from pymc_experimental.tests.statespace.test_statespace import (  # pylint: disable=unused-import
+from tests.statespace.test_statespace import (  # pylint: disable=unused-import
     exog_ss_mod,
-    make_statespace_mod,
     ss_mod,
 )
-from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
-from pymc_experimental.tests.statespace.utilities.test_helpers import (
-    load_nile_test_data,
-)
+from tests.statespace.utilities.test_helpers import load_nile_test_data
 
 pytest.importorskip("jax")
 pytest.importorskip("numpyro")

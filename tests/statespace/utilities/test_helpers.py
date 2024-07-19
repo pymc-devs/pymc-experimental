@@ -11,9 +11,7 @@ from pymc_experimental.statespace.utils.constants import (
     MATRIX_NAMES,
     SHORT_NAME_TO_LONG,
 )
-from pymc_experimental.tests.statespace.utilities.statsmodel_local_level import (
-    LocalLinearTrend,
-)
+from tests.statespace.utilities.statsmodel_local_level import LocalLinearTrend
 
 floatX = pytensor.config.floatX
 
@@ -21,7 +19,7 @@ floatX = pytensor.config.floatX
 def load_nile_test_data():
     from importlib.metadata import version
 
-    nile = pd.read_csv("pymc_experimental/tests/statespace/test_data/nile.csv", dtype={"x": floatX})
+    nile = pd.read_csv("tests/statespace/test_data/nile.csv", dtype={"x": floatX})
     major, minor, rev = map(int, version("pandas").split("."))
     if major >= 2 and minor >= 2 and rev >= 0:
         freq_str = "YS-JAN"
