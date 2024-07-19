@@ -22,7 +22,7 @@ from pymc_experimental.model.marginal_model import (
     is_conditional_dependent,
     marginalize,
 )
-from pymc_experimental.tests.utils import equal_computations_up_to_root
+from tests.utils import equal_computations_up_to_root
 
 
 @pytest.fixture

@@ -18,9 +18,7 @@ from pymc_experimental.statespace.utils.data_tools import (
     NO_FREQ_INFO_WARNING,
     NO_TIME_INDEX_WARNING,
 )
-from pymc_experimental.tests.statespace.utilities.test_helpers import (
-    load_nile_test_data,
-)
+from tests.statespace.utilities.test_helpers import load_nile_test_data
 
 function_names = ["pandas_date_freq", "pandas_date_nofreq", "pandas_nodate", "numpy", "pytensor"]
 expected_warning = [

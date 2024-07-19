@@ -11,7 +11,7 @@ from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianVARMAX
 from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
-from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
 
@@ -25,7 +25,7 @@ ids = [f"p={x[0]}, q={x[1]}" for x in orders]
 @pytest.fixture(scope="session")
 def data():
     df = pd.read_csv(
-        "pymc_experimental/tests/statespace/test_data/statsmodels_macrodata_processed.csv",
+        "tests/statespace/test_data/statsmodels_macrodata_processed.csv",
         index_col=0,
         parse_dates=True,
     ).astype(floatX)

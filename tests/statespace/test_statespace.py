@@ -13,10 +13,10 @@ from pymc_experimental.statespace.utils.constants import (
     MATRIX_NAMES,
     SMOOTHER_OUTPUT_NAMES,
 )
-from pymc_experimental.tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
-from pymc_experimental.tests.statespace.utilities.test_helpers import (
+from tests.statespace.utilities.test_helpers import (
     fast_eval,
     load_nile_test_data,
     make_test_inputs,
