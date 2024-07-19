@@ -64,7 +64,7 @@ def test_reparam_fit(model_c):
     vars = ["g", "e"]
     model_v, vip = vip_reparametrize(model_c, ["g", "e"])
     with model_v:
-        vip.fit(random_seed=42)
+        vip.fit(50000, random_seed=42)
     for var in vars:
         np.testing.assert_allclose(vip.get_lambda()[var], 0, atol=0.01)
 
