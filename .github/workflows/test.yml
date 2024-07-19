@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/*"
       - "pymc_experimental/**"
+      - "tests/**"
       - "setup.py"
       - "pyproject.toml"
       - "buildosx"
@@ -20,7 +21,7 @@ jobs:
         os: [ubuntu-latest]
         python-version: ["3.10"]
         test-subset:
-          - pymc_experimental/tests
+          - tests
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
@@ -58,7 +59,7 @@ jobs:
         os: [windows-latest]
         python-version: ["3.12"]
         test-subset:
-          - pymc_experimental/tests
+          - tests
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
