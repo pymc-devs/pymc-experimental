@@ -60,12 +60,13 @@ def test_random_draw(model_c: pm.Model, model_nc, var):
     np.testing.assert_allclose(v_1.std(), nc.std())
 
 
-@pytest.mark.parametrize("var", ["g", "e"])
-def test_reparam_fit(model_c, var):
-    model_v, vip = vip_reparametrize(model_c, [var])
+def test_reparam_fit(model_c):
+    vars = ["g", "e"]
+    model_v, vip = vip_reparametrize(model_c, ["g", "e"])
     with model_v:
         vip.fit(random_seed=42)
-    np.testing.assert_allclose(vip.get_lambda()[var], 0, atol=0.01)
+    for var in vars:
+        np.testing.assert_allclose(vip.get_lambda()[var], 0, atol=0.01)
 
 
 def test_multilevel():
