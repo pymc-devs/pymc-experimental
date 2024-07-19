@@ -25,7 +25,7 @@ def model_nc():
     return mod
 
 
-@pytest.mark.parameterize("var", ["g", "e"])
+@pytest.mark.parametrize("var", ["g", "e"])
 def test_reparametrize_created(model_c: pm.Model, var):
     model_reparam, vip = vip_reparametrize(model_c, [var])
     assert f"{var}" in vip.get_lambda()
@@ -35,7 +35,7 @@ def test_reparametrize_created(model_c: pm.Model, var):
     assert ~np.isfinite(model_reparam[f"{var}::lam_logit__"].get_value()).any()
 
 
-@pytest.mark.parameterize("var", ["g", "e"])
+@pytest.mark.parametrize("var", ["g", "e"])
 def test_random_draw(model_c: pm.Model, model_nc, var):
     model_c = pm.do(model_c, {"m": 3, "s": 2})
     model_nc = pm.do(model_nc, {"m": 3, "s": 2})
@@ -60,7 +60,7 @@ def test_random_draw(model_c: pm.Model, model_nc, var):
     np.testing.assert_allclose(v_1.std(), nc.std())
 
 
-@pytest.mark.parameterize("var", ["g", "e"])
+@pytest.mark.parametrize("var", ["g", "e"])
 def test_reparam_fit(model_c, var):
     model_v, vip = vip_reparametrize(model_c, [var])
     with model_v:
