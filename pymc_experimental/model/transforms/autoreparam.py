@@ -19,7 +19,7 @@ from pymc.model.fgraph import (
     model_from_fgraph,
     model_named,
 )
-from pymc.pytensorf import toposort_replace
+from pymc.pytensorf import constant_fold, toposort_replace
 from pytensor.graph.basic import Apply, Variable
 from pytensor.tensor.random.op import RandomVariable
 
@@ -176,12 +176,8 @@ def vip_reparam_node(
 ) -> Tuple[ModelDeterministic, ModelNamed]:
     if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
-    _, size, *_ = node.inputs
-    eval_size = size.eval()
-    if eval_size is not None:
-        rv_shape = tuple(eval_size)
-    else:
-        rv_shape = ()
+    rv = node.default_output()
+    [rv_shape] = constant_fold([rv.shape], raise_if_not_constant=False)
     lam_name = f"{name}::lam_logit__"
     _log.debug(f"Creating {lam_name} with shape of {rv_shape}")
     logit_lam_ = pytensor.shared(
