@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import Dict, List, Optional, Sequence, Tuple, Union
@@ -8,7 +9,6 @@ import pytensor
 import pytensor.tensor as pt
 import scipy.special
 from pymc.distributions import SymbolicRandomVariable
-from pymc.exceptions import NotConstantValueError
 from pymc.logprob.transforms import Transform
 from pymc.model.fgraph import (
     ModelDeterministic,
@@ -19,9 +19,11 @@ from pymc.model.fgraph import (
     model_from_fgraph,
     model_named,
 )
-from pymc.pytensorf import constant_fold, toposort_replace
+from pymc.pytensorf import toposort_replace
 from pytensor.graph.basic import Apply, Variable
 from pytensor.tensor.random.op import RandomVariable
+
+_log = logging.getLogger("pmx")
 
 
 @dataclass
@@ -174,15 +176,14 @@ def vip_reparam_node(
 ) -> Tuple[ModelDeterministic, ModelNamed]:
     if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
-    rv = node.default_output()
-    try:
-        [rv_shape] = constant_fold([rv.shape])
-    except NotConstantValueError:
-        raise ValueError("Size should be static for autoreparametrization.")
+    _, size, *_ = node.inputs
+    rv_shape = tuple(size.eval())
+    lam_name = f"{name}::lam_logit__"
+    _log.debug(f"Creating {lam_name} with shape of {rv_shape}")
     logit_lam_ = pytensor.shared(
         np.zeros(rv_shape),
         shape=rv_shape,
-        name=f"{name}::lam_logit__",
+        name=lam_name,
     )
     logit_lam = model_named(logit_lam_, *dims)
     lam = pt.sigmoid(logit_lam)
