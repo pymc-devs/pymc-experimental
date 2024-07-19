@@ -177,7 +177,11 @@ def vip_reparam_node(
     if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
     _, size, *_ = node.inputs
-    rv_shape = tuple(size.eval())
+    eval_size = size.eval()
+    if eval_size is not None:
+        rv_shape = tuple(eval_size)
+    else:
+        rv_shape = ()
     lam_name = f"{name}::lam_logit__"
     _log.debug(f"Creating {lam_name} with shape of {rv_shape}")
     logit_lam_ = pytensor.shared(
