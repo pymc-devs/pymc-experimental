@@ -43,7 +43,9 @@ def make_signature(sequence_names):
         base_shape = matrix_to_shape[matrix]
         matrix_to_shape[matrix] = (time,) + base_shape
 
-    signature = ",".join(["(" + ",".join(shapes) + ")" for shapes in matrix_to_shape.values()])
+    signature = ",".join(
+        ["(" + ",".join(shapes) + ")" for shapes in matrix_to_shape.values()]
+    )
 
     return f"{signature},[rng]->[rng],({time},{state_and_obs})"
 
@@ -87,7 +89,10 @@ except ImportError:
 
 class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
     default_output = 1
-    _print_name = ("LinearGuassianStateSpace", "\\operatorname{LinearGuassianStateSpace}")
+    _print_name = (
+        "LinearGuassianStateSpace",
+        "\\operatorname{LinearGuassianStateSpace}",
+    )
 
     def update(self, node: Node):
         return {node.inputs[-1]: node.outputs[0]}
@@ -143,7 +148,20 @@ class _LinearGaussianStateSpace(Continuous):
 
     @classmethod
     def dist(
-        cls, a0, P0, c, d, T, Z, R, H, Q, steps=None, mode=None, sequence_names=None, **kwargs
+        cls,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        steps=None,
+        mode=None,
+        sequence_names=None,
+        **kwargs,
     ):
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
@@ -155,11 +173,29 @@ class _LinearGaussianStateSpace(Continuous):
         steps = pt.as_tensor_variable(intX(steps), ndim=0)
 
         return super().dist(
-            [a0, P0, c, d, T, Z, R, H, Q, steps], mode=mode, sequence_names=sequence_names, **kwargs
+            [a0, P0, c, d, T, Z, R, H, Q, steps],
+            mode=mode,
+            sequence_names=sequence_names,
+            **kwargs,
         )
 
     @classmethod
-    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, size=None, mode=None, sequence_names=None):
+    def rv_op(  #  noqa: F811
+        cls,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        steps,
+        size=None,
+        mode=None,
+        sequence_names=None,
+    ):
         if sequence_names is None:
             sequence_names = []
 
@@ -177,7 +213,9 @@ class _LinearGaussianStateSpace(Continuous):
 
         sequences = [
             x
-            for x, name in zip([c_, d_, T_, Z_, R_, H_, Q_], ["c", "d", "T", "Z", "R", "H", "Q"])
+            for x, name in zip(
+                [c_, d_, T_, Z_, R_, H_, Q_], ["c", "d", "T", "Z", "R", "H", "Q"]
+            )
             if name in sequence_names
         ]
         non_sequences = [x for x in [c_, d_, T_, Z_, R_, H_, Q_] if x not in sequences]
@@ -208,8 +246,12 @@ class _LinearGaussianStateSpace(Continuous):
             k = T.shape[0]
             a = state[:k]
 
-            middle_rng, a_innovation = MvNormalSVD.dist(mu=0, cov=Q, rng=rng).owner.outputs
-            next_rng, y_innovation = MvNormalSVD.dist(mu=0, cov=H, rng=middle_rng).owner.outputs
+            middle_rng, a_innovation = MvNormalSVD.dist(
+                mu=0, cov=Q, rng=rng
+            ).owner.outputs
+            next_rng, y_innovation = MvNormalSVD.dist(
+                mu=0, cov=H, rng=middle_rng
+            ).owner.outputs
 
             a_mu = c + T @ a
             a_next = a_mu + R @ a_innovation
@@ -249,7 +291,9 @@ class _LinearGaussianStateSpace(Continuous):
             extended_signature=make_signature(sequence_names),
         )
 
-        linear_gaussian_ss = linear_gaussian_ss_op(a0, P0, c, d, T, Z, R, H, Q, steps, rng)
+        linear_gaussian_ss = linear_gaussian_ss_op(
+            a0, P0, c, d, T, Z, R, H, Q, steps, rng
+        )
         return linear_gaussian_ss
 
 
@@ -290,8 +334,6 @@ class LinearGaussianStateSpace(Continuous):
             latent_dims = [time_dim, state_dim]
             obs_dims = [time_dim, obs_dim]
 
-        matrices = ()
-
         latent_obs_combined = _LinearGaussianStateSpace(
             f"{name}_combined",
             a0,
@@ -317,7 +359,9 @@ class LinearGaussianStateSpace(Continuous):
         latent_states = latent_obs_combined[..., latent_slice]
         obs_states = latent_obs_combined[..., obs_slice]
 
-        latent_states = pm.Deterministic(f"{name}_latent", latent_states, dims=latent_dims)
+        latent_states = pm.Deterministic(
+            f"{name}_latent", latent_states, dims=latent_dims
+        )
         obs_states = pm.Deterministic(f"{name}_observed", obs_states, dims=obs_dims)
 
         return latent_states, obs_states
@@ -370,7 +414,7 @@ class SequenceMvNormal(Continuous):
         return super().dist([mus, covs, logp], **kwargs)
 
     @classmethod
-    def rv_op(cls, mus, covs, logp, size=None):
+    def rv_op(cls, mus, covs, logp, size=None):  # noqa: F811
         # Batch dimensions (if any) will be on the far left, but scan requires time to be there instead
         if mus.ndim > 2:
             mus = pt.moveaxis(mus, -2, 0)
@@ -387,7 +431,11 @@ class SequenceMvNormal(Continuous):
             return mvn, {rng: new_rng}
 
         mvn_seq, updates = pytensor.scan(
-            step, sequences=[mus_, covs_], non_sequences=[rng], strict=True, n_steps=mus_.shape[0]
+            step,
+            sequences=[mus_, covs_],
+            non_sequences=[rng],
+            strict=True,
+            n_steps=mus_.shape[0],
         )
         mvn_seq = pt.specify_shape(mvn_seq, mus.type.shape)
 
@@ -398,7 +446,9 @@ class SequenceMvNormal(Continuous):
         (seq_mvn_rng,) = tuple(updates.values())
 
         mvn_seq_op = KalmanFilterRV(
-            inputs=[mus_, covs_, logp_, rng], outputs=[seq_mvn_rng, mvn_seq], ndim_supp=2
+            inputs=[mus_, covs_, logp_, rng],
+            outputs=[seq_mvn_rng, mvn_seq],
+            ndim_supp=2,
         )
 
         mvn_seq = mvn_seq_op(mus, covs, logp, rng)

@@ -133,7 +133,9 @@ class StructuralTimeSeries(PyMCStateSpace):
         self.ssm["initial_state_cov"] = P0
 
     @staticmethod
-    def _add_inital_state_cov_to_properties(param_names, param_dims, param_info, k_states):
+    def _add_inital_state_cov_to_properties(
+        param_names, param_dims, param_info, k_states
+    ):
         param_names += ["P0"]
         param_dims["P0"] = (ALL_STATE_DIM, ALL_STATE_AUX_DIM)
         param_info["P0"] = {
@@ -377,7 +379,9 @@ class Component(ABC):
         self.param_counts = {}
 
         if representation is None:
-            self.ssm = PytensorRepresentation(k_endog=k_endog, k_states=k_states, k_posdef=k_posdef)
+            self.ssm = PytensorRepresentation(
+                k_endog=k_endog, k_states=k_states, k_posdef=k_posdef
+            )
         else:
             self.ssm = representation
 
@@ -515,13 +519,17 @@ class Component(ABC):
             for name, x, o_x in zip(LONG_MATRIX_NAMES, self_matrices, other_matrices)
         )
 
-        initial_state = pt.concatenate(conform_time_varying_and_time_invariant_matrices(x0, o_x0))
+        initial_state = pt.concatenate(
+            conform_time_varying_and_time_invariant_matrices(x0, o_x0)
+        )
         initial_state.name = x0.name
 
         initial_state_cov = pt.linalg.block_diag(P0, o_P0)
         initial_state_cov.name = P0.name
 
-        state_intercept = pt.concatenate(conform_time_varying_and_time_invariant_matrices(c, o_c))
+        state_intercept = pt.concatenate(
+            conform_time_varying_and_time_invariant_matrices(c, o_c)
+        )
         state_intercept.name = c.name
 
         obs_intercept = d + o_d
@@ -530,7 +538,9 @@ class Component(ABC):
         transition = pt.linalg.block_diag(T, o_T)
         transition.name = T.name
 
-        design = pt.concatenate(conform_time_varying_and_time_invariant_matrices(Z, o_Z), axis=-1)
+        design = pt.concatenate(
+            conform_time_varying_and_time_invariant_matrices(Z, o_Z), axis=-1
+        )
         design.name = Z.name
 
         selection = pt.linalg.block_diag(R, o_R)
@@ -833,10 +843,14 @@ class LevelTrendComponent(Component):
     def populate_component_properties(self):
         name_slice = POSITION_DERIVATIVE_NAMES[: self.k_states]
         self.param_names = ["initial_trend"]
-        self.state_names = [name for name, mask in zip(name_slice, self._order_mask) if mask]
+        self.state_names = [
+            name for name, mask in zip(name_slice, self._order_mask) if mask
+        ]
         self.param_dims = {"initial_trend": ("trend_state",)}
         self.coords = {"trend_state": self.state_names}
-        self.param_info = {"initial_trend": {"shape": (self.k_states,), "constraints": None}}
+        self.param_info = {
+            "initial_trend": {"shape": (self.k_states,), "constraints": None}
+        }
 
         if self.k_posdef > 0:
             self.param_names += ["sigma_trend"]
@@ -845,13 +859,18 @@ class LevelTrendComponent(Component):
             ]
             self.param_dims["sigma_trend"] = ("trend_shock",)
             self.coords["trend_shock"] = self.shock_names
-            self.param_info["sigma_trend"] = {"shape": (self.k_posdef,), "constraints": "Positive"}
+            self.param_info["sigma_trend"] = {
+                "shape": (self.k_posdef,),
+                "constraints": "Positive",
+            }
 
         for name in self.param_names:
             self.param_info[name]["dims"] = self.param_dims[name]
 
     def make_symbolic_graph(self) -> None:
-        initial_trend = self.make_and_register_variable("initial_trend", shape=(self.k_states,))
+        initial_trend = self.make_and_register_variable(
+            "initial_trend", shape=(self.k_states,)
+        )
         self.ssm["initial_state", :] = initial_trend
         triu_idx = np.triu_indices(self.k_states)
         self.ssm[np.s_["transition", triu_idx[0], triu_idx[1]]] = 1
@@ -863,7 +882,9 @@ class LevelTrendComponent(Component):
         self.ssm["design", 0, :] = np.array([1.0] + [0.0] * (self.k_states - 1))
 
         if self.k_posdef > 0:
-            sigma_trend = self.make_and_register_variable("sigma_trend", shape=(self.k_posdef,))
+            sigma_trend = self.make_and_register_variable(
+                "sigma_trend", shape=(self.k_posdef,)
+            )
             diag_idx = np.diag_indices(self.k_posdef)
             idx = np.s_["state_cov", diag_idx[0], diag_idx[1]]
             self.ssm[idx] = sigma_trend**2
@@ -914,7 +935,12 @@ class MeasurementError(Component):
         k_posdef = 0
 
         super().__init__(
-            name, k_endog, k_states, k_posdef, measurement_error=True, combine_hidden_states=False
+            name,
+            k_endog,
+            k_states,
+            k_posdef,
+            measurement_error=True,
+            combine_hidden_states=False,
         )
 
     def populate_component_properties(self):
@@ -930,7 +956,9 @@ class MeasurementError(Component):
 
     def make_symbolic_graph(self) -> None:
         sigma_shape = ()
-        error_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=sigma_shape)
+        error_sigma = self.make_and_register_variable(
+            f"sigma_{self.name}", shape=sigma_shape
+        )
         diag_idx = np.diag_indices(self.k_endog)
         idx = np.s_["obs_cov", diag_idx[0], diag_idx[1]]
         self.ssm[idx] = error_sigma**2
@@ -1036,7 +1064,11 @@ class AutoregressiveComponent(Component):
         self.ssm["selection", 0, 0] = 1
         self.ssm["design", 0, 0] = 1
 
-        ar_idx = ("transition", np.zeros(k_nonzero, dtype="int"), np.nonzero(self.order)[0])
+        ar_idx = (
+            "transition",
+            np.zeros(k_nonzero, dtype="int"),
+            np.nonzero(self.order)[0],
+        )
         self.ssm[ar_idx] = ar_params
 
         cov_idx = ("state_cov", *np.diag_indices(1))
@@ -1226,7 +1258,9 @@ class TimeSeasonality(Component):
 
         if self.innovations:
             self.ssm["selection", 0, 0] = 1
-            season_sigma = self.make_and_register_variable(f"sigma_{self.name}", shape=())
+            season_sigma = self.make_and_register_variable(
+                f"sigma_{self.name}", shape=()
+            )
             cov_idx = ("state_cov", *np.diag_indices(1))
             self.ssm[cov_idx] = season_sigma**2
 
@@ -1315,22 +1349,31 @@ class FrequencySeasonality(Component):
     def make_symbolic_graph(self) -> None:
         self.ssm["design", 0, slice(0, self.k_states, 2)] = 1
 
-        init_state = self.make_and_register_variable(f"{self.name}", shape=(self.n_coefs,))
+        init_state = self.make_and_register_variable(
+            f"{self.name}", shape=(self.n_coefs,)
+        )
 
         init_state_idx = np.arange(self.n_coefs, dtype=int)
         self.ssm["initial_state", init_state_idx] = init_state
 
-        T_mats = [_frequency_transition_block(self.season_length, j + 1) for j in range(self.n)]
+        T_mats = [
+            _frequency_transition_block(self.season_length, j + 1)
+            for j in range(self.n)
+        ]
         T = pt.linalg.block_diag(*T_mats)
         self.ssm["transition", :, :] = T
 
         if self.innovations:
-            sigma_season = self.make_and_register_variable(f"sigma_{self.name}", shape=())
+            sigma_season = self.make_and_register_variable(
+                f"sigma_{self.name}", shape=()
+            )
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_season**2
             self.ssm["selection", :, :] = np.eye(self.k_states)
 
     def populate_component_properties(self):
-        self.state_names = [f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]]
+        self.state_names = [
+            f"{self.name}_{f}_{i}" for i in range(self.n) for f in ["Cos", "Sin"]
+        ]
         self.param_names = [f"{self.name}"]
 
         self.param_dims = {self.name: (f"{self.name}_state",)}
@@ -1345,7 +1388,9 @@ class FrequencySeasonality(Component):
         init_state_idx = np.arange(self.k_states, dtype=int)
         if self.last_state_not_identified:
             init_state_idx = init_state_idx[:-1]
-        self.coords = {f"{self.name}_state": [self.state_names[i] for i in init_state_idx]}
+        self.coords = {
+            f"{self.name}_state": [self.state_names[i] for i in init_state_idx]
+        }
 
         if self.innovations:
             self.shock_names = self.state_names.copy()
@@ -1451,9 +1496,13 @@ class CycleComponent(Component):
         innovations: bool = True,
     ):
         if cycle_length is None and not estimate_cycle_length:
-            raise ValueError("Must specify cycle_length if estimate_cycle_length is False")
+            raise ValueError(
+                "Must specify cycle_length if estimate_cycle_length is False"
+            )
         if cycle_length is not None and estimate_cycle_length:
-            raise ValueError("Cannot specify cycle_length if estimate_cycle_length is True")
+            raise ValueError(
+                "Cannot specify cycle_length if estimate_cycle_length is True"
+            )
         if name is None:
             cycle = int(cycle_length) if cycle_length is not None else "Estimate"
             name = f"Cycle[s={cycle}, dampen={dampen}, innovations={innovations}]"
@@ -1487,7 +1536,9 @@ class CycleComponent(Component):
         self.param_dims = {self.name: (f"{self.name}_state",)}
         self.coords = {f"{self.name}_state": self.state_names}
 
-        init_state = self.make_and_register_variable(f"{self.name}", shape=(self.k_states,))
+        init_state = self.make_and_register_variable(
+            f"{self.name}", shape=(self.k_states,)
+        )
 
         self.ssm["initial_state", :] = init_state
 
@@ -1497,7 +1548,9 @@ class CycleComponent(Component):
             lamb = self.cycle_length
 
         if self.dampen:
-            rho = self.make_and_register_variable(f"{self.name}_dampening_factor", shape=())
+            rho = self.make_and_register_variable(
+                f"{self.name}_dampening_factor", shape=()
+            )
         else:
             rho = 1
 
@@ -1505,7 +1558,9 @@ class CycleComponent(Component):
         self.ssm["transition", :, :] = T
 
         if self.innovations:
-            sigma_cycle = self.make_and_register_variable(f"sigma_{self.name}", shape=())
+            sigma_cycle = self.make_and_register_variable(
+                f"sigma_{self.name}", shape=()
+            )
             self.ssm["state_cov", :, :] = pt.eye(self.k_posdef) * sigma_cycle**2
 
     def populate_component_properties(self):
@@ -1574,12 +1629,16 @@ class RegressionComponent(Component):
         )
 
     @staticmethod
-    def _get_state_names(k_exog: Optional[int], state_names: Optional[list[str]], name: str):
+    def _get_state_names(
+        k_exog: Optional[int], state_names: Optional[list[str]], name: str
+    ):
         if k_exog is None and state_names is None:
             raise ValueError("Must specify at least one of k_exog or state_names")
         if state_names is not None and k_exog is not None:
             if len(state_names) != k_exog:
-                raise ValueError(f"Expected {k_exog} state names, found {len(state_names)}")
+                raise ValueError(
+                    f"Expected {k_exog} state names, found {len(state_names)}"
+                )
         elif k_exog is None:
             k_exog = len(state_names)
         else:
@@ -1587,14 +1646,18 @@ class RegressionComponent(Component):
 
         return k_exog, state_names
 
-    def _handle_input_data(self, k_exog: int, state_names: Optional[list[str]], name) -> int:
+    def _handle_input_data(
+        self, k_exog: int, state_names: Optional[list[str]], name
+    ) -> int:
         k_exog, state_names = self._get_state_names(k_exog, state_names, name)
         self.state_names = state_names
 
         return k_exog
 
     def make_symbolic_graph(self) -> None:
-        betas = self.make_and_register_variable(f"beta_{self.name}", shape=(self.k_states,))
+        betas = self.make_and_register_variable(
+            f"beta_{self.name}", shape=(self.k_states,)
+        )
         regression_data = self.make_and_register_data(
             f"data_{self.name}", shape=(None, self.k_states)
         )
@@ -1634,7 +1697,7 @@ class RegressionComponent(Component):
                 "dims": (TIME_DIM, "exog_state"),
             },
         }
-        self.coords = {f"exog_state": self.state_names}
+        self.coords = {"exog_state": self.state_names}
 
         if self.innovations:
             self.param_names += [f"sigma_beta_{self.name}"]

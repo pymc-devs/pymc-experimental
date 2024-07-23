@@ -60,7 +60,9 @@ def test_histogram_init_discrete(use_dask, min_count, ndims):
         dask = pytest.importorskip("dask")
         dask_df = pytest.importorskip("dask.dataframe")
         data = dask_df.from_array(data)
-    histogram = pmx.distributions.histogram_utils.discrete_histogram(data, min_count=min_count)
+    histogram = pmx.distributions.histogram_utils.discrete_histogram(
+        data, min_count=min_count
+    )
     if use_dask:
         (histogram,) = dask.compute(histogram)
     assert isinstance(histogram, dict)
@@ -81,16 +83,16 @@ def test_histogram_init_discrete(use_dask, min_count, ndims):
 def test_histogram_approx_cont(use_dask, ndims):
     data = np.random.randn(*(10000, *(2,) * (ndims - 1)))
     if use_dask:
-        dask = pytest.importorskip("dask")
+        pytest.importorskip("dask")
         dask_df = pytest.importorskip("dask.dataframe")
         data = dask_df.from_array(data)
     with pm.Model():
         m = pm.Normal("m")
         s = pm.HalfNormal("s", size=2 if ndims > 1 else 1)
-        pot = pmx.distributions.histogram_utils.histogram_approximation(
+        pmx.distributions.histogram_utils.histogram_approximation(
             "histogram_potential", pm.Normal.dist(m, s), observed=data, n_quantiles=1000
         )
-        trace = pm.sample(10, tune=0)  # very fast
+        pm.sample(10, tune=0)  # very fast
 
 
 @pytest.mark.parametrize("use_dask", [True, False])
@@ -98,12 +100,12 @@ def test_histogram_approx_cont(use_dask, ndims):
 def test_histogram_approx_discrete(use_dask, ndims):
     data = np.random.randint(0, 100, size=(10000, *(2,) * (ndims - 1)))
     if use_dask:
-        dask = pytest.importorskip("dask")
+        pytest.importorskip("dask")
         dask_df = pytest.importorskip("dask.dataframe")
         data = dask_df.from_array(data)
     with pm.Model():
         s = pm.Exponential("s", 1.0, size=2 if ndims > 1 else 1)
-        pot = pmx.distributions.histogram_utils.histogram_approximation(
+        pmx.distributions.histogram_utils.histogram_approximation(
             "histogram_potential", pm.Poisson.dist(s), observed=data, min_count=10
         )
-        trace = pm.sample(10, tune=0)  # very fast
+        pm.sample(10, tune=0)  # very fast

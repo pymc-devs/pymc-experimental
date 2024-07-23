@@ -26,7 +26,14 @@ def masked_fill(vector, mask, fill_value):
 
 
 def linear_cg_updates(
-    result, alpha, residual_inner_prod, eps, beta, residual, precond_residual, curr_conjugate_vec
+    result,
+    alpha,
+    residual_inner_prod,
+    eps,
+    beta,
+    residual,
+    precond_residual,
+    curr_conjugate_vec,
 ):
     # Everything inside _jit_linear_cg_updates
     result = result + alpha * curr_conjugate_vec
@@ -65,13 +72,16 @@ def linear_cg(
     initial_guess=None,
     preconditioner=None,
     terminate_cg_by_size=False,
-    use_eval_tolerange=False,
+    use_eval_tolerance=False,
 ):
     if initial_guess is None:
         initial_guess = np.zeros_like(rhs)
 
     if preconditioner is None:
-        preconditioner = lambda x: x
+
+        def preconditioner(x):
+            return x
+
         precond = False
     else:
         precond = True
@@ -112,7 +122,9 @@ def linear_cg(
     result = np.copy(initial_guess)
 
     if not np.allclose(residual, residual):
-        raise RuntimeError("NaNs encountered when trying to perform matrix-vector multiplication")
+        raise RuntimeError(
+            "NaNs encountered when trying to perform matrix-vector multiplication"
+        )
 
     # sometimes we are lucky and preconditioner solves the system right away
     # check for convergence
@@ -128,7 +140,7 @@ def linear_cg(
         residual_inner_prod = residual.T @ precond_residual
 
         # define storage matrices
-        mul_storage = np.zeros_like(residual)
+        np.zeros_like(residual)
         alpha = np.zeros((*batch_shape, 1, rhs.shape[-1]))
         beta = np.zeros_like(alpha)
         is_zero = np.zeros((*batch_shape, 1, rhs.shape[-1]))
@@ -239,14 +251,20 @@ def linear_cg(
             beta_tridiag = np.copy(beta)
 
             alpha_tridiag_is_zero = alpha_tridiag == 0
-            alpha_tridiag = masked_fill(alpha_tridiag, mask=alpha_tridiag_is_zero, fill_value=1)
+            alpha_tridiag = masked_fill(
+                alpha_tridiag, mask=alpha_tridiag_is_zero, fill_value=1
+            )
             alpha_reciprocal = 1 / alpha_tridiag
-            alpha_tridiag = masked_fill(alpha_tridiag, mask=alpha_tridiag_is_zero, fill_value=0)
+            alpha_tridiag = masked_fill(
+                alpha_tridiag, mask=alpha_tridiag_is_zero, fill_value=0
+            )
 
             if k == 0:
                 t_mat[k, k] = alpha_reciprocal
             else:
-                t_mat[k, k] += np.squeeze(alpha_reciprocal + prev_beta * prev_alpha_reciprocal)
+                t_mat[k, k] += np.squeeze(
+                    alpha_reciprocal + prev_beta * prev_alpha_reciprocal
+                )
                 t_mat[k, k - 1] = np.sqrt(prev_beta) * prev_alpha_reciprocal
                 t_mat[k - 1, k] = np.copy(t_mat[k, k - 1])
 

@@ -21,7 +21,9 @@ from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT, MISSING
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
 PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
 
-assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")
+assert_data_is_1d = Assert(
+    "UnivariateTimeSeries filter requires data be at most 1-dimensional"
+)
 assert_time_varying_dim_correct = Assert(
     "The first dimension of a time varying matrix (the time dimension) must be "
     "equal to the first dimension of the data (the time dimension)."
@@ -107,7 +109,11 @@ class BaseFilter(ABC):
                2nd ed, Oxford University Press, 2012.
         """
 
-        self.n_states, self.n_posdef, self.n_endog = R.shape[-2], R.shape[-1], Z.shape[-2]
+        self.n_states, self.n_posdef, self.n_endog = (
+            R.shape[-2],
+            R.shape[-1],
+            Z.shape[-2],
+        )
         self.eye_states = pt.eye(self.n_states)
         self.eye_posdef = pt.eye(self.n_posdef)
         self.eye_endog = pt.eye(self.n_endog)
@@ -172,7 +178,11 @@ class BaseFilter(ABC):
         y = args.pop(0)
 
         # There are always two outputs_info wedged between the seqs and non_seqs
-        seqs, (a0, P0), non_seqs = args[:n_seq], args[n_seq : n_seq + 2], args[n_seq + 2 :]
+        seqs, (a0, P0), non_seqs = (
+            args[:n_seq],
+            args[n_seq : n_seq + 2],
+            args[n_seq + 2 :],
+        )
         return_ordered = []
         for name in ["c", "d", "T", "Z", "R", "H", "Q"]:
             if name in self.seq_names:
@@ -251,8 +261,8 @@ class BaseFilter(ABC):
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
 
-        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
-            params, PARAM_NAMES
+        sequences, non_sequences, seq_names, non_seq_names = (
+            split_vars_into_seq_and_nonseq(params, PARAM_NAMES)
         )
 
         self.seq_names = seq_names
@@ -271,7 +281,9 @@ class BaseFilter(ABC):
             strict=False,
         )
 
-        filter_results = self._postprocess_scan_results(results, a0, P0, n=data.type.shape[0])
+        filter_results = self._postprocess_scan_results(
+            results, a0, P0, n=data.type.shape[0]
+        )
 
         if return_updates:
             return filter_results, updates
@@ -449,7 +461,9 @@ class BaseFilter(ABC):
     @staticmethod
     def update(
         a, P, y, c, d, Z, H, all_nan_flag
-    ) -> tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
+    ) -> tuple[
+        TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable
+    ]:
         """
         Perform the update step of the Kalman filter.
 
@@ -569,7 +583,14 @@ class BaseFilter(ABC):
         y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
 
         a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
-            y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
+            y=y_masked,
+            a=a,
+            c=c,
+            d=d,
+            P=P,
+            Z=Z_masked,
+            H=H_masked,
+            all_nan_flag=all_nan_flag,
         )
 
         P_filtered = stabilize(P_filtered, self.cov_jitter)
@@ -695,7 +716,8 @@ class CholeskyFilter(BaseFilter):
             all_nan_flag,
             0.0,
             (
-                -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum()
+                -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel())
+                - pt.log(pt.diag(F_chol)).sum()
             ).ravel()[0],
         )
 
@@ -735,7 +757,9 @@ class SingleTimeseriesFilter(BaseFilter):
 
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
-        ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
+        ll = pt.switch(
+            all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)
+        ).ravel()[0]
 
         return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll
 
@@ -783,8 +807,8 @@ class SteadyStateFilter(BaseFilter):
         self.initialize_eyes(R, Z)
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
-        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
-            params, PARAM_NAMES
+        sequences, non_sequences, seq_names, non_seq_names = (
+            split_vars_into_seq_and_nonseq(params, PARAM_NAMES)
         )
         self.seq_names = seq_names
         self.non_seq_names = non_seq_names
@@ -797,7 +821,9 @@ class SteadyStateFilter(BaseFilter):
 
         P_steady = solve_discrete_are(T.T, Z.T, matrix_dot(R, Q, R.T), H)
         F = matrix_dot(Z, P_steady, Z.T) + H
-        F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos", check_finite=False)
+        F_inv = pt.linalg.solve(
+            F, pt.eye(F.shape[0]), assume_a="pos", check_finite=False
+        )
 
         results, updates = pytensor.scan(
             self.kalman_step,

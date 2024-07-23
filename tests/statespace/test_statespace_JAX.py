@@ -12,13 +12,6 @@ from pymc_experimental.statespace.utils.constants import (
     MATRIX_NAMES,
     SMOOTHER_OUTPUT_NAMES,
 )
-from tests.statespace.test_statespace import (  # pylint: disable=unused-import
-    exog_ss_mod,
-    ss_mod,
-)
-from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
-    rng,
-)
 from tests.statespace.utilities.test_helpers import load_nile_test_data
 
 pytest.importorskip("jax")
@@ -34,7 +27,7 @@ ALL_SAMPLE_OUTPUTS = MATRIX_NAMES + FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES
 def pymc_mod(ss_mod):
     with pm.Model(coords=ss_mod.coords) as pymc_mod:
         rho = pm.Beta("rho", 1, 1)
-        zeta = pm.Deterministic("zeta", 1 - rho)
+        pm.Deterministic("zeta", 1 - rho)
 
         ss_mod.build_statespace_graph(
             data=nile, mode="JAX", save_kalman_filter_outputs_in_idata=True
@@ -52,15 +45,15 @@ def exog_pymc_mod(exog_ss_mod, rng):
     X = rng.normal(size=(100, 3)).astype(floatX)
 
     with pm.Model(coords=exog_ss_mod.coords) as m:
-        exog_data = pm.Data("data_exog", X)
-        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        pm.Data("data_exog", X)
+        pm.Normal("initial_trend", dims=["trend_state"])
         P0_sigma = pm.Exponential("P0_sigma", 1)
-        P0 = pm.Deterministic(
+        pm.Deterministic(
             "P0", pt.eye(exog_ss_mod.k_states) * P0_sigma, dims=["state", "state_aux"]
         )
-        beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
+        pm.Normal("beta_exog", dims=["exog_state"])
 
-        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
         exog_ss_mod.build_statespace_graph(y, mode="JAX")
 
     return m
@@ -144,12 +137,21 @@ def test_forecast(filter_output, ss_mod, idata, rng):
 
     with pytest.warns(UserWarning, match="The RandomType SharedVariables"):
         forecast_idata = ss_mod.forecast(
-            idata, start=time_idx[-1], periods=10, filter_output=filter_output, random_seed=rng
+            idata,
+            start=time_idx[-1],
+            periods=10,
+            filter_output=filter_output,
+            random_seed=rng,
         )
 
     assert forecast_idata.coords["time"].values.shape == (10,)
     assert forecast_idata.forecast_latent.dims == ("chain", "draw", "time", "state")
-    assert forecast_idata.forecast_observed.dims == ("chain", "draw", "time", "observed_state")
+    assert forecast_idata.forecast_observed.dims == (
+        "chain",
+        "draw",
+        "time",
+        "observed_state",
+    )
 
     assert not np.any(np.isnan(forecast_idata.forecast_latent.values))
     assert not np.any(np.isnan(forecast_idata.forecast_observed.values))

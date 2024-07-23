@@ -58,7 +58,9 @@ def initialize_filter(kfilter, mode=None):
         ll_obs,
     ) = kfilter.build_graph(*inputs, mode=mode)
 
-    smoothed_states, smoothed_covs = ksmoother.build_graph(T, R, Q, filtered_states, filtered_covs)
+    smoothed_states, smoothed_covs = ksmoother.build_graph(
+        T, R, Q, filtered_states, filtered_covs
+    )
 
     outputs = [
         filtered_states,
@@ -210,7 +212,9 @@ def unpack_statespace(ssm):
     return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
 
 
-def unpack_symbolic_matrices_with_params(mod, param_dict, data_dict=None, mode="FAST_COMPILE"):
+def unpack_symbolic_matrices_with_params(
+    mod, param_dict, data_dict=None, mode="FAST_COMPILE"
+):
     inputs = list(mod._name_to_variable.values())
     if data_dict is not None:
         inputs += list(mod._name_to_data.values())
@@ -233,7 +237,9 @@ def simulate_from_numpy_model(mod, rng, param_dict, data_dict=None, steps=100):
     """
     Helper function to visualize the components outside of a PyMC model context
     """
-    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, param_dict, data_dict)
+    x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(
+        mod, param_dict, data_dict
+    )
     k_states = mod.k_states
     k_posdef = mod.k_posdef
 
@@ -287,7 +293,9 @@ def make_stationary_params(data, p, d, q, P, D, Q, S):
     sm_sarimax = sm.tsa.SARIMAX(data, order=(p, d, q), seasonal_order=(P, D, Q, S))
     res = sm_sarimax.fit(disp=False)
 
-    param_dict = dict(ar_params=[], ma_params=[], seasonal_ar_params=[], seasonal_ma_params=[])
+    param_dict = dict(
+        ar_params=[], ma_params=[], seasonal_ar_params=[], seasonal_ma_params=[]
+    )
 
     for name, param in zip(res.param_names, res.params):
         if name.startswith("ar.S"):

@@ -372,7 +372,9 @@ class BayesianSARIMA(PyMCStateSpace):
         Q = self.ssm["state_cov"]
         c = self.ssm["state_intercept"]
 
-        x0 = pt.linalg.solve(pt.identity_like(T) - T, c, assume_a="gen", check_finite=True)
+        x0 = pt.linalg.solve(
+            pt.identity_like(T) - T, c, assume_a="gen", check_finite=True
+        )
 
         method = "direct" if (self.k_states < 5) or (mode == "JAX") else "bilinear"
         P0 = solve_discrete_lyapunov(T, pt.linalg.matrix_dot(R, Q, R.T), method=method)
@@ -385,7 +387,9 @@ class BayesianSARIMA(PyMCStateSpace):
 
         # Initial state and covariance can be handled first if we're not doing a stationary initialization
         if not self.stationary_initialization:
-            x0 = self.make_and_register_variable("x0", shape=(self.k_states,), dtype=floatX)
+            x0 = self.make_and_register_variable(
+                "x0", shape=(self.k_states,), dtype=floatX
+            )
             P0 = self.make_and_register_variable(
                 "P0", shape=(self.k_states, self.k_states), dtype=floatX
             )
@@ -395,9 +399,9 @@ class BayesianSARIMA(PyMCStateSpace):
 
         # Design matrix has no RVs
         k_lags = self.k_states - self._k_diffs
-        self.ssm["design"] = np.r_[[1] * d, ([0] * (S - 1) + [1]) * D, [1], [0] * (k_lags - 1)][
-            None
-        ]
+        self.ssm["design"] = np.r_[
+            [1] * d, ([0] * (S - 1) + [1]) * D, [1], [0] * (k_lags - 1)
+        ][None]
 
         # Set up the transition and selection matrices, depending on the requested representation
         if self.state_structure == "fast":
@@ -409,13 +413,17 @@ class BayesianSARIMA(PyMCStateSpace):
             ar_param_idx = np.s_[
                 "transition", self._k_diffs : self._k_diffs + self.p, self._k_diffs
             ]
-            ma_param_idx = np.s_["selection", 1 + self._k_diffs : 1 + self._k_diffs + self.q, 0]
+            ma_param_idx = np.s_[
+                "selection", 1 + self._k_diffs : 1 + self._k_diffs + self.q, 0
+            ]
 
             self.ssm["transition"] = transition
             self.ssm["selection"] = selection
 
             if p > 0:
-                ar_params = self.make_and_register_variable("ar_params", shape=(p,), dtype=floatX)
+                ar_params = self.make_and_register_variable(
+                    "ar_params", shape=(p,), dtype=floatX
+                )
                 self.ssm[ar_param_idx] = ar_params
 
             if P > 0:
@@ -432,12 +440,14 @@ class BayesianSARIMA(PyMCStateSpace):
                         idx_rows.repeat(p) + np.tile(np.arange(p), P) + 1,
                         self._k_diffs,
                     ]
-                    self.ssm[cross_term_idx] = -pt.repeat(seasonal_ar_params, p) * pt.tile(
-                        ar_params, P
-                    )
+                    self.ssm[cross_term_idx] = -pt.repeat(
+                        seasonal_ar_params, p
+                    ) * pt.tile(ar_params, P)
 
             if q > 0:
-                ma_params = self.make_and_register_variable("ma_params", shape=(q,), dtype=floatX)
+                ma_params = self.make_and_register_variable(
+                    "ma_params", shape=(q,), dtype=floatX
+                )
                 self.ssm[ma_param_idx] = ma_params
 
             if Q > 0:
@@ -450,11 +460,13 @@ class BayesianSARIMA(PyMCStateSpace):
 
                 if q > 0:
                     cross_term_idx = np.s_[
-                        "selection", idx_rows.repeat(q) + np.tile(np.arange(q), Q) + 1, 0
+                        "selection",
+                        idx_rows.repeat(q) + np.tile(np.arange(q), Q) + 1,
+                        0,
                     ]
-                    self.ssm[cross_term_idx] = pt.repeat(seasonal_ma_params, q) * pt.tile(
-                        ma_params, Q
-                    )
+                    self.ssm[cross_term_idx] = pt.repeat(
+                        seasonal_ma_params, q
+                    ) * pt.tile(ma_params, Q)
 
         elif self.state_structure == "interpretable":
             ar_param_idx = np.s_["transition", 0, : max(1, p)]
@@ -485,11 +497,13 @@ class BayesianSARIMA(PyMCStateSpace):
 
                 if p > 0:
                     cross_term_idx = np.s_[
-                        "transition", 0, idx_cols.repeat(p) + np.tile(np.arange(p), P) + 1
+                        "transition",
+                        0,
+                        idx_cols.repeat(p) + np.tile(np.arange(p), P) + 1,
                     ]
-                    self.ssm[cross_term_idx] = -pt.repeat(seasonal_ar_params, p) * pt.tile(
-                        ar_params, P
-                    )
+                    self.ssm[cross_term_idx] = -pt.repeat(
+                        seasonal_ar_params, p
+                    ) * pt.tile(ar_params, P)
 
             if self.q > 0:
                 ma_params = self.make_and_register_variable(
@@ -507,23 +521,29 @@ class BayesianSARIMA(PyMCStateSpace):
 
                 if q > 0:
                     cross_term_idx = np.s_[
-                        "transition", 0, idx_cols.repeat(q) + np.tile(np.arange(q), Q) + 1
+                        "transition",
+                        0,
+                        idx_cols.repeat(q) + np.tile(np.arange(q), Q) + 1,
                     ]
-                    self.ssm[cross_term_idx] = pt.repeat(seasonal_ma_params, q) * pt.tile(
-                        ma_params, Q
-                    )
+                    self.ssm[cross_term_idx] = pt.repeat(
+                        seasonal_ma_params, q
+                    ) * pt.tile(ma_params, Q)
 
         # Set up the state covariance matrix
         state_cov_idx = ("state_cov",) + np.diag_indices(self.k_posdef)
         state_cov = self.make_and_register_variable(
-            "sigma_state", shape=() if self.k_posdef == 1 else (self.k_posdef,), dtype=floatX
+            "sigma_state",
+            shape=() if self.k_posdef == 1 else (self.k_posdef,),
+            dtype=floatX,
         )
         self.ssm[state_cov_idx] = state_cov**2
 
         if self.measurement_error:
             obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
             obs_cov = self.make_and_register_variable(
-                "sigma_obs", shape=() if self.k_endog == 1 else (self.k_endog,), dtype=floatX
+                "sigma_obs",
+                shape=() if self.k_endog == 1 else (self.k_endog,),
+                dtype=floatX,
             )
             self.ssm[obs_cov_idx] = obs_cov**2
 

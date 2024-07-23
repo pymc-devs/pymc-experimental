@@ -33,7 +33,10 @@ import pymc_experimental as pmx
             dict(name="a", transform=transforms.log, dims=None),
         ),
         (("a", dict(name="b")), dict(name="b", transform=None, dims=None)),
-        (("a", dict(name="b", dims="test")), dict(name="b", transform=None, dims="test")),
+        (
+            ("a", dict(name="b", dims="test")),
+            dict(name="b", transform=None, dims="test"),
+        ),
         (("a", ("test",)), dict(name="a", transform=None, dims=("test",))),
     ],
 )
@@ -149,18 +152,18 @@ def test_mean_chol(flat_info):
 
 def test_mvn_prior_from_flat_info(flat_info, coords, param_cfg):
     with pm.Model(coords=coords) as model:
-        priors = pmx.utils.prior._mvn_prior_from_flat_info("trace_prior_", flat_info)
-        test_prior = pm.sample_prior_predictive(1)
+        pmx.utils.prior._mvn_prior_from_flat_info("trace_prior_", flat_info)
+        pm.sample_prior_predictive(1)
     names = [p["name"] for p in param_cfg.values()]
     assert set(model.named_vars) == {"trace_prior_", *names}
 
 
 def test_prior_from_idata(idata, user_param_cfg, coords, param_cfg):
     with pm.Model(coords=coords) as model:
-        priors = pmx.utils.prior.prior_from_idata(
+        pmx.utils.prior.prior_from_idata(
             idata, var_names=user_param_cfg[0], **user_param_cfg[1]
         )
-        test_prior = pm.sample_prior_predictive(1)
+        pm.sample_prior_predictive(1)
     names = [p["name"] for p in param_cfg.values()]
     assert set(model.named_vars) == {"trace_prior_", *names}
 

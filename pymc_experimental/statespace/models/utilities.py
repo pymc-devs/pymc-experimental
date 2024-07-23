@@ -58,7 +58,9 @@ def cleanup_states(states: list[str]) -> list[str]:
     return out
 
 
-def make_harvey_state_names(p: int, d: int, q: int, P: int, D: int, Q: int, S: int) -> list[str]:
+def make_harvey_state_names(
+    p: int, d: int, q: int, P: int, D: int, Q: int, S: int
+) -> list[str]:
     """
     Generate informative names for the SARIMA states in the Harvey representation
 

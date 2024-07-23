@@ -64,7 +64,9 @@ def _validate_filter_arg(filter_arg):
 
 def _verify_group(group):
     if group not in ["prior", "posterior"]:
-        raise ValueError(f'Argument "group" must be one of "prior" or "posterior", found {group}')
+        raise ValueError(
+            f'Argument "group" must be one of "prior" or "posterior", found {group}'
+        )
 
 
 class PyMCStateSpace:
@@ -244,11 +246,14 @@ class PyMCStateSpace:
 
         if filter_type.lower() not in FILTER_FACTORY.keys():
             raise NotImplementedError(
-                "The following are valid filter types: " + ", ".join(list(FILTER_FACTORY.keys()))
+                "The following are valid filter types: "
+                + ", ".join(list(FILTER_FACTORY.keys()))
             )
 
         if filter_type == "single" and self.k_endog > 1:
-            raise ValueError('Cannot use filter_type = "single" with multiple observed time series')
+            raise ValueError(
+                'Cannot use filter_type = "single" with multiple observed time series'
+            )
 
         self.kalman_filter = FILTER_FACTORY[filter_type.lower()]()
         self.kalman_smoother = KalmanSmoother()
@@ -395,7 +400,9 @@ class PyMCStateSpace:
         """
         A k_endog length list of strings, associated with the model's observed states
         """
-        raise NotImplementedError("The observed_states property has not been implemented!")
+        raise NotImplementedError(
+            "The observed_states property has not been implemented!"
+        )
 
     @property
     def shock_names(self) -> list[str]:
@@ -413,7 +420,9 @@ class PyMCStateSpace:
         Returns a dictionary with param_name: Callable key-value pairs. Used by the ``add_default_priors()`` method
         to automatically add priors to the PyMC model.
         """
-        raise NotImplementedError("The default_priors property has not been implemented!")
+        raise NotImplementedError(
+            "The default_priors property has not been implemented!"
+        )
 
     @property
     def coords(self) -> dict[str, Sequence[str]]:
@@ -442,7 +451,9 @@ class PyMCStateSpace:
         """
         Add default priors to the active PyMC model context
         """
-        raise NotImplementedError("The add_default_priors property has not been implemented!")
+        raise NotImplementedError(
+            "The add_default_priors property has not been implemented!"
+        )
 
     def make_and_register_variable(
         self, name, shape: int | tuple[int] | None = None, dtype=floatX
@@ -584,7 +595,9 @@ class PyMCStateSpace:
             self.ssm['selection', 1:, 0] = theta_params
             self.ssm['state_cov', 0, 0] = sigma
         """
-        raise NotImplementedError("The make_symbolic_statespace method has not been implemented!")
+        raise NotImplementedError(
+            "The make_symbolic_statespace method has not been implemented!"
+        )
 
     def _get_matrix_shape_and_dims(
         self, name: str
@@ -694,7 +707,9 @@ class PyMCStateSpace:
 
         matrices = list(self._unpack_statespace_with_placeholders())
 
-        replacement_dict = {var: pymc_model[name] for name, var in self._name_to_variable.items()}
+        replacement_dict = {
+            var: pymc_model[name] for name, var in self._name_to_variable.items()
+        }
         self.subbed_ssm = graph_replace(matrices, replace=replacement_dict, strict=True)
 
     def _insert_data_variables(self):
@@ -724,8 +739,12 @@ class PyMCStateSpace:
                 + ", ".join(missing_data)
             )
 
-        replacement_dict = {data: pymc_model[name] for name, data in self._name_to_data.items()}
-        self.subbed_ssm = graph_replace(self.subbed_ssm, replace=replacement_dict, strict=True)
+        replacement_dict = {
+            data: pymc_model[name] for name, data in self._name_to_data.items()
+        }
+        self.subbed_ssm = graph_replace(
+            self.subbed_ssm, replace=replacement_dict, strict=True
+        )
 
     def _register_matrices_with_pymc_model(self) -> list[pt.TensorVariable]:
         """
@@ -759,7 +778,9 @@ class PyMCStateSpace:
         return registered_matrices
 
     @staticmethod
-    def _register_kalman_filter_outputs_with_pymc_model(outputs: tuple[pt.TensorVariable]) -> None:
+    def _register_kalman_filter_outputs_with_pymc_model(
+        outputs: tuple[pt.TensorVariable],
+    ) -> None:
         mod = modelcontext(None)
         coords = mod.coords
 
@@ -781,7 +802,9 @@ class PyMCStateSpace:
         with mod:
             for var, name in zip(states + covs, state_names + cov_names):
                 dim_names = FILTER_OUTPUT_DIMS.get(name, None)
-                dims = tuple([dim if dim in coords.keys() else None for dim in dim_names])
+                dims = tuple(
+                    [dim if dim in coords.keys() else None for dim in dim_names]
+                )
                 pm.Deterministic(name, var, dims=dims)
 
     def build_statespace_graph(
@@ -870,13 +893,18 @@ class PyMCStateSpace:
         filtered_covariances, predicted_covariances, observed_covariances = covs
         if save_kalman_filter_outputs_in_idata:
             smooth_states, smooth_covariances = self._build_smoother_graph(
-                filtered_states, filtered_covariances, self.unpack_statespace(), mode=mode
+                filtered_states,
+                filtered_covariances,
+                self.unpack_statespace(),
+                mode=mode,
             )
             all_kf_outputs = states + [smooth_states] + covs + [smooth_covariances]
             self._register_kalman_filter_outputs_with_pymc_model(all_kf_outputs)
 
         obs_dims = FILTER_OUTPUT_DIMS["predicted_observed_state"]
-        obs_dims = obs_dims if all([dim in pm_mod.coords.keys() for dim in obs_dims]) else None
+        obs_dims = (
+            obs_dims if all([dim in pm_mod.coords.keys() for dim in obs_dims]) else None
+        )
 
         SequenceMvNormal(
             "obs",
@@ -934,7 +962,13 @@ class PyMCStateSpace:
             *_, T, Z, R, H, Q = matrices
 
             smooth_states, smooth_covariances = self.kalman_smoother.build_graph(
-                T, R, Q, filtered_states, filtered_covariances, mode=mode, cov_jitter=cov_jitter
+                T,
+                R,
+                Q,
+                filtered_states,
+                filtered_covariances,
+                mode=mode,
+                cov_jitter=cov_jitter,
             )
             smooth_states.name = "smooth_states"
             smooth_covariances.name = "smooth_covariances"
@@ -963,7 +997,9 @@ class PyMCStateSpace:
         self,
         data: pt.TensorLike | None = None,
         data_dims: str | tuple[str] | list[str] | None = None,
-    ) -> tuple[list[pt.TensorVariable], list[tuple[pt.TensorVariable, pt.TensorVariable]]]:
+    ) -> tuple[
+        list[pt.TensorVariable], list[tuple[pt.TensorVariable, pt.TensorVariable]]
+    ]:
         """
         Builds a Kalman filter graph using "dummy" pm.Flat distributions for the model variables and sorts the returns
         into (mean, covariance) pairs for each of filtered, predicted, and smoothed output.
@@ -1084,29 +1120,36 @@ class PyMCStateSpace:
         group_idata = getattr(idata, group)
 
         with pm.Model(coords=self._fit_coords) as forward_model:
-            [
-                x0,
-                P0,
-                c,
-                d,
-                T,
-                Z,
-                R,
-                H,
-                Q,
-            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph(data=data)
+            (
+                [
+                    x0,
+                    P0,
+                    c,
+                    d,
+                    T,
+                    Z,
+                    R,
+                    H,
+                    Q,
+                ],
+                grouped_outputs,
+            ) = self._kalman_filter_outputs_from_dummy_graph(data=data)
 
             for name, (mu, cov) in zip(FILTER_OUTPUT_TYPES, grouped_outputs):
                 dummy_ll = pt.zeros_like(mu)
 
                 state_dims = (
                     (TIME_DIM, ALL_STATE_DIM)
-                    if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM]])
+                    if all(
+                        [dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM]]
+                    )
                     else (None, None)
                 )
                 obs_dims = (
                     (TIME_DIM, OBS_STATE_DIM)
-                    if all([dim in self._fit_coords for dim in [TIME_DIM, OBS_STATE_DIM]])
+                    if all(
+                        [dim in self._fit_coords for dim in [TIME_DIM, OBS_STATE_DIM]]
+                    )
                     else (None, None)
                 )
 
@@ -1218,10 +1261,17 @@ class PyMCStateSpace:
         else:
             steps = len(temp_coords[TIME_DIM]) - 1
 
-        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]]):
+        if all(
+            [
+                dim in self._fit_coords
+                for dim in [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+            ]
+        ):
             dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
 
-        with pm.Model(coords=temp_coords if dims is not None else None) as forward_model:
+        with pm.Model(
+            coords=temp_coords if dims is not None else None
+        ) as forward_model:
             self._build_dummy_graph()
             self._insert_random_variables()
 
@@ -1234,7 +1284,8 @@ class PyMCStateSpace:
 
             if not self.measurement_error:
                 H_jittered = pm.Deterministic(
-                    "H_jittered", pt.specify_shape(stabilize(H), (self.k_endog, self.k_endog))
+                    "H_jittered",
+                    pt.specify_shape(stabilize(H), (self.k_endog, self.k_endog)),
                 )
                 matrices = [x0, P0, c, d, T, Z, R, H_jittered, Q]
 
@@ -1470,7 +1521,10 @@ class PyMCStateSpace:
                 long_name = SHORT_NAME_TO_LONG[short_name]
                 if (long_name in matrix_names) or (short_name in matrix_names):
                     name = long_name if long_name in matrix_names else short_name
-                    dims = [x if x in self._fit_coords else None for x in MATRIX_DIMS[short_name]]
+                    dims = [
+                        x if x in self._fit_coords else None
+                        for x in MATRIX_DIMS[short_name]
+                    ]
                     pm.Deterministic(name, matrix, dims=dims)
 
         # TODO: Remove this after pm.Flat has its initial_value fixed
@@ -1565,7 +1619,12 @@ class PyMCStateSpace:
         filter_time_dim = TIME_DIM
 
         dims = None
-        if all([dim in temp_coords for dim in [filter_time_dim, ALL_STATE_DIM, OBS_STATE_DIM]]):
+        if all(
+            [
+                dim in temp_coords
+                for dim in [filter_time_dim, ALL_STATE_DIM, OBS_STATE_DIM]
+            ]
+        ):
             dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
 
         time_index = temp_coords[filter_time_dim]
@@ -1599,22 +1658,30 @@ class PyMCStateSpace:
         temp_coords[TIME_DIM] = forecast_index
 
         mu_dims, cov_dims = None, None
-        if all([dim in self._fit_coords for dim in [TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]]):
+        if all(
+            [
+                dim in self._fit_coords
+                for dim in [TIME_DIM, ALL_STATE_DIM, ALL_STATE_AUX_DIM]
+            ]
+        ):
             mu_dims = ["data_time", ALL_STATE_DIM]
             cov_dims = ["data_time", ALL_STATE_DIM, ALL_STATE_AUX_DIM]
 
         with pm.Model(coords=temp_coords) as forecast_model:
-            [
-                x0,
-                P0,
-                c,
-                d,
-                T,
-                Z,
-                R,
-                H,
-                Q,
-            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph(
+            (
+                [
+                    x0,
+                    P0,
+                    c,
+                    d,
+                    T,
+                    Z,
+                    R,
+                    H,
+                    Q,
+                ],
+                grouped_outputs,
+            ) = self._kalman_filter_outputs_from_dummy_graph(
                 data_dims=["data_time", OBS_STATE_DIM]
             )
             group_idx = FILTER_OUTPUT_TYPES.index(filter_output)
@@ -1622,10 +1689,14 @@ class PyMCStateSpace:
             mu, cov = grouped_outputs[group_idx]
 
             x0 = pm.Deterministic(
-                "x0_slice", mu[t0_idx], dims=mu_dims[1:] if mu_dims is not None else None
+                "x0_slice",
+                mu[t0_idx],
+                dims=mu_dims[1:] if mu_dims is not None else None,
             )
             P0 = pm.Deterministic(
-                "P0_slice", cov[t0_idx], dims=cov_dims[1:] if cov_dims is not None else None
+                "P0_slice",
+                cov[t0_idx],
+                dims=cov_dims[1:] if cov_dims is not None else None,
             )
 
             _ = LinearGaussianStateSpace(
@@ -1736,7 +1807,9 @@ class PyMCStateSpace:
         Q = None  # No covariance matrix needed if a trajectory is provided. Will be overwritten later if needed.
 
         if n_options > 1:
-            raise ValueError("Specify exactly 0 or 1 of shock_size, shock_cov, or shock_trajectory")
+            raise ValueError(
+                "Specify exactly 0 or 1 of shock_size, shock_cov, or shock_trajectory"
+            )
         elif n_options == 1:
             # If the user passed an alternative parameterization for the shocks of the IRF, don't use the posterior
             use_posterior_cov = False
@@ -1767,7 +1840,9 @@ class PyMCStateSpace:
             self._insert_random_variables()
 
             P0, _, c, d, T, Z, R, H, post_Q = self.unpack_statespace()
-            x0 = pm.Deterministic("x0_new", pt.zeros(self.k_states), dims=[ALL_STATE_DIM])
+            x0 = pm.Deterministic(
+                "x0_new", pt.zeros(self.k_states), dims=[ALL_STATE_DIM]
+            )
 
             if use_posterior_cov:
                 Q = post_Q
@@ -1781,7 +1856,9 @@ class PyMCStateSpace:
             if shock_trajectory is None:
                 shock_trajectory = pt.zeros((n_steps, self.k_posdef))
                 if Q is not None:
-                    init_shock = pm.MvNormal("initial_shock", mu=0, cov=Q, dims=[SHOCK_DIM])
+                    init_shock = pm.MvNormal(
+                        "initial_shock", mu=0, cov=Q, dims=[SHOCK_DIM]
+                    )
                 else:
                     init_shock = pm.Deterministic(
                         "initial_shock",

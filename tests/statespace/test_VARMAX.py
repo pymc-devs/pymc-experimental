@@ -11,9 +11,6 @@ from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianVARMAX
 from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
-from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
-    rng,
-)
 
 floatX = pytensor.config.floatX
 ps = [0, 1, 2, 3]
@@ -55,15 +52,20 @@ def pymc_mod(varma_mod, data):
         state_chol, *_ = pm.LKJCholeskyCov(
             "state_chol", n=varma_mod.k_posdef, eta=1, sd_dist=pm.Exponential.dist(1)
         )
-        ar_params = pm.Normal(
-            "ar_params", mu=0, sigma=0.1, dims=["observed_state", "ar_lag", "observed_state_aux"]
+        pm.Normal(
+            "ar_params",
+            mu=0,
+            sigma=0.1,
+            dims=["observed_state", "ar_lag", "observed_state_aux"],
         )
-        state_cov = pm.Deterministic(
+        pm.Deterministic(
             "state_cov", state_chol @ state_chol.T, dims=["shock", "shock_aux"]
         )
-        sigma_obs = pm.Exponential("sigma_obs", 1, dims=["observed_state"])
+        pm.Exponential("sigma_obs", 1, dims=["observed_state"])
 
-        varma_mod.build_statespace_graph(data=data, save_kalman_filter_outputs_in_idata=True)
+        varma_mod.build_statespace_graph(
+            data=data, save_kalman_filter_outputs_in_idata=True
+        )
 
     return pymc_mod
 
@@ -111,7 +113,7 @@ def test_VARMAX_update_matches_statsmodels(data, order, rng):
         for k in param_list
     }
 
-    res = sm_var.fit_constrained(param_d)
+    sm_var.fit_constrained(param_d)
 
     mod = BayesianVARMAX(
         k_endog=data.shape[1],
@@ -124,20 +126,28 @@ def test_VARMAX_update_matches_statsmodels(data, order, rng):
     ar_shape = (mod.k_endog, mod.p, mod.k_endog)
     ma_shape = (mod.k_endog, mod.q, mod.k_endog)
 
-    with pm.Model() as pm_mod:
-        x0 = pm.Deterministic("x0", pt.zeros(mod.k_states, dtype=floatX))
-        P0 = pm.Deterministic("P0", pt.eye(mod.k_states, dtype=floatX))
-        ma_params = pm.Deterministic(
+    with pm.Model():
+        pm.Deterministic("x0", pt.zeros(mod.k_states, dtype=floatX))
+        pm.Deterministic("P0", pt.eye(mod.k_states, dtype=floatX))
+        pm.Deterministic(
             "ma_params",
-            pt.as_tensor_variable(np.array([param_d[var] for var in ma])).reshape(ma_shape),
+            pt.as_tensor_variable(np.array([param_d[var] for var in ma])).reshape(
+                ma_shape
+            ),
         )
-        ar_params = pm.Deterministic(
+        pm.Deterministic(
             "ar_params",
-            pt.as_tensor_variable(np.array([param_d[var] for var in ar])).reshape(ar_shape),
+            pt.as_tensor_variable(np.array([param_d[var] for var in ar])).reshape(
+                ar_shape
+            ),
         )
         state_chol = np.zeros((mod.k_posdef, mod.k_posdef), dtype=floatX)
-        state_chol[np.tril_indices(mod.k_posdef)] = np.array([param_d[var] for var in state_cov])
-        state_cov = pm.Deterministic("state_cov", pt.as_tensor_variable(state_chol @ state_chol.T))
+        state_chol[np.tril_indices(mod.k_posdef)] = np.array(
+            [param_d[var] for var in state_cov]
+        )
+        state_cov = pm.Deterministic(
+            "state_cov", pt.as_tensor_variable(state_chol @ state_chol.T)
+        )
         mod._insert_random_variables()
 
         matrices = pm.draw(mod.subbed_ssm)
@@ -161,7 +171,9 @@ parameters = [
     {"n_steps": 10, "shock_size": np.array([1.0, 0.0, 0.0])},
     {
         "n_steps": 10,
-        "shock_cov": np.array([[1.38, 0.58, -1.84], [0.58, 0.99, -0.82], [-1.84, -0.82, 2.51]]),
+        "shock_cov": np.array(
+            [[1.38, 0.58, -1.84], [0.58, 0.99, -0.82], [-1.84, -0.82, 2.51]]
+        ),
     },
     {
         "shock_trajectory": np.r_[
@@ -172,12 +184,20 @@ parameters = [
     },
 ]
 
-ids = ["from-posterior-cov", "scalar_shock_size", "array_shock_size", "user-cov", "trajectory"]
+ids = [
+    "from-posterior-cov",
+    "scalar_shock_size",
+    "array_shock_size",
+    "user-cov",
+    "trajectory",
+]
 
 
 @pytest.mark.parametrize("parameters", parameters, ids=ids)
 @pytest.mark.skipif(floatX == "float32", reason="Impulse covariance not PSD if float32")
 def test_impulse_response(parameters, varma_mod, idata, rng):
-    irf = varma_mod.impulse_response_function(idata.prior, random_seed=rng, **parameters)
+    irf = varma_mod.impulse_response_function(
+        idata.prior, random_seed=rng, **parameters
+    )
 
     assert not np.any(np.isnan(irf.irf.values))

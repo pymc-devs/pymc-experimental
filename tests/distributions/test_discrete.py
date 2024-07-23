@@ -104,14 +104,18 @@ class TestGeneralizedPoisson:
         mu = 30
         lam = np.array([-0.9, -0.7, -0.2, 0, 0.2, 0.7, 0.9])
         with pm.Model():
-            x = GeneralizedPoisson("x", mu=mu, lam=lam)
+            GeneralizedPoisson("x", mu=mu, lam=lam)
             trace = pm.sample(chains=1, draws=10_000, random_seed=96).posterior
 
         expected_mean = mu / (1 - lam)
-        np.testing.assert_allclose(trace["x"].mean(("chain", "draw")), expected_mean, rtol=1e-1)
+        np.testing.assert_allclose(
+            trace["x"].mean(("chain", "draw")), expected_mean, rtol=1e-1
+        )
 
         expected_std = np.sqrt(mu / (1 - lam) ** 3)
-        np.testing.assert_allclose(trace["x"].std(("chain", "draw")), expected_std, rtol=1e-1)
+        np.testing.assert_allclose(
+            trace["x"].std(("chain", "draw")), expected_std, rtol=1e-1
+        )
 
     @pytest.mark.parametrize(
         "mu, lam, size, expected",

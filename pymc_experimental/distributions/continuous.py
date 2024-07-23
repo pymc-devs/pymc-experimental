@@ -41,7 +41,9 @@ class GenExtremeRV(RandomVariable):
     dtype: str = "floatX"
     _print_name: Tuple[str, str] = ("Generalized Extreme Value", "\\operatorname{GEV}")
 
-    def __call__(self, mu=0.0, sigma=1.0, xi=0.0, size=None, **kwargs) -> TensorVariable:
+    def __call__(
+        self, mu=0.0, sigma=1.0, xi=0.0, size=None, **kwargs
+    ) -> TensorVariable:
         return super().__call__(mu, sigma, xi, size=size, **kwargs)
 
     @classmethod
@@ -54,7 +56,9 @@ class GenExtremeRV(RandomVariable):
         size: Tuple[int, ...],
     ) -> np.ndarray:
         # Notice negative here, since remainder of GenExtreme is based on Coles parametrization
-        return stats.genextreme.rvs(c=-xi, loc=mu, scale=sigma, random_state=rng, size=size)
+        return stats.genextreme.rvs(
+            c=-xi, loc=mu, scale=sigma, random_state=rng, size=size
+        )
 
 
 gev = GenExtremeRV()
@@ -214,7 +218,9 @@ class GenExtreme(Continuous):
         r"""
         Using the mode, as the mean can be infinite when :math:`\xi > 1`
         """
-        mode = pt.switch(pt.isclose(xi, 0), mu, mu + sigma * (pt.pow(1 + xi, -xi) - 1) / xi)
+        mode = pt.switch(
+            pt.isclose(xi, 0), mu, mu + sigma * (pt.pow(1 + xi, -xi) - 1) / xi
+        )
         if not rv_size_is_none(size):
             mode = pt.full(size, mode)
         return mode

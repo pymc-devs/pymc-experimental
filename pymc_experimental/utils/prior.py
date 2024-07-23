@@ -44,7 +44,9 @@ class FlatInfo(TypedDict):
     info: List[VarInfo]
 
 
-def _arg_to_param_cfg(key, value: Optional[Union[ParamCfg, Transform, str, Tuple]] = None):
+def _arg_to_param_cfg(
+    key, value: Optional[Union[ParamCfg, Transform, str, Tuple]] = None
+):
     if value is None:
         cfg = ParamCfg(name=key, transform=None, dims=None)
     elif isinstance(value, Tuple):
@@ -133,7 +135,7 @@ def prior_from_idata(
     name="trace_prior_",
     *,
     var_names: Sequence[str] = (),
-    **kwargs: Union[ParamCfg, Transform, str, Tuple]
+    **kwargs: Union[ParamCfg, Transform, str, Tuple],
 ) -> Dict[str, pt.TensorVariable]:
     """
     Create a prior from posterior using MvNormal approximation.

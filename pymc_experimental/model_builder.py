@@ -72,19 +72,27 @@ class ModelBuilder:
         >>> model = MyModel(model_config, sampler_config)
         """
         sampler_config = (
-            self.get_default_sampler_config() if sampler_config is None else sampler_config
+            self.get_default_sampler_config()
+            if sampler_config is None
+            else sampler_config
         )
         self.sampler_config = sampler_config
-        model_config = self.get_default_model_config() if model_config is None else model_config
+        model_config = (
+            self.get_default_model_config() if model_config is None else model_config
+        )
 
         self.model_config = model_config  # parameters for priors etc.
         self.model = None  # Set by build_model
-        self.idata: Optional[az.InferenceData] = None  # idata is generated during fitting
+        self.idata: Optional[az.InferenceData] = (
+            None  # idata is generated during fitting
+        )
         self.is_fitted_ = False
 
     def _validate_data(self, X, y=None):
         if y is not None:
-            return check_X_y(X, y, accept_sparse=False, y_numeric=True, multi_output=False)
+            return check_X_y(
+                X, y, accept_sparse=False, y_numeric=True, multi_output=False
+            )
         else:
             return check_array(X, accept_sparse=False)
 
@@ -396,10 +404,14 @@ class ModelBuilder:
                     if isinstance(model_config[key][sub_key], list):
                         # Check if "dims" key to convert it to tuple
                         if sub_key == "dims":
-                            model_config[key][sub_key] = tuple(model_config[key][sub_key])
+                            model_config[key][sub_key] = tuple(
+                                model_config[key][sub_key]
+                            )
                         # Convert all other lists to numpy arrays
                         else:
-                            model_config[key][sub_key] = np.array(model_config[key][sub_key])
+                            model_config[key][sub_key] = np.array(
+                                model_config[key][sub_key]
+                            )
         return model_config
 
     @classmethod
@@ -431,7 +443,9 @@ class ModelBuilder:
         filepath = Path(str(fname))
         idata = az.from_netcdf(filepath)
         # needs to be converted, because json.loads was changing tuple to list
-        model_config = cls._model_config_formatting(json.loads(idata.attrs["model_config"]))
+        model_config = cls._model_config_formatting(
+            json.loads(idata.attrs["model_config"])
+        )
         model = cls(
             model_config=model_config,
             sampler_config=json.loads(idata.attrs["sampler_config"]),
@@ -612,7 +626,9 @@ class ModelBuilder:
                 else:
                     self.idata = prior_pred
 
-        prior_predictive_samples = az.extract(prior_pred, "prior_predictive", combined=combined)
+        prior_predictive_samples = az.extract(
+            prior_pred, "prior_predictive", combined=combined
+        )
 
         return prior_predictive_samples
 

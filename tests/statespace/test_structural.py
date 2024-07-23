@@ -24,9 +24,6 @@ from pymc_experimental.statespace.utils.constants import (
     SHOCK_DIM,
     SHORT_NAME_TO_LONG,
 )
-from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
-    rng,
-)
 from tests.statespace.utilities.test_helpers import (
     assert_pattern_repeats,
     simulate_from_numpy_model,
@@ -82,7 +79,9 @@ def _assert_coord_shapes_match_matrices(mod, params):
     assert c.shape[-1:] == (
         n_states,
     ), f"c expected to have shape (n_states, ), found {c.shape[-1:]}"
-    assert d.shape[-1:] == (n_obs,), f"d expected to have shape (n_obs, ), found {d.shape[-1:]}"
+    assert d.shape[-1:] == (
+        n_obs,
+    ), f"d expected to have shape (n_obs, ), found {d.shape[-1:]}"
     assert T.shape[-2:] == (
         n_states,
         n_states,
@@ -118,7 +117,9 @@ def _assert_keys_match(test_dict, expected_dict):
     expected_keys = list(expected_dict.keys())
     param_keys = list(test_dict.keys())
     key_diff = set(expected_keys) - set(param_keys)
-    assert len(key_diff) == 0, f'{", ".join(key_diff)} were not found in the test_dict keys.'
+    assert (
+        len(key_diff) == 0
+    ), f'{", ".join(key_diff)} were not found in the test_dict keys.'
 
     key_diff = set(param_keys) - set(expected_keys)
     assert (
@@ -300,10 +301,12 @@ def create_structural_model_and_equivalent_statsmodel(
             sm_params["sigma2.level"] = sigma
         if stochastic_trend:
             sigma = sigma_level_value.pop(0)
-            sm_params[f"sigma2.trend"] = sigma
+            sm_params["sigma2.trend"] = sigma
 
         comp = st.LevelTrendComponent(
-            name="level", order=level_trend_order, innovations_order=level_trend_innov_order
+            name="level",
+            order=level_trend_order,
+            innovations_order=level_trend_innov_order,
         )
         components.append(comp)
 
@@ -318,7 +321,8 @@ def create_structural_model_and_equivalent_statsmodel(
         expected_coords[ALL_STATE_AUX_DIM] += state_names
 
         seasonal_dict = {
-            "seasonal" if i == 0 else f"seasonal.L{i}": c for i, c in enumerate(seasonal_coefs)
+            "seasonal" if i == 0 else f"seasonal.L{i}": c
+            for i, c in enumerate(seasonal_coefs)
         }
         sm_init.update(seasonal_dict)
 
@@ -345,7 +349,9 @@ def create_structural_model_and_equivalent_statsmodel(
             s = d["period"]
             last_state_not_identified = (s / n) == 2.0
             n_states = 2 * n - int(last_state_not_identified)
-            state_names = [f"seasonal_{s}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]]
+            state_names = [
+                f"seasonal_{s}_{f}_{i}" for i in range(n) for f in ["Cos", "Sin"]
+            ]
 
             seasonal_params = rng.normal(size=n_states).astype(floatX)
 
@@ -354,7 +360,9 @@ def create_structural_model_and_equivalent_statsmodel(
             expected_coords[ALL_STATE_DIM] += state_names
             expected_coords[ALL_STATE_AUX_DIM] += state_names
             expected_coords[f"seasonal_{s}_state"] += (
-                tuple(state_names[:-1]) if last_state_not_identified else tuple(state_names)
+                tuple(state_names[:-1])
+                if last_state_not_identified
+                else tuple(state_names)
             )
 
             for param in seasonal_params:
@@ -472,7 +480,9 @@ def create_structural_model_and_equivalent_statsmodel(
     ],
 )
 @pytest.mark.parametrize("autoregressive", [None, 3])
-@pytest.mark.parametrize("seasonal, stochastic_seasonal", [(None, False), (12, False), (12, True)])
+@pytest.mark.parametrize(
+    "seasonal, stochastic_seasonal", [(None, False), (12, False), (12, True)]
+)
 @pytest.mark.parametrize(
     "freq_seasonal, stochastic_freq_seasonal",
     [
@@ -485,8 +495,12 @@ def create_structural_model_and_equivalent_statsmodel(
     "cycle, damped_cycle, stochastic_cycle",
     [(False, False, False), (True, False, True), (True, True, True)],
 )
-@pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.ConvergenceWarning")
-@pytest.mark.filterwarnings("ignore::statsmodels.tools.sm_exceptions.SpecificationWarning")
+@pytest.mark.filterwarnings(
+    "ignore::statsmodels.tools.sm_exceptions.ConvergenceWarning"
+)
+@pytest.mark.filterwarnings(
+    "ignore::statsmodels.tools.sm_exceptions.SpecificationWarning"
+)
 def test_structural_model_against_statsmodels(
     level,
     trend,
@@ -526,7 +540,11 @@ def test_structural_model_against_statsmodels(
 
     if len(sm_init) > 0:
         init_array = np.concatenate(
-            [np.atleast_1d(sm_init[k]).ravel() for k in sm_mod.state_names if k != "dummy"]
+            [
+                np.atleast_1d(sm_init[k]).ravel()
+                for k in sm_mod.state_names
+                if k != "dummy"
+            ]
         )
         sm_mod.initialize_known(init_array, np.eye(sm_mod.k_states))
     else:
@@ -545,7 +563,9 @@ def test_structural_model_against_statsmodels(
     _assert_coord_shapes_match_matrices(built_model, params)
     _assert_param_dims_correct(built_model.param_dims, expected_dims)
     _assert_coords_correct(built_model.coords, expected_coords)
-    _assert_params_info_correct(built_model.param_info, built_model.coords, built_model.param_dims)
+    _assert_params_info_correct(
+        built_model.param_info, built_model.coords, built_model.param_dims
+    )
 
 
 def test_level_trend_model(rng):
@@ -664,9 +684,16 @@ def test_cycle_component_deterministic(rng):
 
 def test_cycle_component_with_dampening(rng):
     cycle = st.CycleComponent(
-        name="cycle", cycle_length=12, estimate_cycle_length=False, innovations=False, dampen=True
+        name="cycle",
+        cycle_length=12,
+        estimate_cycle_length=False,
+        innovations=False,
+        dampen=True,
     )
-    params = {"cycle": np.array([10.0, 10.0], dtype=floatX), "cycle_dampening_factor": 0.75}
+    params = {
+        "cycle": np.array([10.0, 10.0], dtype=floatX),
+        "cycle_dampening_factor": 0.75,
+    }
     x, y = simulate_from_numpy_model(cycle, rng, params, steps=100)
 
     # Check that the cycle dampens to zero over time
@@ -734,15 +761,21 @@ def test_add_components():
     all_params = ll_params.copy()
     all_params.update(se_params)
 
-    (ll_x0, ll_P0, ll_c, ll_d, ll_T, ll_Z, ll_R, ll_H, ll_Q) = unpack_symbolic_matrices_with_params(
-        ll, ll_params
+    (ll_x0, ll_P0, ll_c, ll_d, ll_T, ll_Z, ll_R, ll_H, ll_Q) = (
+        unpack_symbolic_matrices_with_params(ll, ll_params)
     )
-    (se_x0, se_P0, se_c, se_d, se_T, se_Z, se_R, se_H, se_Q) = unpack_symbolic_matrices_with_params(
-        se, se_params
+    (se_x0, se_P0, se_c, se_d, se_T, se_Z, se_R, se_H, se_Q) = (
+        unpack_symbolic_matrices_with_params(se, se_params)
     )
     x0, P0, c, d, T, Z, R, H, Q = unpack_symbolic_matrices_with_params(mod, all_params)
 
-    for property in ["param_names", "shock_names", "param_info", "coords", "param_dims"]:
+    for property in [
+        "param_names",
+        "shock_names",
+        "param_info",
+        "coords",
+        "param_dims",
+    ]:
         assert [x in getattr(mod, property) for x in getattr(ll, property)]
         assert [x in getattr(mod, property) for x in getattr(se, property)]
 
@@ -751,7 +784,9 @@ def test_add_components():
     all_mats = [T, R, Q]
 
     for ll_mat, se_mat, all_mat in zip(ll_mats, se_mats, all_mats):
-        assert_allclose(all_mat, linalg.block_diag(ll_mat, se_mat), atol=ATOL, rtol=RTOL)
+        assert_allclose(
+            all_mat, linalg.block_diag(ll_mat, se_mat), atol=ATOL, rtol=RTOL
+        )
 
     ll_mats = [ll_x0, ll_c, ll_Z]
     se_mats = [se_x0, se_c, se_Z]
@@ -759,7 +794,9 @@ def test_add_components():
     axes = [0, 0, 1]
 
     for ll_mat, se_mat, all_mat, axis in zip(ll_mats, se_mats, all_mats, axes):
-        assert_allclose(all_mat, np.concatenate([ll_mat, se_mat], axis=axis), atol=ATOL, rtol=RTOL)
+        assert_allclose(
+            all_mat, np.concatenate([ll_mat, se_mat], axis=axis), atol=ATOL, rtol=RTOL
+        )
 
 
 def test_filter_scans_time_varying_design_matrix(rng):
@@ -771,12 +808,12 @@ def test_filter_scans_time_varying_design_matrix(rng):
     reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
     mod = reg.build(verbose=False)
 
-    with pm.Model(coords=mod.coords) as m:
-        data_exog = pm.Data("data_exog", data.values)
+    with pm.Model(coords=mod.coords):
+        pm.Data("data_exog", data.values)
 
         x0 = pm.Normal("x0", dims=["state"])
         P0 = pm.Deterministic("P0", pt.eye(mod.k_states), dims=["state", "state_aux"])
-        beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
+        pm.Normal("beta_exog", dims=["exog_state"])
 
         mod.build_statespace_graph(y)
         x0, P0, c, d, T, Z, R, H, Q = mod.unpack_statespace()
@@ -789,7 +826,9 @@ def test_filter_scans_time_varying_design_matrix(rng):
     assert_allclose(prior_Z[0, :, :, 0, :], data.values[None].repeat(10, axis=0))
 
 
-@pytest.mark.skipif(floatX.endswith("32"), reason="Prior covariance not PSD at half-precision")
+@pytest.mark.skipif(
+    floatX.endswith("32"), reason="Prior covariance not PSD at half-precision"
+)
 def test_extract_components_from_idata(rng):
     time_idx = pd.date_range(start="2000-01-01", freq="D", periods=100)
     data = pd.DataFrame(rng.normal(size=(100, 2)), columns=["a", "b"], index=time_idx)
@@ -797,21 +836,23 @@ def test_extract_components_from_idata(rng):
     y = pd.DataFrame(rng.normal(size=(100, 1)), columns=["data"], index=time_idx)
 
     ll = st.LevelTrendComponent()
-    season = st.FrequencySeasonality(name="seasonal", season_length=12, n=2, innovations=False)
+    season = st.FrequencySeasonality(
+        name="seasonal", season_length=12, n=2, innovations=False
+    )
     reg = st.RegressionComponent(state_names=["a", "b"], name="exog")
     me = st.MeasurementError("obs")
     mod = (ll + season + reg + me).build(verbose=False)
 
-    with pm.Model(coords=mod.coords) as m:
-        data_exog = pm.Data("data_exog", data.values)
+    with pm.Model(coords=mod.coords):
+        pm.Data("data_exog", data.values)
 
         x0 = pm.Normal("x0", dims=["state"])
         P0 = pm.Deterministic("P0", pt.eye(mod.k_states), dims=["state", "state_aux"])
-        beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
-        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
-        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
-        seasonal_coefs = pm.Normal("seasonal", dims=["seasonal_state"])
-        sigma_obs = pm.Exponential("sigma_obs", 1)
+        pm.Normal("beta_exog", dims=["exog_state"])
+        pm.Normal("initial_trend", dims=["trend_state"])
+        pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        pm.Normal("seasonal", dims=["seasonal_state"])
+        pm.Exponential("sigma_obs", 1)
 
         mod.build_statespace_graph(y)
 
@@ -821,7 +862,13 @@ def test_extract_components_from_idata(rng):
     filter_prior = mod.sample_conditional_prior(prior)
     comp_prior = mod.extract_components_from_idata(filter_prior)
     comp_states = comp_prior.filtered_prior.coords["state"].values
-    expected_states = ["LevelTrend[level]", "LevelTrend[trend]", "seasonal", "exog[a]", "exog[b]"]
+    expected_states = [
+        "LevelTrend[level]",
+        "LevelTrend[trend]",
+        "seasonal",
+        "exog[a]",
+        "exog[b]",
+    ]
     missing = set(comp_states) - set(expected_states)
 
     assert len(missing) == 0, missing

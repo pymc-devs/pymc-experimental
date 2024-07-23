@@ -8,7 +8,9 @@ from pymc_experimental.model_builder import ModelBuilder
 
 
 class LinearModel(ModelBuilder):
-    def __init__(self, model_config: Dict = None, sampler_config: Dict = None, nsamples=100):
+    def __init__(
+        self, model_config: Dict = None, sampler_config: Dict = None, nsamples=100
+    ):
         self.nsamples = nsamples
         super().__init__(model_config, sampler_config)
 
@@ -80,10 +82,12 @@ class LinearModel(ModelBuilder):
             obs_error = pm.HalfNormal("σ_model_fmc", cfg["obs_error"])
 
             # Model
-            y_model = pm.Deterministic("y_model", intercept + slope * x, dims="observation")
+            y_model = pm.Deterministic(
+                "y_model", intercept + slope * x, dims="observation"
+            )
 
             # observed data
-            y_hat = pm.Normal(
+            pm.Normal(
                 "y_hat",
                 y_model,
                 sigma=obs_error,
@@ -94,7 +98,9 @@ class LinearModel(ModelBuilder):
 
         self._data_setter(X, y)
 
-    def _data_setter(self, X: pd.DataFrame, y: Optional[Union[pd.DataFrame, pd.Series]] = None):
+    def _data_setter(
+        self, X: pd.DataFrame, y: Optional[Union[pd.DataFrame, pd.Series]] = None
+    ):
         with self.model:
             pm.set_data({"x": X.squeeze()})
             if y is not None:

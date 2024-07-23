@@ -42,7 +42,9 @@ class VIP:
     _logit_lambda: Dict[str, pytensor.tensor.sharedvar.TensorSharedVariable]
 
     @property
-    def variational_parameters(self) -> List[pytensor.tensor.sharedvar.TensorSharedVariable]:
+    def variational_parameters(
+        self,
+    ) -> List[pytensor.tensor.sharedvar.TensorSharedVariable]:
         r"""Return raw :math:`\operatorname{logit}(\lambda_k)` for custom optimization.
 
         Examples
@@ -222,7 +224,9 @@ def _(
 ) -> ModelDeterministic:
     rng, size, loc, scale = node.inputs
     if transform is not None:
-        raise NotImplementedError("Reparametrization of Normal with Transform is not implemented")
+        raise NotImplementedError(
+            "Reparametrization of Normal with Transform is not implemented"
+        )
     vip_rv_ = pm.Normal.dist(
         lam * loc,
         scale**lam,
@@ -418,6 +422,6 @@ def vip_reparametrize(
         lambda_names.append(lam.name)
     toposort_replace(fmodel, replacements, reverse=True)
     reparam_model = model_from_fgraph(fmodel)
-    model_lambdas = {n: reparam_model[l] for l, n in zip(lambda_names, var_names)}
+    model_lambdas = {n: reparam_model[lam] for lam, n in zip(lambda_names, var_names)}
     vip = VIP(model_lambdas)
     return reparam_model, vip

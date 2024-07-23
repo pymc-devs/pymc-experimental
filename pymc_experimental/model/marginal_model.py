@@ -18,6 +18,7 @@ from pymc.util import RandomState, _get_seeds_per_chain, treedict
 from pytensor import Mode, scan
 from pytensor.compile import SharedVariable
 from pytensor.graph import Constant, FunctionGraph, ancestors, clone_replace
+from pytensor.graph.basic import graph_inputs
 from pytensor.graph.replace import graph_replace, vectorize_graph
 from pytensor.scan import map as scan_map
 from pytensor.tensor import TensorType, TensorVariable
@@ -106,7 +107,9 @@ class MarginalModel(Model):
         else:
             self.observed_RVs.remove(rv)
 
-    def _transfer_rv_mappings(self, old_rv: TensorVariable, new_rv: TensorVariable) -> None:
+    def _transfer_rv_mappings(
+        self, old_rv: TensorVariable, new_rv: TensorVariable
+    ) -> None:
         """Transfer model mappings from old_rv to new_rv"""
 
         assert old_rv in self.basic_RVs, "old_rv is not part of the Model"
@@ -188,7 +191,8 @@ class MarginalModel(Model):
                         if isinstance(transform, IntervalTransform) or (
                             isinstance(transform, Chain)
                             and any(
-                                isinstance(tr, IntervalTransform) for tr in transform.transform_list
+                                isinstance(tr, IntervalTransform)
+                                for tr in transform.transform_list
                             )
                         ):
                             warnings.warn(
@@ -219,8 +223,12 @@ class MarginalModel(Model):
             marginalized_rvs = []
             marginalized_named_vars_to_dims = {}
 
-        model_vars = model.basic_RVs + model.potentials + model.deterministics + marginalized_rvs
-        data_vars = [var for name, var in model.named_vars.items() if var not in model_vars]
+        model_vars = (
+            model.basic_RVs + model.potentials + model.deterministics + marginalized_rvs
+        )
+        data_vars = [
+            var for name, var in model.named_vars.items() if var not in model_vars
+        ]
         vars = model_vars + data_vars
         cloned_vars = clone_replace(vars)
         vars_to_clone = {var: cloned_var for var, cloned_var in zip(vars, cloned_vars)}
@@ -230,8 +238,12 @@ class MarginalModel(Model):
             {name: vars_to_clone[var] for name, var in model.named_vars.items()}
         )
         new_model.named_vars_to_dims = model.named_vars_to_dims
-        new_model.values_to_rvs = {vv: vars_to_clone[rv] for vv, rv in model.values_to_rvs.items()}
-        new_model.rvs_to_values = {vars_to_clone[rv]: vv for rv, vv in model.rvs_to_values.items()}
+        new_model.values_to_rvs = {
+            vv: vars_to_clone[rv] for vv, rv in model.values_to_rvs.items()
+        }
+        new_model.rvs_to_values = {
+            vars_to_clone[rv]: vv for rv, vv in model.rvs_to_values.items()
+        }
         new_model.rvs_to_transforms = {
             vars_to_clone[rv]: tr for rv, tr in model.rvs_to_transforms.items()
         }
@@ -376,7 +388,9 @@ class MarginalModel(Model):
 
         var_names = [var if isinstance(var, str) else var.name for var in var_names]
         vars_to_recover = [v for v in self.marginalized_rvs if v.name in var_names]
-        missing_names = [v.name for v in vars_to_recover if v not in self.marginalized_rvs]
+        missing_names = [
+            v.name for v in vars_to_recover if v not in self.marginalized_rvs
+        ]
         if missing_names:
             raise ValueError(f"Unrecognized var_names: {missing_names}")
 
@@ -393,7 +407,9 @@ class MarginalModel(Model):
         ]
 
         sample_dims = ("chain", "draw")
-        posterior_pts, stacked_dims = dataset_to_point_list(posterior_values, sample_dims)
+        posterior_pts, stacked_dims = dataset_to_point_list(
+            posterior_values, sample_dims
+        )
 
         # Handle Transforms
         transform_fn, transform_names = self._to_transformed()
@@ -416,7 +432,9 @@ class MarginalModel(Model):
             m = self.clone()
             marginalized_rv = m.vars_to_clone[marginalized_rv]
             m.unmarginalize([marginalized_rv])
-            dependent_vars = find_conditional_dependent_rvs(marginalized_rv, m.basic_RVs)
+            dependent_vars = find_conditional_dependent_rvs(
+                marginalized_rv, m.basic_RVs
+            )
             joint_logps = m.logp(vars=[marginalized_rv] + dependent_vars, sum=False)
 
             marginalized_value = m.rvs_to_values[marginalized_rv]
@@ -428,7 +446,9 @@ class MarginalModel(Model):
                 marginalized_rv.type, dependent_logps
             )
 
-            rv_shape = constant_fold(tuple(marginalized_rv.shape), raise_not_constant=False)
+            rv_shape = constant_fold(
+                tuple(marginalized_rv.shape), raise_not_constant=False
+            )
             rv_domain = get_domain_of_finite_discrete_rv(marginalized_rv)
             rv_domain_tensor = pt.moveaxis(
                 pt.full(
@@ -476,7 +496,8 @@ class MarginalModel(Model):
                 logps = np.array(logps)
                 samples = np.array(samples)
                 rv_dict[marginalized_rv.name] = samples.reshape(
-                    tuple(len(coord) for coord in stacked_dims.values()) + samples.shape[1:],
+                    tuple(len(coord) for coord in stacked_dims.values())
+                    + samples.shape[1:],
                 )
             else:
                 logps = np.array(logvs)
@@ -485,10 +506,12 @@ class MarginalModel(Model):
                 tuple(len(coord) for coord in stacked_dims.values()) + logps.shape[1:],
             )
             if marginalized_rv.name in m.named_vars_to_dims:
-                rv_dims[marginalized_rv.name] = list(m.named_vars_to_dims[marginalized_rv.name])
-                rv_dims["lp_" + marginalized_rv.name] = rv_dims[marginalized_rv.name] + [
-                    "lp_" + marginalized_rv.name + "_dim"
-                ]
+                rv_dims[marginalized_rv.name] = list(
+                    m.named_vars_to_dims[marginalized_rv.name]
+                )
+                rv_dims["lp_" + marginalized_rv.name] = rv_dims[
+                    marginalized_rv.name
+                ] + ["lp_" + marginalized_rv.name + "_dim"]
 
         coords, dims = coords_and_dims_for_inferencedata(self)
         dims.update(rv_dims)
@@ -530,7 +553,9 @@ def marginalize(model: Model, rvs_to_marginalize: ModelRVs) -> MarginalModel:
     """
     if not isinstance(rvs_to_marginalize, tuple | list):
         rvs_to_marginalize = (rvs_to_marginalize,)
-    rvs_to_marginalize = [rv if isinstance(rv, str) else rv.name for rv in rvs_to_marginalize]
+    rvs_to_marginalize = [
+        rv if isinstance(rv, str) else rv.name for rv in rvs_to_marginalize
+    ]
 
     marginal_model = MarginalModel.from_model(model)
     marginal_model.marginalize(rvs_to_marginalize)
@@ -589,7 +614,10 @@ def find_conditional_dependent_rvs(dependable_rv, all_rvs):
     return [
         rv
         for rv in all_rvs
-        if (rv is not dependable_rv and is_conditional_dependent(rv, dependable_rv, all_rvs))
+        if (
+            rv is not dependable_rv
+            and is_conditional_dependent(rv, dependable_rv, all_rvs)
+        )
     ]
 
 
@@ -628,7 +656,9 @@ def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
         return False
 
     # Check that none of the truncated inputs depends on the marginalized_rv
-    other_truncated_inputs = [inp for inp in truncated_inputs if inp is not rv_to_marginalize]
+    other_truncated_inputs = [
+        inp for inp in truncated_inputs if inp is not rv_to_marginalize
+    ]
     # TODO: We don't need to go all the way to the root variables
     if rv_to_marginalize in ancestors(
         other_truncated_inputs, blockers=[rv_to_marginalize, *other_input_rvs]
@@ -637,12 +667,11 @@ def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
     return True
 
 
-from pytensor.graph.basic import graph_inputs
-
-
 def collect_shared_vars(outputs, blockers):
     return [
-        inp for inp in graph_inputs(outputs, blockers=blockers) if isinstance(inp, SharedVariable)
+        inp
+        for inp in graph_inputs(outputs, blockers=blockers)
+        if isinstance(inp, SharedVariable)
     ]
 
 
@@ -662,7 +691,9 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
         )
     [ndim_supp] = ndim_supp
     if ndim_supp > 0:
-        raise NotImplementedError("Marginalization with dependent Multivariate RVs not implemented")
+        raise NotImplementedError(
+            "Marginalization with dependent Multivariate RVs not implemented"
+        )
 
     marginalized_rv_input_rvs = find_conditional_input_rvs([rv_to_marginalize], all_rvs)
     dependent_rvs_input_rvs = [
@@ -677,8 +708,13 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
     # can ultimately be generated that is proportional to the support domain and not
     # to the variables dimensions
     # We don't need to worry about this if the  RV is scalar.
-    if np.prod(constant_fold(tuple(rv_to_marginalize.shape), raise_not_constant=False)) != 1:
-        if not is_elemwise_subgraph(rv_to_marginalize, dependent_rvs_input_rvs, dependent_rvs):
+    if (
+        np.prod(constant_fold(tuple(rv_to_marginalize.shape), raise_not_constant=False))
+        != 1
+    ):
+        if not is_elemwise_subgraph(
+            rv_to_marginalize, dependent_rvs_input_rvs, dependent_rvs
+        ):
             raise NotImplementedError(
                 "The subgraph between a marginalized RV and its dependents includes non Elemwise operations. "
                 "This is currently not supported",
@@ -736,7 +772,9 @@ def _add_reduce_batch_dependent_logps(
         dbcast = dependent_logp.type.broadcastable
         dim_diff = len(dbcast) - len(mbcast)
         mbcast_aligned = (True,) * dim_diff + mbcast
-        vbcast_axis = [i for i, (m, v) in enumerate(zip(mbcast_aligned, dbcast)) if m and not v]
+        vbcast_axis = [
+            i for i, (m, v) in enumerate(zip(mbcast_aligned, dbcast)) if m and not v
+        ]
         reduced_logps.append(dependent_logp.sum(vbcast_axis))
     return pt.add(*reduced_logps)
 
@@ -768,7 +806,9 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
     # batched dimensions of the marginalized RV
 
     # PyMC does not allow RVs in the logp graph, even if we are just using the shape
-    marginalized_rv_shape = constant_fold(tuple(marginalized_rv.shape), raise_not_constant=False)
+    marginalized_rv_shape = constant_fold(
+        tuple(marginalized_rv.shape), raise_not_constant=False
+    )
     marginalized_rv_domain = get_domain_of_finite_discrete_rv(marginalized_rv)
     marginalized_rv_domain_tensor = pt.moveaxis(
         pt.full(
@@ -787,7 +827,9 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
     except Exception:
         # Fallback to Scan
         def logp_fn(marginalized_rv_const, *non_sequences):
-            return graph_replace(joint_logp, replace={marginalized_vv: marginalized_rv_const})
+            return graph_replace(
+                joint_logp, replace={marginalized_vv: marginalized_rv_const}
+            )
 
         joint_logps, _ = scan_map(
             fn=logp_fn,
@@ -804,7 +846,6 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
 
 @_logprob.register(DiscreteMarginalMarkovChainRV)
 def marginal_hmm_logp(op, values, *inputs, **kwargs):
-
     marginalized_rvs_node = op.make_node(*inputs)
     inner_rvs = clone_replace(
         op.inner_outputs,
@@ -833,7 +874,9 @@ def marginal_hmm_logp(op, values, *inputs, **kwargs):
     # Add a batch dimension for the domain of the chain
     chain_shape = constant_fold(tuple(chain_rv.shape))
     batch_chain_value = pt.moveaxis(pt.full((*chain_shape, domain.size), domain), -1, 0)
-    batch_logp_emissions = vectorize_graph(reduced_logp_emissions, {chain_value: batch_chain_value})
+    batch_logp_emissions = vectorize_graph(
+        reduced_logp_emissions, {chain_value: batch_chain_value}
+    )
 
     # Step 2: Compute the transition probabilities
     # This is the "forward algorithm", alpha_t = p(y | s_t) * sum_{s_{t-1}}(p(s_t | s_{t-1}) * alpha_{t-1})

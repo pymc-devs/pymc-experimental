@@ -78,12 +78,18 @@ def test_multilevel():
         s = pm.HalfNormal("s")
         a_g = pm.Normal("a_g", a, s, shape=(2,), dims="level")
         s_g = pm.HalfNormal("s_g")
-        a_ig = pm.Normal("a_ig", a_g, s_g, shape=(2, 2), dims=("county", "level"))
+        pm.Normal("a_ig", a_g, s_g, shape=(2, 2), dims=("county", "level"))
 
     model_r, vip = vip_reparametrize(model, ["a_g", "a_ig"])
     assert "a_g" in vip.get_lambda()
     assert "a_ig" in vip.get_lambda()
-    assert {v.name for v in model_r.free_RVs} == {"a", "s", "a_g::tau_", "s_g", "a_ig::tau_"}
+    assert {v.name for v in model_r.free_RVs} == {
+        "a",
+        "s",
+        "a_g::tau_",
+        "s_g",
+        "a_ig::tau_",
+    }
     assert "a_g" in [v.name for v in model_r.deterministics]
 
 

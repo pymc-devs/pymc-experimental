@@ -65,7 +65,14 @@ class KalmanSmoother:
         return a, P, a_smooth, P_smooth, T, R, Q
 
     def build_graph(
-        self, T, R, Q, filtered_states, filtered_covariances, mode=None, cov_jitter=JITTER_DEFAULT
+        self,
+        T,
+        R,
+        Q,
+        filtered_states,
+        filtered_covariances,
+        mode=None,
+        cov_jitter=JITTER_DEFAULT,
     ):
         self.mode = mode
         self.cov_jitter = cov_jitter
@@ -75,8 +82,8 @@ class KalmanSmoother:
         a_last = pt.specify_shape(filtered_states[-1], (k,))
         P_last = pt.specify_shape(filtered_covariances[-1], (k, k))
 
-        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
-            [T, R, Q], ["T", "R", "Q"]
+        sequences, non_sequences, seq_names, non_seq_names = (
+            split_vars_into_seq_and_nonseq([T, R, Q], ["T", "R", "Q"])
         )
 
         self.seq_names = seq_names

@@ -20,7 +20,13 @@ from pymc_experimental.statespace.utils.data_tools import (
 )
 from tests.statespace.utilities.test_helpers import load_nile_test_data
 
-function_names = ["pandas_date_freq", "pandas_date_nofreq", "pandas_nodate", "numpy", "pytensor"]
+function_names = [
+    "pandas_date_freq",
+    "pandas_date_nofreq",
+    "pandas_nodate",
+    "numpy",
+    "pytensor",
+]
 expected_warning = [
     does_not_raise(),
     pytest.warns(UserWarning, match=NO_FREQ_INFO_WARNING),
@@ -78,10 +84,12 @@ def create_model(load_dataset):
                 1,
                 dims="state",
             )
-            P0 = pm.Deterministic("P0", pt.diag(P0_diag), dims=("state", "state_aux"))
-            initial_trend = pm.Normal("initial_trend", dims="trend_state")
-            sigma_trend = pm.Exponential("sigma_trend", 1, dims="trend_shock")
-            ss_mod.build_statespace_graph(data, save_kalman_filter_outputs_in_idata=True)
+            pm.Deterministic("P0", pt.diag(P0_diag), dims=("state", "state_aux"))
+            pm.Normal("initial_trend", dims="trend_state")
+            pm.Exponential("sigma_trend", 1, dims="trend_shock")
+            ss_mod.build_statespace_graph(
+                data, save_kalman_filter_outputs_in_idata=True
+            )
         return mod
 
     return _create_model
@@ -92,7 +100,9 @@ def test_filter_output_coord_assignment(f, warning, create_model):
     with warning:
         pymc_model = create_model(f)
 
-    for output in FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES + ["predicted_observed_state"]:
+    for output in (
+        FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES + ["predicted_observed_state"]
+    ):
         assert pymc_model.named_vars_to_dims[output] == FILTER_OUTPUT_DIMS[output]
 
 
@@ -101,9 +111,9 @@ def test_model_build_without_coords(load_dataset):
     data = load_dataset("numpy")
     with pm.Model() as mod:
         P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
-        P0 = pm.Deterministic("P0", pt.diag(P0_diag))
-        initial_trend = pm.Normal("initial_trend", shape=(2,))
-        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
+        pm.Deterministic("P0", pt.diag(P0_diag))
+        pm.Normal("initial_trend", shape=(2,))
+        pm.Exponential("sigma_trend", 1, shape=(2,))
         ss_mod.build_statespace_graph(data, register_data=False)
 
     assert mod.coords == {}

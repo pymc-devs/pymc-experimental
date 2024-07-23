@@ -223,7 +223,9 @@ class PytensorRepresentation:
         if key not in self.shapes:
             raise IndexError(f"{key} is an invalid state space matrix name")
 
-    def _update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.Variable]) -> None:
+    def _update_shape(
+        self, key: KeyLike, value: Union[np.ndarray, pt.Variable]
+    ) -> None:
         if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
             shape = value.type.shape
         else:
@@ -231,7 +233,9 @@ class PytensorRepresentation:
 
         old_shape = self.shapes[key]
         ndim_core = 1 if key in VECTOR_VALUED else 2
-        if not all([a == b for a, b in zip(shape[-ndim_core:], old_shape[-ndim_core:])]):
+        if not all(
+            [a == b for a, b in zip(shape[-ndim_core:], old_shape[-ndim_core:])]
+        ):
             raise ValueError(
                 f"The last two dimensions of {key} must be {old_shape[-ndim_core:]}, found {shape[-ndim_core:]}"
             )
@@ -269,7 +273,9 @@ class PytensorRepresentation:
 
         return type(key)
 
-    def _validate_matrix_shape(self, name: str, X: Union[np.ndarray, pt.TensorVariable]) -> None:
+    def _validate_matrix_shape(
+        self, name: str, X: Union[np.ndarray, pt.TensorVariable]
+    ) -> None:
         time_dim, *expected_shape = self.shapes[name]
         expected_shape = tuple(expected_shape)
         shape = X.shape if isinstance(X, np.ndarray) else X.type.shape
@@ -328,7 +334,9 @@ class PytensorRepresentation:
             #         f"provided data)"
             #     )
 
-    def _check_provided_tensor(self, name: str, X: pt.TensorVariable) -> pt.TensorVariable:
+    def _check_provided_tensor(
+        self, name: str, X: pt.TensorVariable
+    ) -> pt.TensorVariable:
         self._validate_matrix_shape(name, X)
         if name not in NEVER_TIME_VARYING:
             if X.ndim == 1 and name in VECTOR_VALUED:
@@ -407,7 +415,9 @@ class PytensorRepresentation:
         else:
             raise IndexError("First index must the name of a valid state space matrix.")
 
-    def __setitem__(self, key: KeyLike, value: Union[float, int, np.ndarray, pt.Variable]) -> None:
+    def __setitem__(
+        self, key: KeyLike, value: Union[float, int, np.ndarray, pt.Variable]
+    ) -> None:
         _type = type(key)
 
         # Case 1: key is a string: we are setting an entire matrix.

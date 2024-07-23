@@ -60,7 +60,7 @@ def two_gaussians_model():
 
     with pm.Model() as m:
         X = pm.Uniform("X", lower=-2, upper=2.0, shape=n)
-        llk = pm.Potential("muh", two_gaussians(X))
+        pm.Potential("muh", two_gaussians(X))
 
     return m, mu1
 
@@ -68,7 +68,7 @@ def two_gaussians_model():
 def fast_model():
     with pm.Model() as m:
         x = pm.Normal("x", 0, 1)
-        y = pm.Normal("y", x, 1, observed=0)
+        pm.Normal("y", x, 1, observed=0)
     return m
 
 
@@ -115,7 +115,9 @@ def test_sample_smc_blackjax(kernel, check_for_integration_steps, inner_kernel_p
         assert inference_data.posterior.attrs[attribute] == value
 
     for diagnostic in ["lambda_evolution", "log_likelihood_increments"]:
-        assert inference_data.posterior.attrs[diagnostic].shape == (iterations_to_diagnose,)
+        assert inference_data.posterior.attrs[diagnostic].shape == (
+            iterations_to_diagnose,
+        )
 
     for diagnostic in ["ancestors_evolution", "weights_evolution"]:
         assert inference_data.posterior.attrs[diagnostic].shape == (
@@ -134,33 +136,41 @@ def test_blackjax_particles_from_pymc_population_univariate():
     model = fast_model()
     population = {"x": np.array([2, 3, 4])}
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
-    jax.tree.map(np.testing.assert_allclose, blackjax_particles, [np.array([[2], [3], [4]])])
+    jax.tree.map(
+        np.testing.assert_allclose, blackjax_particles, [np.array([[2], [3], [4]])]
+    )
 
 
 def test_blackjax_particles_from_pymc_population_multivariate():
     with pm.Model() as model:
         x = pm.Normal("x", 0, 1)
         z = pm.Normal("z", 0, 1)
-        y = pm.Normal("y", x + z, 1, observed=0)
+        pm.Normal("y", x + z, 1, observed=0)
 
-    population = {"x": np.array([0.34614613, 1.09163261, -0.44526825]), "z": np.array([1, 2, 3])}
+    population = {
+        "x": np.array([0.34614613, 1.09163261, -0.44526825]),
+        "z": np.array([1, 2, 3]),
+    }
     blackjax_particles = blackjax_particles_from_pymc_population(model, population)
     jax.tree.map(
         np.testing.assert_allclose,
         blackjax_particles,
-        [np.array([[0.34614613], [1.09163261], [-0.44526825]]), np.array([[1], [2], [3]])],
+        [
+            np.array([[0.34614613], [1.09163261], [-0.44526825]]),
+            np.array([[1], [2], [3]]),
+        ],
     )
 
 
 def simple_multivariable_model():
     """
     A simple model that has a multivariate variable,
-    a has more than one variable (multivariable)
+    and has more than one variable (multivariable)
     """
     with pm.Model() as model:
-        x = pm.Normal("x", 0, 1, shape=2)
+        pm.Normal("x", 0, 1, shape=2)
         z = pm.Normal("z", 0, 1)
-        y = pm.Normal("y", z, 1, observed=0)
+        pm.Normal("y", z, 1, observed=0)
     return model
 
 
@@ -182,7 +192,9 @@ def test_arviz_from_particles():
     with model:
         inference_data = arviz_from_particles(model, particles)
 
-    assert inference_data.posterior.sizes == Frozen({"chain": 1, "draw": 3, "x_dim_0": 2})
+    assert inference_data.posterior.sizes == Frozen(
+        {"chain": 1, "draw": 3, "x_dim_0": 2}
+    )
     assert inference_data.posterior.data_vars.dtypes == Frozen(
         {"x": dtype("float64"), "z": dtype("float64")}
     )

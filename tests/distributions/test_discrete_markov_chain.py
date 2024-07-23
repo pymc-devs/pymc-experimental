@@ -23,10 +23,15 @@ def transition_probability_tests(steps, n_states, n_lags, n_draws, atol):
     # Test x0 is uniform over n_states
     for i in range(n_lags):
         assert np.allclose(
-            np.histogram(draws[:, ..., i], bins=n_states)[0] / n_draws, 1 / n_states, atol=atol
+            np.histogram(draws[:, ..., i], bins=n_states)[0] / n_draws,
+            1 / n_states,
+            atol=atol,
         )
 
-    n_grams = [[tuple(row[i : i + n_lags + 1]) for i in range(len(row) - n_lags)] for row in draws]
+    n_grams = [
+        [tuple(row[i : i + n_lags + 1]) for i in range(len(row) - n_lags)]
+        for row in draws
+    ]
     freq_table = np.zeros((n_states,) * (n_lags + 1))
 
     for row in n_grams:
@@ -60,16 +65,20 @@ class TestDiscreteMarkovRV:
         x0 = pm.Categorical.dist(p=np.ones(3) / 3)
         chain = DiscreteMarkovChain.dist(P=P, steps=10, init_dist=x0, n_lags=n_lags)
         draws = pm.draw(chain, 10)
-        logp = pm.logp(chain, draws)
+        pm.logp(chain, draws)
 
     def test_default_init_dist_warns_user(self):
-        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        P = pt.as_tensor_variable(
+            np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]])
+        )
 
         with pytest.warns(UserWarning):
             DiscreteMarkovChain.dist(P=P, steps=3)
 
     def test_logp_shape(self):
-        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        P = pt.as_tensor_variable(
+            np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]])
+        )
         x0 = pm.Categorical.dist(p=np.ones(3) / 3)
 
         # Test with steps
@@ -87,7 +96,9 @@ class TestDiscreteMarkovRV:
         assert logp.shape == (5,)
 
     def test_logp_with_default_init_dist(self):
-        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        P = pt.as_tensor_variable(
+            np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]])
+        )
         x0 = pm.Categorical.dist(p=np.ones(3) / 3)
 
         value = np.array([0, 1, 2])
@@ -105,7 +116,9 @@ class TestDiscreteMarkovRV:
         np.testing.assert_allclose(model_logp_eval, logp_expected, rtol=1e-6)
 
     def test_logp_with_user_defined_init_dist(self):
-        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        P = pt.as_tensor_variable(
+            np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]])
+        )
         x0 = pm.Categorical.dist(p=[0.2, 0.6, 0.2])
         chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, steps=3)
 
@@ -161,7 +174,9 @@ class TestDiscreteMarkovRV:
             P = pt.full((3, 3), 1 / 3)
             x0 = pm.Categorical.dist(p=np.ones(3) / 3)
 
-            chain = DiscreteMarkovChain("chain", P=P, steps=3, init_dist=x0, dims=["steps"])
+            chain = DiscreteMarkovChain(
+                "chain", P=P, steps=3, init_dist=x0, dims=["steps"]
+            )
 
         assert chain.eval().shape == (4,)
 
@@ -196,16 +211,24 @@ class TestDiscreteMarkovRV:
             x0 = pm.Categorical.dist(p=[0.1, 0.1, 0.8], size=2)
             data = pm.draw(x0, 100)
 
-            chain = DiscreteMarkovChain("chain", P=P, init_dist=x0, n_lags=2, observed=data)
+            chain = DiscreteMarkovChain(
+                "chain", P=P, init_dist=x0, n_lags=2, observed=data
+            )
 
         assert chain.eval().shape == (100, 2)
 
     def test_random_draws(self):
-        transition_probability_tests(steps=3, n_states=2, n_lags=1, n_draws=2500, atol=0.05)
-        transition_probability_tests(steps=3, n_states=2, n_lags=3, n_draws=7500, atol=0.05)
+        transition_probability_tests(
+            steps=3, n_states=2, n_lags=1, n_draws=2500, atol=0.05
+        )
+        transition_probability_tests(
+            steps=3, n_states=2, n_lags=3, n_draws=7500, atol=0.05
+        )
 
     def test_change_size_univariate(self):
-        P = pt.as_tensor_variable(np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]]))
+        P = pt.as_tensor_variable(
+            np.array([[0.1, 0.5, 0.4], [0.3, 0.4, 0.3], [0.9, 0.05, 0.05]])
+        )
         x0 = pm.Categorical.dist(p=np.ones(3) / 3)
 
         chain = DiscreteMarkovChain.dist(P=P, init_dist=x0, shape=(100, 5))

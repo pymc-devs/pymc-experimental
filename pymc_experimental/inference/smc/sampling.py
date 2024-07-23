@@ -198,7 +198,9 @@ def arviz_from_particles(model, particles):
     -------
     """
     n_particles = jax.tree_util.tree_flatten(particles)[0][0].shape[0]
-    by_varname = {k.name: v.squeeze()[np.newaxis, :] for k, v in zip(model.value_vars, particles)}
+    by_varname = {
+        k.name: v.squeeze()[np.newaxis, :] for k, v in zip(model.value_vars, particles)
+    }
     varnames = [v.name for v in model.value_vars]
     with model:
         strace = NDArray(name=model.name)
@@ -344,18 +346,18 @@ def add_to_inference_data(
         "sampler": f"Blackjax SMC with {kernel} kernel",
     }
 
-    inference_data.posterior.attrs["lambda_evolution"] = np.array(diagnosis.lmbda_evolution)[
-        :iterations_to_diagnose
-    ]
+    inference_data.posterior.attrs["lambda_evolution"] = np.array(
+        diagnosis.lmbda_evolution
+    )[:iterations_to_diagnose]
     inference_data.posterior.attrs["log_likelihood_increments"] = np.array(
         diagnosis.log_likelihood_increment_evolution
     )[:iterations_to_diagnose]
-    inference_data.posterior.attrs["ancestors_evolution"] = np.array(diagnosis.ancestors_evolution)[
-        :iterations_to_diagnose
-    ]
-    inference_data.posterior.attrs["weights_evolution"] = np.array(diagnosis.weights_evolution)[
-        :iterations_to_diagnose
-    ]
+    inference_data.posterior.attrs["ancestors_evolution"] = np.array(
+        diagnosis.ancestors_evolution
+    )[:iterations_to_diagnose]
+    inference_data.posterior.attrs["weights_evolution"] = np.array(
+        diagnosis.weights_evolution
+    )[:iterations_to_diagnose]
 
     for k in experiment_parameters:
         inference_data.posterior.attrs[k] = experiment_parameters[k]
@@ -391,7 +393,9 @@ def get_jaxified_particles_fn(model, graph_outputs):
 
 def initialize_population(model, draws, random_seed) -> Dict[str, np.ndarray]:
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning, message="The effect of Potentials")
+        warnings.filterwarnings(
+            "ignore", category=UserWarning, message="The effect of Potentials"
+        )
 
         prior_expression = make_initial_point_expression(
             free_rvs=model.free_RVs,

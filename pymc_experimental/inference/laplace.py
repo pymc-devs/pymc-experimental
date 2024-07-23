@@ -146,11 +146,15 @@ def addFitToInferenceData(vars, idata, mean, covariance):
     # Convert to xarray DataArray
     mean_dataarray = xr.DataArray(mean, dims=["rows"], coords={"rows": coord_names})
     cov_dataarray = xr.DataArray(
-        covariance, dims=["rows", "columns"], coords={"rows": coord_names, "columns": coord_names}
+        covariance,
+        dims=["rows", "columns"],
+        coords={"rows": coord_names, "columns": coord_names},
     )
 
     # Create xarray dataset
-    dataset = xr.Dataset({"mean_vector": mean_dataarray, "covariance_matrix": cov_dataarray})
+    dataset = xr.Dataset(
+        {"mean_vector": mean_dataarray, "covariance_matrix": cov_dataarray}
+    )
 
     idata.add_groups(fit=dataset)
 

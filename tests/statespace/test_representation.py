@@ -123,28 +123,34 @@ class BasicFunctionality(unittest.TestCase):
         assert_allclose(fast_eval(ssm["design"][0, 0]), 3.0, atol=atol)
         assert_allclose(fast_eval(ssm["transition"][0, :]), 2.7, atol=atol)
         assert_allclose(fast_eval(ssm["selection"][-1, -1]), 9.9, atol=atol)
-        assert_allclose(fast_eval(ssm["state_intercept"][:, 0]), np.arange(n), atol=atol)
+        assert_allclose(
+            fast_eval(ssm["state_intercept"][:, 0]), np.arange(n), atol=atol
+        )
 
     def test_invalid_key_name_raises(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
         with self.assertRaises(IndexError) as e:
-            X = ssm["invalid_key"]
+            ssm["invalid_key"]
         msg = str(e.exception)
         self.assertEqual(msg, "invalid_key is an invalid state space matrix name")
 
     def test_non_string_key_raises(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
         with self.assertRaises(IndexError) as e:
-            X = ssm[0]
+            ssm[0]
         msg = str(e.exception)
-        self.assertEqual(msg, "First index must the name of a valid state space matrix.")
+        self.assertEqual(
+            msg, "First index must the name of a valid state space matrix."
+        )
 
     def test_invalid_key_tuple_raises(self):
         ssm = PytensorRepresentation(k_endog=3, k_states=5, k_posdef=1)
         with self.assertRaises(IndexError) as e:
-            X = ssm[0, 1, 1]
+            ssm[0, 1, 1]
         msg = str(e.exception)
-        self.assertEqual(msg, "First index must the name of a valid state space matrix.")
+        self.assertEqual(
+            msg, "First index must the name of a valid state space matrix."
+        )
 
     def test_slice_statespace_matrix(self):
         T = np.eye(5)

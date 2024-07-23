@@ -28,12 +28,12 @@ def test_pathfinder():
     y = np.array([28.0, 8.0, -3.0, 7.0, -1.0, 1.0, 18.0, 12.0])
     sigma = np.array([15.0, 10.0, 16.0, 11.0, 9.0, 11.0, 10.0, 18.0])
 
-    with pm.Model() as model:
+    with pm.Model():
         mu = pm.Normal("mu", mu=0.0, sigma=10.0)
         tau = pm.HalfCauchy("tau", 5.0)
 
         theta = pm.Normal("theta", mu=0, sigma=1, shape=J)
-        obs = pm.Normal("obs", mu=mu + tau * theta, sigma=sigma, shape=J, observed=y)
+        pm.Normal("obs", mu=mu + tau * theta, sigma=sigma, shape=J, observed=y)
 
         idata = pmx.fit(method="pathfinder", random_seed=41)
 

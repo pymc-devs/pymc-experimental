@@ -51,14 +51,14 @@ class GeneralizedPoissonRV(RandomVariable):
         x = np.empty(dist_size)
         idxs_mask = np.broadcast_to(lam < 0, dist_size)
         if np.any(idxs_mask):
-            x[idxs_mask] = cls._inverse_rng_fn(rng, theta, lam, dist_size, idxs_mask=idxs_mask)[
-                idxs_mask
-            ]
+            x[idxs_mask] = cls._inverse_rng_fn(
+                rng, theta, lam, dist_size, idxs_mask=idxs_mask
+            )[idxs_mask]
         idxs_mask = ~idxs_mask
         if np.any(idxs_mask):
-            x[idxs_mask] = cls._branching_rng_fn(rng, theta, lam, dist_size, idxs_mask=idxs_mask)[
-                idxs_mask
-            ]
+            x[idxs_mask] = cls._branching_rng_fn(
+                rng, theta, lam, dist_size, idxs_mask=idxs_mask
+            )[idxs_mask]
         return x
 
     @classmethod
@@ -159,7 +159,9 @@ class GeneralizedPoisson(pm.distributions.Discrete):
 
     def logp(value, mu, lam):
         mu_lam_value = mu + lam * value
-        logprob = np.log(mu) + logpow(mu_lam_value, value - 1) - mu_lam_value - factln(value)
+        logprob = (
+            np.log(mu) + logpow(mu_lam_value, value - 1) - mu_lam_value - factln(value)
+        )
 
         # Probability is 0 when value > m, where m is the largest positive integer for
         # which mu + m * lam > 0 (when lam < 0).

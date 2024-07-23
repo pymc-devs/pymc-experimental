@@ -137,7 +137,9 @@ def f_standard_nd():
         ll_obs,
     ) = StandardFilter().build_graph(*inputs)
 
-    smoothed_states, smoothed_covs = ksmoother.build_graph(T, R, Q, filtered_states, filtered_covs)
+    smoothed_states, smoothed_covs = ksmoother.build_graph(
+        T, R, Q, filtered_states, filtered_covs
+    )
 
     outputs = [
         filtered_states,
@@ -234,7 +236,9 @@ def test_missing_data(filter_func, filter_name, p, rng):
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
-@pytest.mark.parametrize("output_idx", [(0, 2), (3, 5)], ids=["smoothed_states", "smoothed_covs"])
+@pytest.mark.parametrize(
+    "output_idx", [(0, 2), (3, 5)], ids=["smoothed_states", "smoothed_covs"]
+)
 def test_last_smoother_is_last_filtered(filter_func, output_idx, rng):
     p, m, r, n = 1, 5, 1, 10
     inputs = make_test_inputs(p, m, r, n, rng)
@@ -288,16 +292,24 @@ def test_filters_match_statsmodel_output(filter_func, n_missing, rng):
 
 
 @pytest.mark.parametrize(
-    "filter_func, filter_name", zip(filter_funcs[:-1], filter_names[:-1]), ids=filter_names[:-1]
+    "filter_func, filter_name",
+    zip(filter_funcs[:-1], filter_names[:-1]),
+    ids=filter_names[:-1],
 )
 @pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
 @pytest.mark.parametrize("obs_noise", [True, False])
-def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, obs_noise, rng):
+def test_all_covariance_matrices_are_PSD(
+    filter_func, filter_name, n_missing, obs_noise, rng
+):
     if (floatX == "float32") & (filter_name == "UnivariateFilter"):
         # TODO: These tests all pass locally for me with float32 but they fail on the CI, so i'm just disabling them.
-        pytest.skip("Univariate filter not stable at half precision without measurement error")
+        pytest.skip(
+            "Univariate filter not stable at half precision without measurement error"
+        )
 
-    fit_sm_mod, [data, a0, P0, c, d, T, Z, R, H, Q] = nile_test_test_helper(rng, n_missing)
+    fit_sm_mod, [data, a0, P0, c, d, T, Z, R, H, Q] = nile_test_test_helper(
+        rng, n_missing
+    )
 
     H *= int(obs_noise)
     inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
@@ -307,7 +319,9 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
         cov_stack = outputs[output_idx]
         w, v = np.linalg.eig(cov_stack)
 
-        assert_array_less(0, w, err_msg=f"Smallest eigenvalue of {name}: {min(w.ravel())}")
+        assert_array_less(
+            0, w, err_msg=f"Smallest eigenvalue of {name}: {min(w.ravel())}"
+        )
         assert_allclose(
             cov_stack,
             np.swapaxes(cov_stack, -2, -1),
@@ -348,4 +362,6 @@ def test_kalman_filter_jax(filter):
     pt_outputs = f_pt(*inputs_np)
 
     for name, jax_res, pt_res in zip(output_names, jax_outputs, pt_outputs):
-        assert_allclose(jax_res, pt_res, atol=ATOL, rtol=RTOL, err_msg=f"{name} failed!")
+        assert_allclose(
+            jax_res, pt_res, atol=ATOL, rtol=RTOL, err_msg=f"{name} failed!"
+        )

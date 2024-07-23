@@ -77,7 +77,11 @@ def ss_mod():
     P0 = np.eye(2, dtype=floatX) * 1e6
 
     ss_mod = StateSpace(
-        k_endog=nile.shape[1], k_states=2, k_posdef=1, filter_type="standard", verbose=False
+        k_endog=nile.shape[1],
+        k_states=2,
+        k_posdef=1,
+        filter_type="standard",
+        verbose=False,
     )
     for X, name in zip(
         [Z, R, H, Q, P0],
@@ -92,9 +96,11 @@ def ss_mod():
 def pymc_mod(ss_mod):
     with pm.Model(coords=ss_mod.coords) as pymc_mod:
         rho = pm.Beta("rho", 1, 1)
-        zeta = pm.Deterministic("zeta", 1 - rho)
+        pm.Deterministic("zeta", 1 - rho)
 
-        ss_mod.build_statespace_graph(data=nile, save_kalman_filter_outputs_in_idata=True)
+        ss_mod.build_statespace_graph(
+            data=nile, save_kalman_filter_outputs_in_idata=True
+        )
         names = ["x0", "P0", "c", "d", "T", "Z", "R", "H", "Q"]
         for name, matrix in zip(names, ss_mod.unpack_statespace()):
             pm.Deterministic(name, matrix)
@@ -117,15 +123,15 @@ def exog_pymc_mod(exog_ss_mod, rng):
     X = rng.normal(size=(100, 3)).astype(floatX)
 
     with pm.Model(coords=exog_ss_mod.coords) as m:
-        exog_data = pm.Data("data_exog", X)
-        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        pm.Data("data_exog", X)
+        pm.Normal("initial_trend", dims=["trend_state"])
         P0_sigma = pm.Exponential("P0_sigma", 1)
-        P0 = pm.Deterministic(
+        pm.Deterministic(
             "P0", pt.eye(exog_ss_mod.k_states) * P0_sigma, dims=["state", "state_aux"]
         )
-        beta_exog = pm.Normal("beta_exog", dims=["exog_state"])
+        pm.Normal("beta_exog", dims=["exog_state"])
 
-        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
         exog_ss_mod.build_statespace_graph(y, save_kalman_filter_outputs_in_idata=True)
 
     return m
@@ -151,15 +157,19 @@ def idata_exog(exog_pymc_mod, rng):
 
 
 def test_invalid_filter_name_raises():
-    msg = "The following are valid filter types: " + ", ".join(list(FILTER_FACTORY.keys()))
+    msg = "The following are valid filter types: " + ", ".join(
+        list(FILTER_FACTORY.keys())
+    )
     with pytest.raises(NotImplementedError, match=msg):
-        mod = make_statespace_mod(k_endog=1, k_states=5, k_posdef=1, filter_type="invalid_filter")
+        make_statespace_mod(
+            k_endog=1, k_states=5, k_posdef=1, filter_type="invalid_filter"
+        )
 
 
 def test_singleseriesfilter_raises_if_k_endog_gt_one():
     msg = 'Cannot use filter_type = "single" with multiple observed time series'
     with pytest.raises(ValueError, match=msg):
-        mod = make_statespace_mod(k_endog=10, k_states=5, k_posdef=1, filter_type="single")
+        make_statespace_mod(k_endog=10, k_states=5, k_posdef=1, filter_type="single")
 
 
 def test_unpack_before_insert_raises(rng):
@@ -171,7 +181,7 @@ def test_unpack_before_insert_raises(rng):
 
     msg = "Cannot unpack the complete statespace system until PyMC model variables have been inserted."
     with pytest.raises(ValueError, match=msg):
-        outputs = mod.unpack_statespace()
+        mod.unpack_statespace()
 
 
 def test_unpack_matrices(rng):
@@ -194,19 +204,19 @@ def test_param_names_raises_on_base_class():
         k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False
     )
     with pytest.raises(NotImplementedError):
-        x = mod.param_names
+        mod.param_names
 
 
 def test_base_class_raises():
     with pytest.raises(NotImplementedError):
-        mod = PyMCStateSpace(
+        PyMCStateSpace(
             k_endog=1, k_states=5, k_posdef=1, filter_type="standard", verbose=False
         )
 
 
 def test_update_raises_if_missing_variables(ss_mod):
-    with pm.Model() as mod:
-        rho = pm.Normal("rho")
+    with pm.Model():
+        pm.Normal("rho")
         msg = "The following required model parameters were not found in the PyMC model: zeta"
         with pytest.raises(ValueError, match=msg):
             ss_mod._insert_random_variables()
@@ -216,9 +226,9 @@ def test_build_statespace_graph_warns_if_data_has_nans():
     # Breaks tests if it uses the session fixtures because we can't call build_statespace_graph over and over
     ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
 
-    with pm.Model() as pymc_mod:
-        initial_trend = pm.Normal("initial_trend", shape=(1,))
-        P0 = pm.Deterministic("P0", pt.eye(1, dtype=floatX))
+    with pm.Model():
+        pm.Normal("initial_trend", shape=(1,))
+        pm.Deterministic("P0", pt.eye(1, dtype=floatX))
         with pytest.warns(pm.ImputationWarning):
             ss_mod.build_statespace_graph(
                 data=np.full((10, 1), np.nan, dtype=floatX), register_data=False
@@ -229,13 +239,15 @@ def test_build_statespace_graph_raises_if_data_has_missing_fill():
     # Breaks tests if it uses the session fixtures because we can't call build_statespace_graph over and over
     ss_mod = st.LevelTrendComponent(order=1, innovations_order=0).build(verbose=False)
 
-    with pm.Model() as pymc_mod:
-        initial_trend = pm.Normal("initial_trend", shape=(1,))
-        P0 = pm.Deterministic("P0", pt.eye(1, dtype=floatX))
+    with pm.Model():
+        pm.Normal("initial_trend", shape=(1,))
+        pm.Deterministic("P0", pt.eye(1, dtype=floatX))
         with pytest.raises(ValueError, match="Provided data contains the value 1.0"):
             data = np.ones((10, 1), dtype=floatX)
             data[3] = np.nan
-            ss_mod.build_statespace_graph(data=data, missing_fill_value=1.0, register_data=False)
+            ss_mod.build_statespace_graph(
+                data=data, missing_fill_value=1.0, register_data=False
+            )
 
 
 def test_build_statespace_graph(pymc_mod):
@@ -281,12 +293,21 @@ def test_sampling_methods(group, kind, ss_mod, idata, rng):
 def test_forecast(filter_output, ss_mod, idata, rng):
     time_idx = idata.posterior.coords["time"].values
     forecast_idata = ss_mod.forecast(
-        idata, start=time_idx[-1], periods=10, filter_output=filter_output, random_seed=rng
+        idata,
+        start=time_idx[-1],
+        periods=10,
+        filter_output=filter_output,
+        random_seed=rng,
     )
 
     assert forecast_idata.coords["time"].values.shape == (10,)
     assert forecast_idata.forecast_latent.dims == ("chain", "draw", "time", "state")
-    assert forecast_idata.forecast_observed.dims == ("chain", "draw", "time", "observed_state")
+    assert forecast_idata.forecast_observed.dims == (
+        "chain",
+        "draw",
+        "time",
+        "observed_state",
+    )
 
     assert not np.any(np.isnan(forecast_idata.forecast_latent.values))
     assert not np.any(np.isnan(forecast_idata.forecast_observed.values))
@@ -295,7 +316,9 @@ def test_forecast(filter_output, ss_mod, idata, rng):
 @pytest.mark.filterwarnings("ignore:No time index found on the supplied data.")
 def test_forecast_fails_if_exog_needed(exog_ss_mod, idata_exog):
     time_idx = idata_exog.observed_data.coords["time"].values
-    with pytest.xfail("Scenario-based forcasting with exogenous variables not currently supported"):
-        forecast_idata = exog_ss_mod.forecast(
+    with pytest.xfail(
+        "Scenario-based forcasting with exogenous variables not currently supported"
+    ):
+        exog_ss_mod.forecast(
             idata_exog, start=time_idx[-1], periods=10, random_seed=rng
         )

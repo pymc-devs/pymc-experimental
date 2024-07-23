@@ -17,9 +17,6 @@ from pymc_experimental.statespace.utils.constants import (
     OBS_STATE_DIM,
     TIME_DIM,
 )
-from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
-    rng,
-)
 from tests.statespace.utilities.test_helpers import (
     delete_rvs_from_model,
     fast_eval,
@@ -52,9 +49,9 @@ def pymc_model(data):
     with pm.Model() as mod:
         data = pm.Data("data", data.values)
         P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
-        P0 = pm.Deterministic("P0", pt.diag(P0_diag))
-        initial_trend = pm.Normal("initial_trend", shape=(2,))
-        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
+        pm.Deterministic("P0", pt.diag(P0_diag))
+        pm.Normal("initial_trend", shape=(2,))
+        pm.Exponential("sigma_trend", 1, shape=(2,))
 
     return mod
 
@@ -69,10 +66,10 @@ def pymc_model_2(data):
 
     with pm.Model(coords=coords) as mod:
         P0_diag = pm.Exponential("P0_diag", 1, shape=(2,))
-        P0 = pm.Deterministic("P0", pt.diag(P0_diag))
-        initial_trend = pm.Normal("initial_trend", shape=(2,))
-        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
-        sigma_me = pm.Exponential("sigma_error", 1)
+        pm.Deterministic("P0", pt.diag(P0_diag))
+        pm.Normal("initial_trend", shape=(2,))
+        pm.Exponential("sigma_trend", 1, shape=(2,))
+        pm.Exponential("sigma_error", 1)
 
     return mod
 
@@ -105,7 +102,9 @@ def test_loglike_vectors_agree(kfilter, pymc_model):
         matrices = ss_mod.unpack_statespace()
 
         filter_outputs = ss_mod.kalman_filter.build_graph(pymc_model["data"], *matrices)
-        filter_mus, pred_mus, obs_mu, filter_covs, pred_covs, obs_cov, ll = filter_outputs
+        filter_mus, pred_mus, obs_mu, filter_covs, pred_covs, obs_cov, ll = (
+            filter_outputs
+        )
 
     test_ll = fast_eval(ll)
 
@@ -151,7 +150,9 @@ def test_lgss_distribution_from_steps(output_name, ss_mod_me, pymc_model_2):
         matrices = ss_mod_me.unpack_statespace()
 
         # pylint: disable=unpacking-non-sequence
-        latent_states, obs_states = LinearGaussianStateSpace("states", *matrices, steps=100)
+        latent_states, obs_states = LinearGaussianStateSpace(
+            "states", *matrices, steps=100
+        )
         # pylint: enable=unpacking-non-sequence
 
         idata = pm.sample_prior_predictive(draws=10)
@@ -174,7 +175,7 @@ def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
             steps=100,
             dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM],
             sequence_names=[],
-            k_endog=ss_mod_me.k_endog
+            k_endog=ss_mod_me.k_endog,
         )
         # pylint: enable=unpacking-non-sequence
         idata = pm.sample_prior_predictive(draws=10)
@@ -182,10 +183,16 @@ def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
 
     assert idata.prior.coords["time"].shape == (101,)
     assert all(
-        [dim in idata.prior.states_latent.coords.keys() for dim in [TIME_DIM, ALL_STATE_DIM]]
+        [
+            dim in idata.prior.states_latent.coords.keys()
+            for dim in [TIME_DIM, ALL_STATE_DIM]
+        ]
     )
     assert all(
-        [dim in idata.prior.states_observed.coords.keys() for dim in [TIME_DIM, OBS_STATE_DIM]]
+        [
+            dim in idata.prior.states_observed.coords.keys()
+            for dim in [TIME_DIM, OBS_STATE_DIM]
+        ]
     )
     assert not np.any(np.isnan(idata.prior[output_name].values))
 
@@ -205,12 +212,12 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
     }
 
     with pm.Model(coords=coords):
-        exog_data = pm.Data("data_exog", X)
+        pm.Data("data_exog", X)
         P0_diag = pm.Exponential("P0_diag", 1, shape=(mod.k_states,))
-        P0 = pm.Deterministic("P0", pt.diag(P0_diag))
-        initial_trend = pm.Normal("initial_trend", shape=(2,))
-        sigma_trend = pm.Exponential("sigma_trend", 1, shape=(2,))
-        beta_exog = pm.Normal("beta_exog", shape=(3,))
+        pm.Deterministic("P0", pt.diag(P0_diag))
+        pm.Normal("initial_trend", shape=(2,))
+        pm.Exponential("sigma_trend", 1, shape=(2,))
+        pm.Normal("beta_exog", shape=(3,))
 
         mod._insert_random_variables()
         mod._insert_data_variables()
@@ -222,17 +229,23 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
             *matrices,
             steps=9,
             sequence_names=["d", "Z"],
-            dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+            dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM],
         )
         # pylint: enable=unpacking-non-sequence
         idata = pm.sample_prior_predictive(draws=10)
 
     assert idata.prior.coords["time"].shape == (10,)
     assert all(
-        [dim in idata.prior.states_latent.coords.keys() for dim in [TIME_DIM, ALL_STATE_DIM]]
+        [
+            dim in idata.prior.states_latent.coords.keys()
+            for dim in [TIME_DIM, ALL_STATE_DIM]
+        ]
     )
     assert all(
-        [dim in idata.prior.states_observed.coords.keys() for dim in [TIME_DIM, OBS_STATE_DIM]]
+        [
+            dim in idata.prior.states_observed.coords.keys()
+            for dim in [TIME_DIM, OBS_STATE_DIM]
+        ]
     )
     assert not np.any(np.isnan(idata.prior[output_name].values))
 

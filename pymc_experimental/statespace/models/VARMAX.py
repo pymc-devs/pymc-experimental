@@ -156,7 +156,9 @@ class BayesianVARMAX(PyMCStateSpace):
             endog_names = [f"state.{i + 1}" for i in range(k_endog)]
         if (endog_names is not None) and (k_endog is not None):
             if len(endog_names) != k_endog:
-                raise ValueError("Length of provided endog_names does not match provided k_endog")
+                raise ValueError(
+                    "Length of provided endog_names does not match provided k_endog"
+                )
 
         self.endog_names = list(endog_names)
         self.p, self.q = order
@@ -240,7 +242,9 @@ class BayesianVARMAX(PyMCStateSpace):
             f"L{i + 1}.{state}" for i in range(self.p - 1) for state in self.endog_names
         ]
         state_names += [
-            f"L{i + 1}.{state}_innov" for i in range(self.q) for state in self.endog_names
+            f"L{i + 1}.{state}_innov"
+            for i in range(self.q)
+            for state in self.endog_names
         ]
 
         return state_names
@@ -297,7 +301,9 @@ class BayesianVARMAX(PyMCStateSpace):
         # Initialize the matrices
         if not self.stationary_initialization:
             # initial states
-            x0 = self.make_and_register_variable("x0", shape=(self.k_states,), dtype=floatX)
+            x0 = self.make_and_register_variable(
+                "x0", shape=(self.k_states,), dtype=floatX
+            )
             self.ssm["initial_state", :] = x0
 
             # initial covariance
@@ -330,7 +336,11 @@ class BayesianVARMAX(PyMCStateSpace):
             self.ssm[("transition",) + idx] = np.eye(self.k_endog * (self.q - 1))
 
         if self.p > 0:
-            ar_param_idx = ("transition", slice(0, self.k_endog), slice(0, self.k_endog * self.p))
+            ar_param_idx = (
+                "transition",
+                slice(0, self.k_endog),
+                slice(0, self.k_endog * self.p),
+            )
 
             # Register the AR parameter matrix as a (k, p, k), then reshape it and allocate it in the transition matrix
             # This way the user can use 3 dimensions in the prior (clearer?)
@@ -361,7 +371,9 @@ class BayesianVARMAX(PyMCStateSpace):
             self.ssm[ma_param_idx] = ma_params
 
             end = -self.k_endog * (self.q - 1) if self.q > 1 else None
-            self.ssm["selection", slice(self.k_endog * -self.q, end), :] = np.eye(self.k_endog)
+            self.ssm["selection", slice(self.k_endog * -self.q, end), :] = np.eye(
+                self.k_endog
+            )
 
         if self.measurement_error:
             obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
@@ -382,7 +394,9 @@ class BayesianVARMAX(PyMCStateSpace):
             Q = self.ssm["state_cov"]
             c = self.ssm["state_intercept"]
 
-            x0 = pt.linalg.solve(pt.eye(T.shape[0]) - T, c, assume_a="gen", check_finite=False)
+            x0 = pt.linalg.solve(
+                pt.eye(T.shape[0]) - T, c, assume_a="gen", check_finite=False
+            )
             P0 = solve_discrete_lyapunov(
                 T,
                 pt.linalg.matrix_dot(R, Q, R.T),

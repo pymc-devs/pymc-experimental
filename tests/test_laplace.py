@@ -25,7 +25,6 @@ import pymc_experimental as pmx
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
 def test_laplace():
-
     # Example originates from Bayesian Data Analyses, 3rd Edition
     # By Andrew Gelman, John Carlin, Hal Stern, David Dunson,
     # Aki Vehtari, and Donald Rubin.
@@ -38,7 +37,7 @@ def test_laplace():
     with pm.Model() as m:
         logsigma = pm.Uniform("logsigma", 1, 100)
         mu = pm.Uniform("mu", -10000, 10000)
-        yobs = pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
+        pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
         vars = [mu, logsigma]
 
     idata = pmx.fit(
@@ -67,7 +66,6 @@ def test_laplace():
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
 def test_laplace_only_fit():
-
     # Example originates from Bayesian Data Analyses, 3rd Edition
     # By Andrew Gelman, John Carlin, Hal Stern, David Dunson,
     # Aki Vehtari, and Donald Rubin.
@@ -79,7 +77,7 @@ def test_laplace_only_fit():
     with pm.Model() as m:
         logsigma = pm.Uniform("logsigma", 1, 100)
         mu = pm.Uniform("mu", -10000, 10000)
-        yobs = pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
+        pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
         vars = [mu, logsigma]
 
     idata = pmx.fit(
@@ -105,22 +103,20 @@ def test_laplace_only_fit():
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
 def test_laplace_subset_of_rv(recwarn):
-
     # Example originates from Bayesian Data Analyses, 3rd Edition
     # By Andrew Gelman, John Carlin, Hal Stern, David Dunson,
     # Aki Vehtari, and Donald Rubin.
     # See section. 4.1
 
     y = np.array([2642, 3503, 4358], dtype=np.float64)
-    n = y.size
 
     with pm.Model() as m:
         logsigma = pm.Uniform("logsigma", 1, 100)
         mu = pm.Uniform("mu", -10000, 10000)
-        yobs = pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
+        pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
         vars = [mu]
 
-    idata = pmx.fit(
+    pmx.fit(
         method="laplace",
         vars=vars,
         draws=None,

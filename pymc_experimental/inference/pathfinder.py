@@ -48,7 +48,9 @@ def convert_flat_trace_to_idata(
     trace = {k: np.asarray(v)[None, ...] for k, v in trace.items()}
 
     var_names = model.unobserved_value_vars
-    vars_to_sample = list(get_default_varnames(var_names, include_transformed=include_transformed))
+    vars_to_sample = list(
+        get_default_varnames(var_names, include_transformed=include_transformed)
+    )
     print("Transforming variables...", file=sys.stdout)
     jax_fn = get_jaxified_graph(inputs=model.value_vars, outputs=vars_to_sample)
     result = jax.vmap(jax.vmap(jax_fn))(

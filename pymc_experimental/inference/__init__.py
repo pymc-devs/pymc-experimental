@@ -14,3 +14,5 @@
 
 
 from pymc_experimental.inference.fit import fit
+
+__all__ = ["fit"]
