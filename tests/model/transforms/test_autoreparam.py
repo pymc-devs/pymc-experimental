@@ -7,20 +7,21 @@ from pymc_experimental.model.transforms.autoreparam import vip_reparametrize
 
 @pytest.fixture
 def model_c():
-    with pm.Model() as mod:
+    # TODO: Restructure tests so they check one dist at a time
+    with pm.Model(coords=dict(a=range(5))) as mod:
         m = pm.Normal("m")
         s = pm.LogNormal("s")
-        pm.Normal("g", m, s, shape=5)
+        pm.Normal("g", m, s, dims="a")
         pm.Exponential("e", scale=s, shape=7)
     return mod
 
 
 @pytest.fixture
 def model_nc():
-    with pm.Model() as mod:
+    with pm.Model(coords=dict(a=range(5))) as mod:
         m = pm.Normal("m")
         s = pm.LogNormal("s")
-        pm.Deterministic("g", pm.Normal("z", shape=5) * s + m)
+        pm.Deterministic("g", pm.Normal("z", dims="a") * s + m)
         pm.Deterministic("e", pm.Exponential("z_e", 1, shape=7) * s)
     return mod
 
