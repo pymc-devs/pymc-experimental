@@ -95,15 +95,18 @@ def fit_pathfinder(
     """
     # Temporarily helper
     if version.parse(blackjax.__version__).major < 1:
+        # test
         raise ImportError("fit_pathfinder requires blackjax 1.0 or above")
-
     model = modelcontext(model)
 
-    ip = model.initial_point()
+    ip = model.initial_point()  
     ip_map = DictToArrayBijection.map(ip)
 
     new_logprob, new_input = pm.pytensorf.join_nonshared_inputs(
-        ip, (model.logp(),), model.value_vars, ()
+        ip,
+        (model.logp(),),
+        model.value_vars,
+        (),
     )
 
     logprob_fn_list = get_jaxified_graph([new_input], new_logprob)
