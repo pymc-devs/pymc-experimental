@@ -99,7 +99,7 @@ def fit_pathfinder(
 
     model = modelcontext(model)
 
-    ip = model.initial_point()
+    ip = model.initial_point()  # DEV: testing
     ip_map = DictToArrayBijection.map(ip)
 
     new_logprob, new_input = pm.pytensorf.join_nonshared_inputs(
@@ -107,8 +107,10 @@ def fit_pathfinder(
     )
 
     logprob_fn_list = get_jaxified_graph([new_input], new_logprob)
+    # DEV: testing
 
     def logprob_fn(x):
+        # DEV: testing
         return logprob_fn_list(x)[0]
 
     [pathfinder_seed, sample_seed] = _get_seeds_per_chain(random_seed, 2)
