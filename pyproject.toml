@@ -22,9 +22,6 @@ filterwarnings =[
   'ignore:jax\.tree_map is deprecated:DeprecationWarning',
 ]
 
-[tool.black]
-line-length = 100
-
 [tool.coverage.report]
 exclude_lines = [
   "pragma: nocover",
@@ -32,11 +29,50 @@ exclude_lines = [
   "if TYPE_CHECKING:",
 ]
 
-[tool.isort]
-profile = "black"
-# lines_between_types = 1
+[tool.ruff]
+line-length = 100
+target-version = "py310"
 
-[tool.nbqa.mutate]
-isort = 1
-black = 1
-pyupgrade = 1
+[tool.ruff.lint]
+select = ["D", "E", "F", "I", "UP", "W", "RUF"]
+ignore = [
+  "E501",
+  "RUF001", # String contains ambiguous character (such as Greek letters)
+  "RUF002", # Docstring contains ambiguous character (such as Greek letters)
+  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D107",
+  "D200",
+  "D202",
+  "D203",
+  "D204",
+  "D205",
+  "D209",
+  "D212",
+  "D213",
+  "D301",
+  "D400",
+  "D401",
+  "D403",
+  "D413",
+  "D415",
+  "D417",
+]
+
+[tool.ruff.lint.isort]
+lines-between-types = 1
+
+[tool.ruff.lint.per-file-ignores]
+'tests/*.py' = [
+  'F841', # Unused variable warning for test files -- common in pymc model declarations
+  'D106'  # Missing docstring for public method -- unittest test subclasses don't need docstrings
+]
+'tests/statespace/*.py' =  [
+  'F401', # Unused import warning for test files -- this check removes imports of fixtures
+  'F811'  # Redefine while unused -- this check fails on imported fixtures
+]
