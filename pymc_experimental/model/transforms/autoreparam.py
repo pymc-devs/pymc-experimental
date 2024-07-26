@@ -21,7 +21,6 @@ from pymc.model.fgraph import (
 )
 from pymc.pytensorf import toposort_replace
 from pytensor.graph.basic import Apply, Variable
-from pytensor.tensor.basic import infer_static_shape
 from pytensor.tensor.random.op import RandomVariable
 
 _log = logging.getLogger("pmx")
@@ -177,9 +176,12 @@ def vip_reparam_node(
 ) -> Tuple[ModelDeterministic, ModelNamed]:
     if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
-    rv = node.default_output()
-    rv_shape_t, _ = infer_static_shape(rv.shape)
-    rv_shape = pt.as_tensor(rv_shape_t).eval(mode="FAST_COMPILE")
+    _, size, *_ = node.inputs
+    eval_size = size.eval(mode="FAST_COMPILE")
+    if eval_size is not None:
+        rv_shape = tuple(eval_size)
+    else:
+        rv_shape = ()
     lam_name = f"{name}::lam_logit__"
     _log.debug(f"Creating {lam_name} with shape of {rv_shape}")
     logit_lam_ = pytensor.shared(
