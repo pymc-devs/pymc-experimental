@@ -176,6 +176,7 @@ def vip_reparam_node(
 ) -> Tuple[ModelDeterministic, ModelNamed]:
     if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
+    # FIXME: This is wrong when size is None
     _, size, *_ = node.inputs
     eval_size = size.eval(mode="FAST_COMPILE")
     if eval_size is not None:
