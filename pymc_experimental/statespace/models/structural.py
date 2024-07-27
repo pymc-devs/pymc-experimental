@@ -1,12 +1,15 @@
 import functools as ft
 import logging
+
 from abc import ABC
-from typing import Any, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
 import xarray as xr
+
 from pytensor import Variable
 
 from pymc_experimental.statespace.core import PytensorRepresentation
@@ -349,7 +352,7 @@ class Component(ABC):
         shock_names=None,
         param_names=None,
         exog_names=None,
-        representation: Optional[PytensorRepresentation] = None,
+        representation: PytensorRepresentation | None = None,
         measurement_error=False,
         combine_hidden_states=True,
         component_from_sum=False,
@@ -689,6 +692,7 @@ class LevelTrendComponent(Component):
     Level and trend component of a structural time series model
 
     Parameters
+    ----------
     __________
     order : int
 
@@ -788,8 +792,8 @@ class LevelTrendComponent(Component):
 
     def __init__(
         self,
-        order: Union[int, list[int]] = 2,
-        innovations_order: Optional[Union[int, list[int]]] = None,
+        order: int | list[int] = 2,
+        innovations_order: int | list[int] | None = None,
         name: str = "LevelTrend",
     ):
         if innovations_order is None:
@@ -875,7 +879,6 @@ class MeasurementError(Component):
 
     Parameters
     ----------
-
     name: str, optional
 
         Name of the observed data. Default is "obs".
@@ -1066,6 +1069,7 @@ class TimeSeasonality(Component):
         seasonal pattern (``season_length = 7``).
 
         If None, states will be numbered ``[State_0, ..., State_s]``
+
     Notes
     -----
     A seasonal effect is any pattern that repeats every fixed interval. Although there are many possible ways to
@@ -1156,8 +1160,8 @@ class TimeSeasonality(Component):
         self,
         season_length: int,
         innovations: bool = True,
-        name: Optional[str] = None,
-        state_names: Optional[list] = None,
+        name: str | None = None,
+        state_names: list | None = None,
         pop_state: bool = True,
     ):
         if name is None:
@@ -1444,8 +1448,8 @@ class CycleComponent(Component):
 
     def __init__(
         self,
-        name: str = None,
-        cycle_length: int = None,
+        name: str | None = None,
+        cycle_length: int | None = None,
         estimate_cycle_length: bool = False,
         dampen: bool = False,
         innovations: bool = True,
@@ -1549,9 +1553,9 @@ class CycleComponent(Component):
 class RegressionComponent(Component):
     def __init__(
         self,
-        k_exog: Optional[int] = None,
-        name: Optional[str] = "Exogenous",
-        state_names: Optional[list[str]] = None,
+        k_exog: int | None = None,
+        name: str | None = "Exogenous",
+        state_names: list[str] | None = None,
         innovations=False,
     ):
         self.innovations = innovations
@@ -1574,7 +1578,7 @@ class RegressionComponent(Component):
         )
 
     @staticmethod
-    def _get_state_names(k_exog: Optional[int], state_names: Optional[list[str]], name: str):
+    def _get_state_names(k_exog: int | None, state_names: list[str] | None, name: str):
         if k_exog is None and state_names is None:
             raise ValueError("Must specify at least one of k_exog or state_names")
         if state_names is not None and k_exog is not None:
@@ -1587,7 +1591,7 @@ class RegressionComponent(Component):
 
         return k_exog, state_names
 
-    def _handle_input_data(self, k_exog: int, state_names: Optional[list[str]], name) -> int:
+    def _handle_input_data(self, k_exog: int, state_names: list[str] | None, name) -> int:
         k_exog, state_names = self._get_state_names(k_exog, state_names, name)
         self.state_names = state_names
 
@@ -1634,7 +1638,7 @@ class RegressionComponent(Component):
                 "dims": (TIME_DIM, "exog_state"),
             },
         }
-        self.coords = {f"exog_state": self.state_names}
+        self.coords = {"exog_state": self.state_names}
 
         if self.innovations:
             self.param_names += [f"sigma_beta_{self.name}"]

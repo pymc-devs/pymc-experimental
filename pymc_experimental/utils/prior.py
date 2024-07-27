@@ -13,24 +13,26 @@
 #   limitations under the License.
 
 
-from typing import Dict, List, Optional, Sequence, Tuple, TypedDict, Union
+from collections.abc import Sequence
+from typing import TypedDict
 
 import arviz
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
+
 from pymc.logprob.transforms import Transform
 
 
 class ParamCfg(TypedDict):
     name: str
-    transform: Optional[Transform]
-    dims: Optional[Union[str, Tuple[str]]]
+    transform: Transform | None
+    dims: str | tuple[str] | None
 
 
 class ShapeInfo(TypedDict):
     # shape might not match slice due to a transform
-    shape: Tuple[int]  # transformed shape
+    shape: tuple[int]  # transformed shape
     slice: slice
 
 
@@ -41,13 +43,13 @@ class VarInfo(TypedDict):
 
 class FlatInfo(TypedDict):
     data: np.ndarray
-    info: List[VarInfo]
+    info: list[VarInfo]
 
 
-def _arg_to_param_cfg(key, value: Optional[Union[ParamCfg, Transform, str, Tuple]] = None):
+def _arg_to_param_cfg(key, value: ParamCfg | Transform | str | tuple | None = None):
     if value is None:
         cfg = ParamCfg(name=key, transform=None, dims=None)
-    elif isinstance(value, Tuple):
+    elif isinstance(value, tuple):
         cfg = ParamCfg(name=key, transform=None, dims=value)
     elif isinstance(value, str):
         cfg = ParamCfg(name=value, transform=None, dims=None)
@@ -62,8 +64,8 @@ def _arg_to_param_cfg(key, value: Optional[Union[ParamCfg, Transform, str, Tuple
 
 
 def _parse_args(
-    var_names: Sequence[str], **kwargs: Union[ParamCfg, Transform, str, Tuple]
-) -> Dict[str, ParamCfg]:
+    var_names: Sequence[str], **kwargs: ParamCfg | Transform | str | tuple
+) -> dict[str, ParamCfg]:
     results = dict()
     for var in var_names:
         results[var] = _arg_to_param_cfg(var)
@@ -133,8 +135,8 @@ def prior_from_idata(
     name="trace_prior_",
     *,
     var_names: Sequence[str] = (),
-    **kwargs: Union[ParamCfg, Transform, str, Tuple]
-) -> Dict[str, pt.TensorVariable]:
+    **kwargs: ParamCfg | Transform | str | tuple,
+) -> dict[str, pt.TensorVariable]:
     """
     Create a prior from posterior using MvNormal approximation.
 

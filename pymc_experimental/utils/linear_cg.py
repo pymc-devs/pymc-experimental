@@ -71,7 +71,10 @@ def linear_cg(
         initial_guess = np.zeros_like(rhs)
 
     if preconditioner is None:
-        preconditioner = lambda x: x
+
+        def preconditioner(x):
+            return x
+
         precond = False
     else:
         precond = True
@@ -128,7 +131,7 @@ def linear_cg(
         residual_inner_prod = residual.T @ precond_residual
 
         # define storage matrices
-        mul_storage = np.zeros_like(residual)
+        np.zeros_like(residual)
         alpha = np.zeros((*batch_shape, 1, rhs.shape[-1]))
         beta = np.zeros_like(alpha)
         is_zero = np.zeros((*batch_shape, 1, rhs.shape[-1]))
@@ -262,13 +265,11 @@ def linear_cg(
     result = result * rhs_norm
     if not tolerance_reached and n_iter > 0:
         raise RuntimeError(
-            "CG terminated in {} iterations with average residual norm {}"
-            " which is larger than the tolerance of {} specified by"
+            f"CG terminated in {k + 1} iterations with average residual norm {residual_norm.mean()}"
+            f" which is larger than the tolerance of {tolerance} specified by"
             " gpytorch.settings.cg_tolerance."
             " If performance is affected, consider raising the maximum number of CG iterations by running code in"
-            " a gpytorch.settings.max_cg_iterations(value) context.".format(
-                k + 1, residual_norm.mean(), tolerance
-            )
+            " a gpytorch.settings.max_cg_iterations(value) context."
         )
 
     if n_tridiag:

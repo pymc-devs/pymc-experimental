@@ -14,7 +14,7 @@
 
 
 from collections import namedtuple
-from typing import Sequence, Tuple, Union
+from collections.abc import Sequence
 
 import numpy as np
 import pymc as pm
@@ -26,8 +26,8 @@ __all__ = ["R2D2M2CP"]
 def _psivar2musigma(
     psi: pt.TensorVariable,
     explained_var: pt.TensorVariable,
-    psi_mask: Union[pt.TensorLike, None],
-) -> Tuple[pt.TensorVariable, pt.TensorVariable]:
+    psi_mask: pt.TensorLike | None,
+) -> tuple[pt.TensorVariable, pt.TensorVariable]:
     sign = pt.sign(psi - 0.5)
     if psi_mask is not None:
         # any computation might be ignored for ~psi_mask
@@ -55,7 +55,7 @@ def _R2D2M2CP_beta(
     psi: pt.TensorVariable,
     *,
     psi_mask,
-    dims: Union[str, Sequence[str]],
+    dims: str | Sequence[str],
     centered=False,
 ) -> pt.TensorVariable:
     """R2D2M2CP beta prior.
@@ -120,7 +120,7 @@ def _R2D2M2CP_beta(
 def _broadcast_as_dims(
     *values: np.ndarray,
     dims: Sequence[str],
-) -> Union[Tuple[np.ndarray, ...], np.ndarray]:
+) -> tuple[np.ndarray, ...] | np.ndarray:
     model = pm.modelcontext(None)
     shape = [len(model.coords[d]) for d in dims]
     ret = tuple(np.broadcast_to(v, shape) for v in values)
@@ -135,7 +135,7 @@ def _psi_masked(
     positive_probs_std: pt.TensorLike,
     *,
     dims: Sequence[str],
-) -> Tuple[Union[pt.TensorLike, None], pt.TensorVariable]:
+) -> tuple[pt.TensorLike | None, pt.TensorVariable]:
     if not (
         isinstance(positive_probs, pt.Constant) and isinstance(positive_probs_std, pt.Constant)
     ):
@@ -172,10 +172,10 @@ def _psi_masked(
 
 def _psi(
     positive_probs: pt.TensorLike,
-    positive_probs_std: Union[pt.TensorLike, None],
+    positive_probs_std: pt.TensorLike | None,
     *,
     dims: Sequence[str],
-) -> Tuple[Union[pt.TensorLike, None], pt.TensorVariable]:
+) -> tuple[pt.TensorLike | None, pt.TensorVariable]:
     if positive_probs_std is not None:
         mask, psi = _psi_masked(
             positive_probs=pt.as_tensor(positive_probs),
@@ -194,9 +194,9 @@ def _psi(
 
 
 def _phi(
-    variables_importance: Union[pt.TensorLike, None],
-    variance_explained: Union[pt.TensorLike, None],
-    importance_concentration: Union[pt.TensorLike, None],
+    variables_importance: pt.TensorLike | None,
+    variance_explained: pt.TensorLike | None,
+    importance_concentration: pt.TensorLike | None,
     *,
     dims: Sequence[str],
 ) -> pt.TensorVariable:
@@ -210,7 +210,7 @@ def _phi(
         variables_importance = pt.as_tensor(variables_importance)
         if importance_concentration is not None:
             variables_importance *= importance_concentration
-        return pm.Dirichlet("phi", variables_importance, dims=broadcast_dims + [dim])
+        return pm.Dirichlet("phi", variables_importance, dims=[*broadcast_dims, dim])
     elif variance_explained is not None:
         if len(model.coords[dim]) <= 1:
             raise TypeError("Can't use variance explained with less than two variables")
@@ -218,7 +218,7 @@ def _phi(
     else:
         phi = _broadcast_as_dims(1.0, dims=dims)
     if importance_concentration is not None:
-        return pm.Dirichlet("phi", importance_concentration * phi, dims=broadcast_dims + [dim])
+        return pm.Dirichlet("phi", importance_concentration * phi, dims=[*broadcast_dims, dim])
     else:
         return phi
 
@@ -233,12 +233,12 @@ def R2D2M2CP(
     *,
     dims: Sequence[str],
     r2: pt.TensorLike,
-    variables_importance: Union[pt.TensorLike, None] = None,
-    variance_explained: Union[pt.TensorLike, None] = None,
-    importance_concentration: Union[pt.TensorLike, None] = None,
-    r2_std: Union[pt.TensorLike, None] = None,
-    positive_probs: Union[pt.TensorLike, None] = 0.5,
-    positive_probs_std: Union[pt.TensorLike, None] = None,
+    variables_importance: pt.TensorLike | None = None,
+    variance_explained: pt.TensorLike | None = None,
+    importance_concentration: pt.TensorLike | None = None,
+    r2_std: pt.TensorLike | None = None,
+    positive_probs: pt.TensorLike | None = 0.5,
+    positive_probs_std: pt.TensorLike | None = None,
     centered: bool = False,
 ) -> R2D2M2CPOut:
     """R2D2M2CP Prior.
@@ -413,7 +413,7 @@ def R2D2M2CP(
             year = {2023}
         }
     """
-    if not isinstance(dims, (list, tuple)):
+    if not isinstance(dims, list | tuple):
         dims = (dims,)
     *broadcast_dims, dim = dims
     input_sigma = pt.as_tensor(input_sigma)
@@ -438,7 +438,7 @@ def R2D2M2CP(
         r2,
         phi,
         psi,
-        dims=broadcast_dims + [dim],
+        dims=[*broadcast_dims, dim],
         centered=centered,
         psi_mask=mask,
     )

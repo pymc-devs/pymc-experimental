@@ -7,6 +7,7 @@ import pytensor
 import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
+
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianVARMAX
@@ -100,7 +101,7 @@ def test_VARMAX_update_matches_statsmodels(data, order, rng):
 
     sm_var = sm.tsa.VARMAX(data, order=(p, q))
 
-    param_counts = [None] + np.cumsum(list(sm_var.parameters.values())).tolist()
+    param_counts = [None, *np.cumsum(list(sm_var.parameters.values())).tolist()]
     param_slices = [slice(a, b) for a, b in zip(param_counts[:-1], param_counts[1:])]
     param_lists = [trend, ar, ma, reg, state_cov, obs_cov] = [
         sm_var.param_names[idx] for idx in param_slices

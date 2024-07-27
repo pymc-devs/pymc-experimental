@@ -2,6 +2,7 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 import pytest
+
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace.filters import (
@@ -335,7 +336,7 @@ def test_kalman_filter_jax(filter):
     data = inputs.pop(0)
     data_specified = pt.specify_shape(data, (n, None))
     data_specified.name = "data"
-    inputs = [data] + inputs
+    inputs = [data, *inputs]
 
     outputs = pytensor.graph.clone_replace(outputs, {data: data_specified})
 

@@ -1,10 +1,10 @@
 import warnings
-from typing import List, Union
 
 import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
+
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import (
     Distribution,
@@ -26,7 +26,7 @@ from pytensor.tensor import TensorVariable
 from pytensor.tensor.random.op import RandomVariable
 
 
-def _make_outputs_info(n_lags: int, init_dist: Distribution) -> List[Union[Distribution, dict]]:
+def _make_outputs_info(n_lags: int, init_dist: Distribution) -> list[Distribution | dict]:
     """
     Two cases are needed for outputs_info in the scans used by DiscreteMarkovRv. If n_lags = 1, we need to throw away
     the first dimension of init_dist_ or else markov_chain will have shape (steps, 1, *batch_size) instead of
@@ -142,7 +142,7 @@ class DiscreteMarkovChain(Distribution):
 
         if init_dist is not None:
             if not isinstance(init_dist, TensorVariable) or not isinstance(
-                init_dist.owner.op, (RandomVariable, SymbolicRandomVariable)
+                init_dist.owner.op, RandomVariable | SymbolicRandomVariable
             ):
                 raise ValueError(
                     f"Init dist must be a distribution created via the `.dist()` API, "

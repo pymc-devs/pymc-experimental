@@ -1,9 +1,9 @@
 from abc import ABC
-from typing import Optional
 
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
+
 from pytensor.compile.mode import get_mode
 from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
@@ -74,10 +74,10 @@ class BaseFilter(ABC):
         self.n_posdef = None
         self.n_endog = None
 
-        self.eye_states: Optional[TensorVariable] = None
-        self.eye_posdef: Optional[TensorVariable] = None
-        self.eye_endog: Optional[TensorVariable] = None
-        self.missing_fill_value: Optional[float] = None
+        self.eye_states: TensorVariable | None = None
+        self.eye_posdef: TensorVariable | None = None
+        self.eye_endog: TensorVariable | None = None
+        self.missing_fill_value: float | None = None
         self.cov_jitter = None
 
     def initialize_eyes(self, R: TensorVariable, Z: TensorVariable) -> None:
@@ -263,7 +263,7 @@ class BaseFilter(ABC):
 
         results, updates = pytensor.scan(
             self.kalman_step,
-            sequences=[data] + sequences,
+            sequences=[data, *sequences],
             outputs_info=[None, a0, None, None, P0, None, None],
             non_sequences=non_sequences,
             name="forward_kalman_pass",
@@ -531,7 +531,7 @@ class BaseFilter(ABC):
             y, a, P, c, d, T, Z, R, H, Q. See the docstring for the kalman filter class for details.
 
         Returns
-        ----------
+        -------
         a_filtered : TensorVariable
             Best linear estimate of hidden states given all information up to and including the present
              observation, a[t | t].

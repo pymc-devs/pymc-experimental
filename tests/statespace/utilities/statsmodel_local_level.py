@@ -16,7 +16,7 @@ class LocalLinearTrend(sm.tsa.statespace.MLEModel):
         self.ssm["selection"] = np.eye(k_states)
 
         # Cache some indices
-        self._state_cov_idx = ("state_cov",) + np.diag_indices(k_posdef)
+        self._state_cov_idx = ("state_cov", *np.diag_indices(k_posdef))
 
     @property
     def param_names(self):

@@ -13,13 +13,14 @@
 #   limitations under the License.
 
 import warnings
+
 from collections.abc import Sequence
-from typing import Optional
 
 import arviz as az
 import numpy as np
 import pymc as pm
 import xarray as xr
+
 from arviz import dict_to_dataset
 from pymc.backends.arviz import (
     coords_and_dims_for_inferencedata,
@@ -33,9 +34,9 @@ from pytensor import Variable
 
 def laplace(
     vars: Sequence[Variable],
-    draws: Optional[int] = 1000,
+    draws: int | None = 1000,
     model=None,
-    random_seed: Optional[RandomSeed] = None,
+    random_seed: RandomSeed | None = None,
     progressbar=True,
 ):
     """
@@ -72,7 +73,6 @@ def laplace(
 
     Examples
     --------
-
     >>> import numpy as np
     >>> import pymc as pm
     >>> import arviz as az

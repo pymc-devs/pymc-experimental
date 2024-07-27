@@ -13,10 +13,9 @@
 #   limitations under the License.
 
 
-from typing import Dict
-
 import numpy as np
 import pymc as pm
+
 from numpy.typing import ArrayLike
 
 __all__ = ["quantile_histogram", "discrete_histogram", "histogram_approximation"]
@@ -24,7 +23,7 @@ __all__ = ["quantile_histogram", "discrete_histogram", "histogram_approximation"
 
 def quantile_histogram(
     data: ArrayLike, n_quantiles=1000, zero_inflation=False
-) -> Dict[str, ArrayLike]:
+) -> dict[str, ArrayLike]:
     try:
         import xhistogram.core
     except ImportError as e:
@@ -34,7 +33,7 @@ def quantile_histogram(
         import dask.dataframe
     except ImportError:
         dask = None
-    if dask and isinstance(data, (dask.dataframe.Series, dask.dataframe.DataFrame)):
+    if dask and isinstance(data, dask.dataframe.Series | dask.dataframe.DataFrame):
         data = data.to_dask_array(lengths=True)
     if zero_inflation:
         zeros = (data == 0).sum(0)
@@ -67,7 +66,7 @@ def quantile_histogram(
     return result
 
 
-def discrete_histogram(data: ArrayLike, min_count=None) -> Dict[str, ArrayLike]:
+def discrete_histogram(data: ArrayLike, min_count=None) -> dict[str, ArrayLike]:
     try:
         import xhistogram.core
     except ImportError as e:
@@ -78,7 +77,7 @@ def discrete_histogram(data: ArrayLike, min_count=None) -> Dict[str, ArrayLike]:
     except ImportError:
         dask = None
 
-    if dask and isinstance(data, (dask.dataframe.Series, dask.dataframe.DataFrame)):
+    if dask and isinstance(data, dask.dataframe.Series | dask.dataframe.DataFrame):
         data = data.to_dask_array(lengths=True)
     mid, count_uniq = np.unique(data, return_counts=True)
     if min_count is not None:
@@ -153,7 +152,7 @@ def histogram_approximation(name, dist, *, observed, **h_kwargs):
         import dask.dataframe
     except ImportError:
         dask = None
-    if dask and isinstance(observed, (dask.dataframe.Series, dask.dataframe.DataFrame)):
+    if dask and isinstance(observed, dask.dataframe.Series | dask.dataframe.DataFrame):
         observed = observed.to_dask_array(lengths=True)
     if np.issubdtype(observed.dtype, np.integer):
         histogram = discrete_histogram(observed, **h_kwargs)

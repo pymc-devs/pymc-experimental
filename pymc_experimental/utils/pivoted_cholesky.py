@@ -1,12 +1,15 @@
 try:
     import torch
+
     from gpytorch.utils.permutation import apply_permutation
 except ImportError as e:
     raise ImportError("PyTorch and GPyTorch not found.") from e
 
 import numpy as np
 
-pp = lambda x: np.array2string(x, precision=4, floatmode="fixed")
+
+def pp(x):
+    return np.array2string(x, precision=4, floatmode="fixed")
 
 
 def pivoted_cholesky(mat: np.matrix, error_tol=1e-6, max_iter=np.inf):

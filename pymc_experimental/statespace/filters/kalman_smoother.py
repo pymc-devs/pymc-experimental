@@ -1,7 +1,6 @@
-from typing import Optional
-
 import pytensor
 import pytensor.tensor as pt
+
 from pytensor.compile import get_mode
 from pytensor.tensor.nlinalg import matrix_dot
 
@@ -19,7 +18,7 @@ class KalmanSmoother:
 
     """
 
-    def __init__(self, mode: Optional[str] = None):
+    def __init__(self, mode: str | None = None):
         self.mode = mode
         self.cov_jitter = JITTER_DEFAULT
         self.seq_names = []
@@ -84,7 +83,7 @@ class KalmanSmoother:
 
         smoother_result, updates = pytensor.scan(
             self.smoother_step,
-            sequences=[filtered_states[:-1], filtered_covariances[:-1]] + sequences,
+            sequences=[filtered_states[:-1], filtered_covariances[:-1], *sequences],
             outputs_info=[a_last, P_last],
             non_sequences=non_sequences,
             go_backwards=True,

@@ -3,6 +3,7 @@ import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 import pytest
+
 from numpy.testing import assert_allclose
 from scipy.stats import multivariate_normal
 
@@ -174,7 +175,7 @@ def test_lgss_distribution_with_dims(output_name, ss_mod_me, pymc_model_2):
             steps=100,
             dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM],
             sequence_names=[],
-            k_endog=ss_mod_me.k_endog
+            k_endog=ss_mod_me.k_endog,
         )
         # pylint: enable=unpacking-non-sequence
         idata = pm.sample_prior_predictive(draws=10)
@@ -222,7 +223,7 @@ def test_lgss_with_time_varying_inputs(output_name, rng):
             *matrices,
             steps=9,
             sequence_names=["d", "Z"],
-            dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
+            dims=[TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM],
         )
         # pylint: enable=unpacking-non-sequence
         idata = pm.sample_prior_predictive(draws=10)

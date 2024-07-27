@@ -14,13 +14,13 @@
 
 import collections
 import sys
-from typing import Optional
 
 import arviz as az
 import blackjax
 import jax
 import numpy as np
 import pymc as pm
+
 from packaging import version
 from pymc.backends.arviz import coords_and_dims_for_inferencedata
 from pymc.blocking import DictToArrayBijection, RaveledVars
@@ -63,7 +63,7 @@ def convert_flat_trace_to_idata(
 
 def fit_pathfinder(
     samples=1000,
-    random_seed: Optional[RandomSeed] = None,
+    random_seed: RandomSeed | None = None,
     postprocessing_backend="cpu",
     model=None,
     **pathfinder_kwargs,

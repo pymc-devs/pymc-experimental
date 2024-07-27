@@ -1,5 +1,3 @@
-from typing import Dict, Optional, Union
-
 import numpy as np
 import pandas as pd
 import pymc as pm
@@ -8,7 +6,9 @@ from pymc_experimental.model_builder import ModelBuilder
 
 
 class LinearModel(ModelBuilder):
-    def __init__(self, model_config: Dict = None, sampler_config: Dict = None, nsamples=100):
+    def __init__(
+        self, model_config: dict | None = None, sampler_config: dict | None = None, nsamples=100
+    ):
         self.nsamples = nsamples
         super().__init__(model_config, sampler_config)
 
@@ -38,7 +38,7 @@ class LinearModel(ModelBuilder):
         }
 
     @property
-    def _serializable_model_config(self) -> Dict:
+    def _serializable_model_config(self) -> dict:
         return self.model_config
 
     @property
@@ -83,7 +83,7 @@ class LinearModel(ModelBuilder):
             y_model = pm.Deterministic("y_model", intercept + slope * x, dims="observation")
 
             # observed data
-            y_hat = pm.Normal(
+            pm.Normal(
                 "y_hat",
                 y_model,
                 sigma=obs_error,
@@ -94,14 +94,14 @@ class LinearModel(ModelBuilder):
 
         self._data_setter(X, y)
 
-    def _data_setter(self, X: pd.DataFrame, y: Optional[Union[pd.DataFrame, pd.Series]] = None):
+    def _data_setter(self, X: pd.DataFrame, y: pd.DataFrame | pd.Series | None = None):
         with self.model:
             pm.set_data({"x": X.squeeze()})
             if y is not None:
                 pm.set_data({"y_data": y.squeeze()})
 
     def _generate_and_preprocess_model_data(
-        self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
+        self, X: pd.DataFrame | pd.Series, y: pd.Series
     ) -> None:
         """
         Generate model data for linear regression.

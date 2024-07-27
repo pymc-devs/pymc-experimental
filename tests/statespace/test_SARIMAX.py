@@ -6,6 +6,7 @@ import pytensor
 import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
+
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace import BayesianSARIMA
@@ -218,7 +219,7 @@ def pymc_mod_interp(arima_mod_interp):
 
 @pytest.mark.parametrize(
     "p,d,q,P,D,Q,S,expected_names",
-    [order + (name,) for order, name in zip(test_orders, test_state_names)],
+    [(*order, name) for order, name in zip(test_orders, test_state_names)],
     ids=ids,
 )
 def test_harvey_state_names(p, d, q, P, D, Q, S, expected_names):

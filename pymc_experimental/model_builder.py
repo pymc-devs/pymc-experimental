@@ -16,15 +16,17 @@
 import hashlib
 import json
 import warnings
+
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
 import xarray as xr
+
 from pymc.util import RandomState
 
 # If scikit-learn is available, use its data validator
@@ -51,8 +53,8 @@ class ModelBuilder:
 
     def __init__(
         self,
-        model_config: Dict = None,
-        sampler_config: Dict = None,
+        model_config: dict | None = None,
+        sampler_config: dict | None = None,
     ):
         """
         Initializes model configuration and sampler configuration for the model
@@ -65,6 +67,7 @@ class ModelBuilder:
             dictionary of parameters that initialise model configuration. Class-default defined by the user default_model_config method.
         sampler_config : Dictionary, optional
             dictionary of parameters that initialise sampler configuration. Class-default defined by the user default_sampler_config method.
+
         Examples
         --------
         >>> class MyModel(ModelBuilder):
@@ -79,7 +82,7 @@ class ModelBuilder:
 
         self.model_config = model_config  # parameters for priors etc.
         self.model = None  # Set by build_model
-        self.idata: Optional[az.InferenceData] = None  # idata is generated during fitting
+        self.idata: az.InferenceData | None = None  # idata is generated during fitting
         self.is_fitted_ = False
 
     def _validate_data(self, X, y=None):
@@ -91,8 +94,8 @@ class ModelBuilder:
     @abstractmethod
     def _data_setter(
         self,
-        X: Union[np.ndarray, pd.DataFrame],
-        y: Union[np.ndarray, pd.DataFrame, List] = None,
+        X: np.ndarray | pd.DataFrame,
+        y: np.ndarray | pd.DataFrame | list = None,
     ) -> None:
         """
         Sets new data in the model.
@@ -104,8 +107,8 @@ class ModelBuilder:
         y : array, shape (n_obs,)
             The target values (real numbers).
 
-        Returns:
-        ----------
+        Returns
+        -------
         None
 
         Examples
@@ -137,10 +140,11 @@ class ModelBuilder:
 
     @staticmethod
     @abstractmethod
-    def get_default_model_config() -> Dict:
+    def get_default_model_config() -> dict:
         """
         Returns a class default config dict for model builder if no model_config is provided on class initialization
         Useful for understanding structure of required model_config to allow its customization by users
+
         Examples
         --------
         >>>     @staticmethod
@@ -166,10 +170,11 @@ class ModelBuilder:
 
     @staticmethod
     @abstractmethod
-    def get_default_sampler_config(self) -> Dict:
+    def get_default_sampler_config(self) -> dict:
         """
         Returns a class default sampler dict for model builder if no sampler_config is provided on class initialization
         Useful for understanding structure of required sampler_config to allow its customization by users
+
         Examples
         --------
         >>>     @staticmethod
@@ -190,7 +195,7 @@ class ModelBuilder:
 
     @abstractmethod
     def _generate_and_preprocess_model_data(
-        self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
+        self, X: pd.DataFrame | pd.Series, y: pd.Series
     ) -> None:
         """
         Applies preprocessing to the data before fitting the model.
@@ -200,7 +205,8 @@ class ModelBuilder:
         In case of optional parameters being passed into the model, this method should implement the conditional
         logic responsible for correct handling of the optional parameters, and including them into the dataset.
 
-        Parameters:
+        Parameters
+        ----------
         X : array, shape (n_obs, n_features)
         y : array, shape (n_obs,)
 
@@ -385,7 +391,7 @@ class ModelBuilder:
             raise RuntimeError("The model hasn't been fit yet, call .fit() first")
 
     @classmethod
-    def _model_config_formatting(cls, model_config: Dict) -> Dict:
+    def _model_config_formatting(cls, model_config: dict) -> dict:
         """
         Because of json serialization, model_config values that were originally tuples or numpy are being encoded as lists.
         This function converts them back to tuples and numpy arrays to ensure correct id encoding.
@@ -421,6 +427,7 @@ class ModelBuilder:
         ------
         ValueError
             If the inference data that is loaded doesn't match with the model.
+
         Examples
         --------
         >>> class MyModel(ModelBuilder):
@@ -453,9 +460,9 @@ class ModelBuilder:
     def fit(
         self,
         X: pd.DataFrame,
-        y: Optional[pd.Series] = None,
+        y: pd.Series | None = None,
         progressbar: bool = True,
-        predictor_names: List[str] = None,
+        predictor_names: list[str] | None = None,
         random_seed: RandomState = None,
         **kwargs: Any,
     ) -> az.InferenceData:
@@ -484,6 +491,7 @@ class ModelBuilder:
         -------
         self : az.InferenceData
             returns inference data of the fitted model.
+
         Examples
         --------
         >>> model = MyModel()
@@ -520,7 +528,7 @@ class ModelBuilder:
 
     def predict(
         self,
-        X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
+        X_pred: np.ndarray | pd.DataFrame | pd.Series,
         extend_idata: bool = True,
         **kwargs,
     ) -> np.ndarray:
@@ -529,7 +537,7 @@ class ModelBuilder:
         for each input row is the expected output value, computed as the mean of MCMC samples.
 
         Parameters
-        ---------
+        ----------
         X_pred : array-like if sklearn is available, otherwise array, shape (n_pred, n_features)
             The input data used for prediction.
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
@@ -568,7 +576,7 @@ class ModelBuilder:
         self,
         X_pred,
         y_pred=None,
-        samples: Optional[int] = None,
+        samples: int | None = None,
         extend_idata: bool = False,
         combined: bool = True,
         **kwargs,
@@ -577,7 +585,7 @@ class ModelBuilder:
         Sample from the model's prior predictive distribution.
 
         Parameters
-        ---------
+        ----------
         X_pred : array, shape (n_pred, n_features)
             The input data used for prediction using prior distribution.
         samples : int
@@ -621,7 +629,7 @@ class ModelBuilder:
         Sample from the model's posterior predictive distribution.
 
         Parameters
-        ---------
+        ----------
         X_pred : array, shape (n_pred, n_features)
             The input data used for prediction using prior distribution..
         extend_idata : Boolean determining whether the predictions should be added to inference data object.
@@ -666,7 +674,7 @@ class ModelBuilder:
 
     @property
     @abstractmethod
-    def _serializable_model_config(self) -> Dict[str, Union[int, float, Dict]]:
+    def _serializable_model_config(self) -> dict[str, int | float | dict]:
         """
         Converts non-serializable values from model_config to their serializable reversable equivalent.
         Data types like pandas DataFrame, Series or datetime aren't JSON serializable,
@@ -679,7 +687,7 @@ class ModelBuilder:
 
     def predict_proba(
         self,
-        X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
+        X_pred: np.ndarray | pd.DataFrame | pd.Series,
         extend_idata: bool = True,
         combined: bool = False,
         **kwargs,
@@ -689,7 +697,7 @@ class ModelBuilder:
 
     def predict_posterior(
         self,
-        X_pred: Union[np.ndarray, pd.DataFrame, pd.Series],
+        X_pred: np.ndarray | pd.DataFrame | pd.Series,
         extend_idata: bool = True,
         combined: bool = True,
         **kwargs,
@@ -698,7 +706,7 @@ class ModelBuilder:
         Generate posterior predictive samples on unseen data.
 
         Parameters
-        ---------
+        ----------
         X_pred : array-like if sklearn is available, otherwise array, shape (n_pred, n_features)
             The input data used for prediction.
         extend_idata : Boolean determining whether the predictions should be added to inference data object.

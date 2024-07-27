@@ -359,14 +359,14 @@ def conform_time_varying_and_time_invariant_matrices(A, B):
 
     if T_A == 1:
         A_out = pt.repeat(A, B.shape[0], axis=0)
-        A_out = pt.specify_shape(A_out, (T_B,) + tuple(A_dims))
+        A_out = pt.specify_shape(A_out, (T_B, *tuple(A_dims)))
         A_out.name = A.name
 
         return A_out, B
 
     if T_B == 1:
         B_out = pt.repeat(B, A.shape[0], axis=0)
-        B_out = pt.specify_shape(B_out, (T_A,) + tuple(B_dims))
+        B_out = pt.specify_shape(B_out, (T_A, *tuple(B_dims)))
         B_out.name = B.name
 
         return A, B_out

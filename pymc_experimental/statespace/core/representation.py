@@ -1,5 +1,6 @@
 import copy
-from typing import Optional, Type, Union
+
+from typing import Union
 
 import numpy as np
 import pytensor
@@ -56,7 +57,7 @@ class PytensorRepresentation:
         It should potentially be removed in favor of the closed-form diffuse initialization.
 
     Notes
-    ----------
+    -----
     A linear statespace system is defined by two equations:
 
     .. math::
@@ -119,7 +120,7 @@ class PytensorRepresentation:
     sliced away unless specifically requested by the user. See the examples for details.
 
     Examples
-    ----------
+    --------
     .. code:: python
 
         from pymc_experimental.statespace.core.representation import PytensorRepresentation
@@ -174,8 +175,8 @@ class PytensorRepresentation:
         k_endog: int,
         k_states: int,
         k_posdef: int,
-        design: Optional[np.ndarray] = None,
-        obs_intercept: Optional[np.ndarray] = None,
+        design: np.ndarray | None = None,
+        obs_intercept: np.ndarray | None = None,
         obs_cov=None,
         transition=None,
         state_intercept=None,
@@ -223,8 +224,8 @@ class PytensorRepresentation:
         if key not in self.shapes:
             raise IndexError(f"{key} is an invalid state space matrix name")
 
-    def _update_shape(self, key: KeyLike, value: Union[np.ndarray, pt.Variable]) -> None:
-        if isinstance(value, (pt.TensorConstant, pt.TensorVariable)):
+    def _update_shape(self, key: KeyLike, value: np.ndarray | pt.Variable) -> None:
+        if isinstance(value, pt.TensorConstant | pt.TensorVariable):
             shape = value.type.shape
         else:
             shape = value.shape
@@ -239,14 +240,14 @@ class PytensorRepresentation:
         # Add time dimension dummy if none present
         if key not in NEVER_TIME_VARYING:
             if len(shape) == 2 and key not in VECTOR_VALUED:
-                shape = (1,) + shape
+                shape = (1, *shape)
             elif len(shape) == 1:
-                shape = (1,) + shape
+                shape = (1, *shape)
 
         self.shapes[key] = shape
 
     def _add_time_dim_to_slice(
-        self, name: str, slice_: Union[list[int], tuple[int]], n_dim: int
+        self, name: str, slice_: list[int] | tuple[int], n_dim: int
     ) -> tuple[int | slice, ...]:
         # Case 1: There is never a time dim. No changes needed.
         if name in NEVER_TIME_VARYING:
@@ -263,13 +264,13 @@ class PytensorRepresentation:
             return (0,) + tuple(slice_) + empty_slice * n_omitted
 
     @staticmethod
-    def _validate_key_and_get_type(key: KeyLike) -> Type[str]:
+    def _validate_key_and_get_type(key: KeyLike) -> type[str]:
         if isinstance(key, tuple) and not isinstance(key[0], str):
             raise IndexError("First index must the name of a valid state space matrix.")
 
         return type(key)
 
-    def _validate_matrix_shape(self, name: str, X: Union[np.ndarray, pt.TensorVariable]) -> None:
+    def _validate_matrix_shape(self, name: str, X: np.ndarray | pt.TensorVariable) -> None:
         time_dim, *expected_shape = self.shapes[name]
         expected_shape = tuple(expected_shape)
         shape = X.shape if isinstance(X, np.ndarray) else X.type.shape
@@ -407,7 +408,7 @@ class PytensorRepresentation:
         else:
             raise IndexError("First index must the name of a valid state space matrix.")
 
-    def __setitem__(self, key: KeyLike, value: Union[float, int, np.ndarray, pt.Variable]) -> None:
+    def __setitem__(self, key: KeyLike, value: float | int | np.ndarray | pt.Variable) -> None:
         _type = type(key)
 
         # Case 1: key is a string: we are setting an entire matrix.

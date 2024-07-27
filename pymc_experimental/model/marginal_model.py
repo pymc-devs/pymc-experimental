@@ -1,9 +1,12 @@
 import warnings
-from typing import Sequence, Union
+
+from collections.abc import Sequence
+from typing import Union
 
 import numpy as np
 import pymc
 import pytensor.tensor as pt
+
 from arviz import InferenceData, dict_to_dataset
 from pymc import SymbolicRandomVariable
 from pymc.backends.arviz import coords_and_dims_for_inferencedata, dataset_to_point_list
@@ -60,7 +63,6 @@ class MarginalModel(Model):
 
     Examples
     --------
-
     Marginalize over a single variable
 
     .. code-block:: python
@@ -276,7 +278,7 @@ class MarginalModel(Model):
                     raise NotImplementedError(
                         "Marginalization for DiscreteMarkovChain with non-matrix transition probability is not supported"
                     )
-            elif not isinstance(rv_op, (Bernoulli, Categorical, DiscreteUniform)):
+            elif not isinstance(rv_op, Bernoulli | Categorical | DiscreteUniform):
                 raise NotImplementedError(
                     f"Marginalization of RV with distribution {rv_to_marginalize.owner.op} is not supported"
                 )
@@ -292,7 +294,7 @@ class MarginalModel(Model):
         self.clone()._marginalize(user_warnings=True)
 
     def _to_transformed(self):
-        "Create a function from the untransformed space to the transformed space"
+        """Create a function from the untransformed space to the transformed space"""
         transformed_rvs = []
         transformed_names = []
 
@@ -417,7 +419,7 @@ class MarginalModel(Model):
             marginalized_rv = m.vars_to_clone[marginalized_rv]
             m.unmarginalize([marginalized_rv])
             dependent_vars = find_conditional_dependent_rvs(marginalized_rv, m.basic_RVs)
-            joint_logps = m.logp(vars=[marginalized_rv] + dependent_vars, sum=False)
+            joint_logps = m.logp(vars=[marginalized_rv, *dependent_vars], sum=False)
 
             marginalized_value = m.rvs_to_values[marginalized_rv]
             other_values = [v for v in m.value_vars if v is not marginalized_value]
@@ -570,8 +572,7 @@ def find_conditional_input_rvs(output_rvs, all_rvs):
     return [
         var
         for var in ancestors(output_rvs, blockers=blockers)
-        if var in blockers
-        or (var.owner is None and not isinstance(var, (Constant, SharedVariable)))
+        if var in blockers or (var.owner is None and not isinstance(var, Constant | SharedVariable))
     ]
 
 
@@ -611,7 +612,7 @@ def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
         )
         for o in node.outputs
     ]
-    blocker_candidates = [rv_to_marginalize] + other_input_rvs + non_elemwise_blockers
+    blocker_candidates = [rv_to_marginalize, *other_input_rvs, *non_elemwise_blockers]
     blockers = [var for var in blocker_candidates if var not in output_rvs]
 
     truncated_inputs = [
@@ -619,7 +620,7 @@ def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
         for var in ancestors(output_rvs, blockers=blockers)
         if (
             var in blockers
-            or (var.owner is None and not isinstance(var, (Constant, SharedVariable)))
+            or (var.owner is None and not isinstance(var, Constant | SharedVariable))
         )
     ]
 
@@ -804,7 +805,6 @@ def finite_discrete_marginal_rv_logp(op, values, *inputs, **kwargs):
 
 @_logprob.register(DiscreteMarginalMarkovChainRV)
 def marginal_hmm_logp(op, values, *inputs, **kwargs):
-
     marginalized_rvs_node = op.make_node(*inputs)
     inner_rvs = clone_replace(
         op.inner_outputs,

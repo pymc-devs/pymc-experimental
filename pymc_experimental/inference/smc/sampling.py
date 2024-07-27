@@ -15,13 +15,16 @@
 import logging
 import time
 import warnings
-from typing import Callable, Dict, NamedTuple, Optional, cast
+
+from collections.abc import Callable
+from typing import NamedTuple, cast
 
 import arviz as az
 import blackjax
 import jax
 import jax.numpy as jnp
 import numpy as np
+
 from blackjax.smc.resampling import systematic
 from pymc import draw, modelcontext, to_inference_data
 from pymc.backends import NDArray
@@ -39,7 +42,7 @@ def sample_smc_blackjax(
     kernel: str = "HMC",
     target_essn: float = 0.5,
     num_mcmc_steps: int = 10,
-    inner_kernel_params: Optional[dict] = None,
+    inner_kernel_params: dict | None = None,
     model=None,
     iterations_to_diagnose: int = 100,
 ):
@@ -319,6 +322,7 @@ def add_to_inference_data(
 ):
     """
     Adds several SMC parameters into the az.InferenceData result
+
     Parameters
     ----------
     inference_data: arviz object to add attributes to.
@@ -389,7 +393,7 @@ def get_jaxified_particles_fn(model, graph_outputs):
     return logp_fn_wrap
 
 
-def initialize_population(model, draws, random_seed) -> Dict[str, np.ndarray]:
+def initialize_population(model, draws, random_seed) -> dict[str, np.ndarray]:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning, message="The effect of Potentials")
 
@@ -405,7 +409,7 @@ def initialize_population(model, draws, random_seed) -> Dict[str, np.ndarray]:
         names = [model.rvs_to_values[rv].name for rv in model.free_RVs]
         dict_prior = {k: np.stack(v) for k, v in zip(names, prior_values)}
 
-    return cast(Dict[str, np.ndarray], dict_prior)
+    return cast(dict[str, np.ndarray], dict_prior)
 
 
 def var_map_from_model(model, initial_point) -> dict:

@@ -25,7 +25,6 @@ import pymc_experimental as pmx
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
 def test_laplace():
-
     # Example originates from Bayesian Data Analyses, 3rd Edition
     # By Andrew Gelman, John Carlin, Hal Stern, David Dunson,
     # Aki Vehtari, and Donald Rubin.
@@ -67,7 +66,6 @@ def test_laplace():
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
 def test_laplace_only_fit():
-
     # Example originates from Bayesian Data Analyses, 3rd Edition
     # By Andrew Gelman, John Carlin, Hal Stern, David Dunson,
     # Aki Vehtari, and Donald Rubin.
@@ -105,7 +103,6 @@ def test_laplace_only_fit():
     + "To suppress this warning set `negate_output=False`:FutureWarning",
 )
 def test_laplace_subset_of_rv(recwarn):
-
     # Example originates from Bayesian Data Analyses, 3rd Edition
     # By Andrew Gelman, John Carlin, Hal Stern, David Dunson,
     # Aki Vehtari, and Donald Rubin.
