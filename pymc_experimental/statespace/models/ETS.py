@@ -272,7 +272,7 @@ class BayesianETS(PyMCStateSpace):
 
     @property
     def state_names(self):
-        states = ["data", "level"]
+        states = ["innovation", "level"]
         if self.trend:
             states += ["trend"]
         if self.seasonal:
@@ -282,7 +282,7 @@ class BayesianETS(PyMCStateSpace):
 
     @property
     def observed_states(self):
-        return [self.state_names[0]]
+        return ["data"]
 
     @property
     def shock_names(self):
@@ -326,11 +326,6 @@ class BayesianETS(PyMCStateSpace):
         self.ssm["initial_state", :] = x0
         self.ssm["initial_state_cov"] = P0
 
-        # Only the first state is ever observed
-        Z = np.zeros((self.k_endog, self.k_states))
-        Z[0, 0] = 1
-        self.ssm["design"] = Z
-
         # The shape of R can be pre-allocated, then filled with the required parameters
         R = pt.zeros((self.k_states, self.k_posdef))
         R = pt.set_subtensor(R[0, :], 1.0)  # We will always have y_t = ... + e_t
@@ -338,8 +333,8 @@ class BayesianETS(PyMCStateSpace):
         alpha = self.make_and_register_variable("alpha", shape=(), dtype=floatX)
         R = pt.set_subtensor(R[1, 0], alpha)  # and l_t = ... + alpha * e_t
 
-        # Data and level component always exists, the base case is y_t = l_{t-1} and l_t = l_{t-1}
-        T_base = pt.as_tensor_variable(np.array([[0.0, 1.0], [0.0, 1.0]]))
+        # Shock and level component always exists, the base case is e_t = e_t and l_t = l_{t-1}
+        T_base = pt.as_tensor_variable(np.array([[0.0, 0.0], [0.0, 1.0]]))
 
         if self.trend:
             beta = self.make_and_register_variable("beta", shape=(), dtype=floatX)
@@ -349,7 +344,7 @@ class BayesianETS(PyMCStateSpace):
             # y_t = l_{t-1} + b_{t-1}
             # l_t = l_{t-1} + b_{t-1}
             # b_t = b_{t-1}
-            T_base = pt.as_tensor_variable(([0.0, 1.0, 1.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]))
+            T_base = pt.as_tensor_variable(([0.0, 0.0, 0.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]))
 
         if self.damped_trend:
             phi = self.make_and_register_variable("phi", shape=(), dtype=floatX)
@@ -358,7 +353,7 @@ class BayesianETS(PyMCStateSpace):
             # y_t = l_{t-1} + phi * b_{t-1}
             # l_t = l_{t-1} + phi * b_{t-1}
             # b_t = phi * b_{t-1}
-            T_base = pt.set_subtensor(T_base[:, 2], phi)
+            T_base = pt.set_subtensor(T_base[1:, 2], phi)
 
         T_components = [T_base]
 
@@ -375,9 +370,16 @@ class BayesianETS(PyMCStateSpace):
         self.ssm["selection"] = R
 
         T = pt.linalg.block_diag(*T_components)
-        if self.seasonal:
-            T = pt.set_subtensor(T[0, 2 + int(self.trend) + 1], 1.0)
         self.ssm["transition"] = pt.specify_shape(T, (self.k_states, self.k_states))
+
+        Z = np.zeros((self.k_endog, self.k_states))
+        Z[0, 0] = 1.0  # innovation
+        Z[0, 1] = 1.0  # level
+        if self.trend:
+            Z[0, 2] = 1.0
+        if self.seasonal:
+            Z[0, 2 + int(self.trend)] = 1.0
+        self.ssm["design"] = Z
 
         # Set up the state covariance matrix
         state_cov_idx = ("state_cov",) + np.diag_indices(self.k_posdef)
