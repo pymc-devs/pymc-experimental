@@ -153,38 +153,40 @@ def test_statespace_matrices(order: tuple[str, str, str], expected_params: list[
     assert_allclose(H, np.eye(1) * test_values["sigma_obs"] ** 2)
     assert_allclose(Q, np.eye(1) * test_values["sigma_state"] ** 2)
 
-    Z_val = np.zeros((1, expected_states))
-    Z_val[0, 0] = 1.0
-    assert_allclose(Z, Z_val)
-
     R_val = np.zeros((expected_states, 1))
     R_val[0] = 1.0
     R_val[1] = test_values["alpha"]
 
+    Z_val = np.zeros((1, expected_states))
+    Z_val[0, 0] = 1.0
+    Z_val[0, 1] = 1.0
+
     if order[1] == "N":
-        T_val = np.array([[0.0, 1.0], [0.0, 1.0]])
+        T_val = np.array([[0.0, 0.0], [0.0, 1.0]])
     else:
         R_val[2] = test_values["beta"]
-        T_val = np.array([[0.0, 1.0, 1.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]])
+        T_val = np.array([[0.0, 0.0, 0.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]])
+        Z_val[0, 2] = 1.0
 
     if order[1] == "Ad":
-        T_val[:, -1] *= test_values["phi"]
+        T_val[1:, -1] *= test_values["phi"]
 
     if order[2] == "A":
         R_val[3] = test_values["gamma"]
         S = np.eye(seasonal_periods, k=-1)
         S[0, :] = -1
+        Z_val[0, 2 + int(order[1] != "N")] = 1.0
     else:
         S = np.eye(0)
+
     T_val = linalg.block_diag(T_val, S)
-    if order[2] != "N":
-        T_val[0, 3 + int(order[1] != "N")] = 1.0
 
     assert_allclose(T, T_val)
     assert_allclose(R, R_val)
+    assert_allclose(Z, Z_val)
 
 
-def test_simulate_model():
+def test_deterministic_simulation_matches_statsmodels():
     mod = BayesianETS(order=("A", "Ad", "A"), seasonal_periods=4, measurement_error=False)
 
     rng = np.random.default_rng()
