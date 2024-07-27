@@ -304,7 +304,19 @@ class PyMCStateSpace:
             f"{out}"
         )
 
-    def _unpack_statespace_with_placeholders(self) -> tuple[pt.TensorVariable]:
+    def _unpack_statespace_with_placeholders(
+        self,
+    ) -> tuple[
+        pt.TensorVariable,
+        pt.TensorVariable,
+        pt.TensorVariable,
+        pt.TensorVariable,
+        pt.TensorVariable,
+        pt.TensorVariable,
+        pt.TensorVariable,
+        pt.TensorVariable,
+        pt.TensorVariable,
+    ]:
         """
         Helper function to quickly obtain all statespace matrices in the standard order. Matrices returned by this
         method will include pytensor placeholders.
@@ -448,7 +460,7 @@ class PyMCStateSpace:
         raise NotImplementedError("The add_default_priors property has not been implemented!")
 
     def make_and_register_variable(
-        self, name, shape: int | tuple[int] | None = None, dtype=floatX
+        self, name, shape: int | tuple[int, ...] | None = None, dtype=floatX
     ) -> Variable:
         """
         Helper function to create a pytensor symbolic variable and register it in the _name_to_variable dictionary

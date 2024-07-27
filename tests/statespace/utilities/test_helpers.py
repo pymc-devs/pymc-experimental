@@ -245,7 +245,7 @@ def simulate_from_numpy_model(mod, rng, param_dict, data_dict=None, steps=100):
     y[0] = (Z @ x0).squeeze() if Z.ndim == 2 else (Z[0] @ x0).squeeze()
 
     if not np.allclose(H, 0):
-        y[0] += rng.multivariate_normal(mean=np.zeros(1), cov=H)
+        y[0] += rng.multivariate_normal(mean=np.zeros(1), cov=H).squeeze()
 
     for t in range(1, steps):
         if k_posdef > 0:
