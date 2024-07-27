@@ -65,7 +65,7 @@ def linear_cg(
     initial_guess=None,
     preconditioner=None,
     terminate_cg_by_size=False,
-    use_eval_tolerange=False,
+    use_eval_tolerance=False,
 ):
     if initial_guess is None:
         initial_guess = np.zeros_like(rhs)

@@ -14,3 +14,5 @@
 
 
 from pymc_experimental.gp.latent_approx import KarhunenLoeveExpansion, ProjectedProcess
+
+__all__ = ["KarhunenLoeveExpansion", "ProjectedProcess"]

@@ -351,11 +351,14 @@ class BaseFilter(ABC):
         self, y, Z, H
     ) -> tuple[TensorVariable, TensorVariable, TensorVariable, float]:
         """
-        This function handles missing values in the observation data `y` and adjusts the design matrix `Z` and the
-        observation noise covariance matrix `H` accordingly. Missing values are replaced with zeros to prevent
-        propagating NaNs through the computation. The function also returns a binary flag tensor `all_nan_flag`,
-        indicating if all values in the observation data are missing. This flag is used for numerical adjustments in
-        the update method.
+        Handle missing values in the observation data `y`
+
+        Adjusts the design matrix `Z` and the observation noise covariance matrix `H` by removing rows and/or columns
+        associated with the data that is not observed at this iteration. Missing values are replaced with zeros to prevent
+        propagating NaNs through the computation.
+
+        Return a binary flag tensor `all_nan_flag`,indicating if all values in the observation data are missing. This
+        flag is used for numerical adjustments in the update method.
 
         Parameters
         ----------
@@ -660,7 +663,7 @@ class StandardFilter(BaseFilter):
 
 
 class CholeskyFilter(BaseFilter):
-    """ "
+    """
     Kalman filter with Cholesky factorization
 
     Kalman filter implementation using a Cholesky factorization plus pt.solve_triangular to (attempt) to speed up
@@ -712,7 +715,7 @@ class SingleTimeseriesFilter(BaseFilter):
 
     # TODO: This class should eventually be made irrelevant by pytensor re-writes.
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
-        """ "
+        """
         Wrap the data in an `Assert` `Op` to ensure there is only one observed state.
         """
         data = assert_data_is_1d(data, pt.eq(data.shape[1], 1))

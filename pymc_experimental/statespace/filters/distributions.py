@@ -96,8 +96,6 @@ class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
 
 
 class _LinearGaussianStateSpace(Continuous):
-    rv_op = LinearGaussianStateSpaceRV
-
     def __new__(
         cls,
         name,
@@ -360,8 +358,6 @@ class KalmanFilterRV(SymbolicRandomVariable):
 
 
 class SequenceMvNormal(Continuous):
-    rv_op = KalmanFilterRV
-
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls, *args, **kwargs)
 

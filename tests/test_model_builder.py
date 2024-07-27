@@ -225,7 +225,7 @@ def test_predict(fitted_model_instance):
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = fitted_model_instance.predict(prediction_data["input"])
     # Perform elementwise comparison using numpy
-    assert type(pred) == np.ndarray
+    assert isinstance(pred, np.ndarray)
     assert len(pred) > 0
 
 

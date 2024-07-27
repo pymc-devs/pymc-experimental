@@ -3,6 +3,7 @@ import logging
 
 from abc import ABC
 from collections.abc import Sequence
+from itertools import pairwise
 from typing import Any
 
 import numpy as np
@@ -198,7 +199,7 @@ class StructuralTimeSeries(PyMCStateSpace):
     def _state_slices_from_info(self):
         info = self._component_info.copy()
         comp_states = np.cumsum([0] + [info["k_states"] for info in info.values()])
-        state_slices = [slice(i, j) for i, j in zip(comp_states[:-1], comp_states[1:])]
+        state_slices = [slice(i, j) for i, j in pairwise(comp_states)]
 
         return state_slices
 

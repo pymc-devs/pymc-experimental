@@ -21,6 +21,7 @@ from pymc.util import RandomState, _get_seeds_per_chain, treedict
 from pytensor import Mode, scan
 from pytensor.compile import SharedVariable
 from pytensor.graph import Constant, FunctionGraph, ancestors, clone_replace
+from pytensor.graph.basic import graph_inputs
 from pytensor.graph.replace import graph_replace, vectorize_graph
 from pytensor.scan import map as scan_map
 from pytensor.tensor import TensorType, TensorVariable
@@ -636,9 +637,6 @@ def is_elemwise_subgraph(rv_to_marginalize, other_input_rvs, output_rvs):
     ):
         return False
     return True
-
-
-from pytensor.graph.basic import graph_inputs
 
 
 def collect_shared_vars(outputs, blockers):

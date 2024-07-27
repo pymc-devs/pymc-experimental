@@ -1,7 +1,5 @@
 import copy
 
-from typing import Union
-
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
@@ -12,7 +10,7 @@ from pymc_experimental.statespace.utils.constants import (
 )
 
 floatX = pytensor.config.floatX
-KeyLike = Union[tuple[str | int, ...], str]
+KeyLike = tuple[str | int, ...] | str
 
 
 class PytensorRepresentation:
