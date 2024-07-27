@@ -208,7 +208,9 @@ class BayesianETS(PyMCStateSpace):
     @property
     def param_names(self):
         names = [
-            "x0",
+            "initial_level",
+            "initial_trend",
+            "initial_seasonal",
             "P0",
             "alpha",
             "beta",
@@ -218,10 +220,12 @@ class BayesianETS(PyMCStateSpace):
             "sigma_obs",
         ]
         if not self.trend:
+            names.remove("initial_trend")
             names.remove("beta")
         if not self.damped_trend:
             names.remove("phi")
         if not self.seasonal:
+            names.remove("initial_seasonal")
             names.remove("gamma")
         if not self.measurement_error:
             names.remove("sigma_obs")
@@ -231,14 +235,19 @@ class BayesianETS(PyMCStateSpace):
     @property
     def param_info(self) -> dict[str, dict[str, Any]]:
         info = {
-            "x0": {
-                "shape": (self.k_states,),
-                "constraints": None,
-            },
             "P0": {
                 "shape": (self.k_states, self.k_states),
                 "constraints": "Positive Semi-definite",
             },
+            "initial_level": {
+                "shape": None if self.k_endog == 1 else (self.k_endog,),
+                "constraints": None,
+            },
+            "initial_trend": {
+                "shape": None if self.k_endog == 1 else (self.k_endog,),
+                "constraints": None,
+            },
+            "initial_seasonal": {"shape": (self.seasonal_periods,), "constraints": None},
             "sigma_obs": {
                 "shape": None if self.k_endog == 1 else (self.k_endog,),
                 "constraints": "Positive",
@@ -291,16 +300,20 @@ class BayesianETS(PyMCStateSpace):
     @property
     def param_dims(self):
         coord_map = {
-            "x0": (ALL_STATE_DIM,),
             "P0": (ALL_STATE_DIM, ALL_STATE_AUX_DIM),
             "sigma_obs": (OBS_STATE_DIM,),
             "sigma_state": (OBS_STATE_DIM,),
+            "initial_level": (OBS_STATE_DIM,),
+            "initial_trend": (OBS_STATE_DIM,),
+            "initial_seasonal": (ETS_SEASONAL_DIM,),
             "seasonal_param": (ETS_SEASONAL_DIM,),
         }
 
         if self.k_endog == 1:
-            coord_map["sigma_state"] = ()
-            coord_map["sigma_obs"] = ()
+            coord_map["sigma_state"] = None
+            coord_map["sigma_obs"] = None
+            coord_map["initial_level"] = None
+            coord_map["initial_trend"] = None
         if not self.measurement_error:
             del coord_map["sigma_obs"]
         if not self.seasonal:
@@ -317,14 +330,15 @@ class BayesianETS(PyMCStateSpace):
         return coords
 
     def make_symbolic_graph(self) -> None:
-        x0 = self.make_and_register_variable("x0", shape=(self.k_states,), dtype=floatX)
         P0 = self.make_and_register_variable(
             "P0", shape=(self.k_states, self.k_states), dtype=floatX
         )
-
-        # x0, P0, Z, and R do not depend on the user config beyond the shape
-        self.ssm["initial_state", :] = x0
         self.ssm["initial_state_cov"] = P0
+
+        initial_level = self.make_and_register_variable(
+            "initial_level", shape=(self.k_endog,) if self.k_endog > 1 else (), dtype=floatX
+        )
+        self.ssm["initial_state", 1] = initial_level
 
         # The shape of R can be pre-allocated, then filled with the required parameters
         R = pt.zeros((self.k_states, self.k_posdef))
@@ -337,6 +351,11 @@ class BayesianETS(PyMCStateSpace):
         T_base = pt.as_tensor_variable(np.array([[0.0, 0.0], [0.0, 1.0]]))
 
         if self.trend:
+            initial_trend = self.make_and_register_variable(
+                "initial_trend", shape=(self.k_endog,) if self.k_endog > 1 else (), dtype=floatX
+            )
+            self.ssm["initial_state", 2] = initial_trend
+
             beta = self.make_and_register_variable("beta", shape=(), dtype=floatX)
             R = pt.set_subtensor(R[2, 0], beta)
 
@@ -358,13 +377,19 @@ class BayesianETS(PyMCStateSpace):
         T_components = [T_base]
 
         if self.seasonal:
+            initial_seasonal = self.make_and_register_variable(
+                "initial_seasonal", shape=(self.seasonal_periods,), dtype=floatX
+            )
+
+            self.ssm["initial_state", 2 + int(self.trend) :] = initial_seasonal
+
             gamma = self.make_and_register_variable("gamma", shape=(), dtype=floatX)
-            R = pt.set_subtensor(R[3, 0], gamma)
+            R = pt.set_subtensor(R[2 + int(self.trend), 0], gamma)
 
             # The seasonal component is always going to look like a TimeFrequency structural component, see that
             # docstring for more details
             T_seasonal = pt.eye(self.seasonal_periods, k=-1)
-            T_seasonal = pt.set_subtensor(T_seasonal[0, :], -1)
+            T_seasonal = pt.set_subtensor(T_seasonal[0, -1], 1.0)
             T_components += [T_seasonal]
 
         self.ssm["selection"] = R
@@ -375,8 +400,6 @@ class BayesianETS(PyMCStateSpace):
         Z = np.zeros((self.k_endog, self.k_states))
         Z[0, 0] = 1.0  # innovation
         Z[0, 1] = 1.0  # level
-        if self.trend:
-            Z[0, 2] = 1.0
         if self.seasonal:
             Z[0, 2 + int(self.trend)] = 1.0
         self.ssm["design"] = Z
