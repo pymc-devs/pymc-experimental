@@ -1,4 +1,5 @@
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pytensor.tensor as pt
@@ -159,7 +160,6 @@ class BayesianETS(PyMCStateSpace):
         filter_type: str = "standard",
         verbose: bool = True,
     ):
-
         if order is not None:
             if len(order) != 3 or any(not isinstance(o, str) for o in order):
                 raise ValueError("Order must be a tuple of three strings.")
@@ -405,14 +405,14 @@ class BayesianETS(PyMCStateSpace):
         self.ssm["design"] = Z
 
         # Set up the state covariance matrix
-        state_cov_idx = ("state_cov",) + np.diag_indices(self.k_posdef)
+        state_cov_idx = ("state_cov", *np.diag_indices(self.k_posdef))
         state_cov = self.make_and_register_variable(
             "sigma_state", shape=() if self.k_posdef == 1 else (self.k_posdef,), dtype=floatX
         )
         self.ssm[state_cov_idx] = state_cov**2
 
         if self.measurement_error:
-            obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
+            obs_cov_idx = ("obs_cov", *np.diag_indices(self.k_endog))
             obs_cov = self.make_and_register_variable(
                 "sigma_obs", shape=() if self.k_endog == 1 else (self.k_endog,), dtype=floatX
             )

@@ -2,6 +2,7 @@ import numpy as np
 import pytensor
 import pytest
 import statsmodels.api as sm
+
 from numpy.testing import assert_allclose
 from pytensor.graph.basic import explicit_graph_inputs
 from scipy import linalg
@@ -20,11 +21,11 @@ def data():
 def tests_invalid_order_raises():
     # Order must be length 3
     with pytest.raises(ValueError, match="Order must be a tuple of three strings"):
-        BayesianETS(order=("A", "N"))  # noqa
+        BayesianETS(order=("A", "N"))
 
         # Order must be strings
     with pytest.raises(ValueError, match="Order must be a tuple of three strings"):
-        BayesianETS(order=(2, 1, 1))  # noqa
+        BayesianETS(order=(2, 1, 1))
 
     # Only additive errors allowed
     with pytest.raises(ValueError, match="Only additive errors are supported"):
