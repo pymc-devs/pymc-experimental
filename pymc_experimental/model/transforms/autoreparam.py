@@ -1,5 +1,6 @@
-from collections.abc import Sequence
 import logging
+
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import singledispatch
 
