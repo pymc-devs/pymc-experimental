@@ -7,8 +7,7 @@ tasks:
       conda init bash && source ~/.bashrc
       conda env update -f conda-envs/environment-test.yml -p env
       conda activate /workspace/pymc-experimental/env
-      pip install -r requirements-dev.txt
-      pip install -e .
+      pip install -e ."[dev]"
     command: |
       conda init bash && echo "conda activate /workspace/pymc-experimental/env" >> ~/.bashrc && source ~/.bashrc
 
