@@ -1,4 +1,0 @@
-include requirements*.txt
-include *.md *.rst
-include LICENSE
-include pymc_experimental/version.txt

@@ -17,7 +17,8 @@ from pymc_experimental import distributions, gp, statespace, utils
 from pymc_experimental.inference.fit import fit
 from pymc_experimental.model.marginal_model import MarginalModel
 from pymc_experimental.model.model_api import as_model
-from pymc_experimental.version import __version__
+
+__version__ = "1.1.0"
 
 _log = logging.getLogger("pmx")
 
@@ -36,5 +37,4 @@ __all__ = [
     "fit",
     "MarginalModel",
     "as_model",
-    "__version__",
 ]
