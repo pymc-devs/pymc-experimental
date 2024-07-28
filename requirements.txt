@@ -1,2 +1,0 @@
-pymc>=5.16.1
-scikit-learn
