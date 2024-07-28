@@ -7,20 +7,21 @@ from pymc_experimental.model.transforms.autoreparam import vip_reparametrize
 
 @pytest.fixture
 def model_c():
-    with pm.Model() as mod:
+    # TODO: Restructure tests so they check one dist at a time
+    with pm.Model(coords=dict(a=range(5))) as mod:
         m = pm.Normal("m")
         s = pm.LogNormal("s")
-        pm.Normal("g", m, s, shape=5)
+        pm.Normal("g", m, s, dims="a")
         pm.Exponential("e", scale=s, shape=7)
     return mod
 
 
 @pytest.fixture
 def model_nc():
-    with pm.Model() as mod:
+    with pm.Model(coords=dict(a=range(5))) as mod:
         m = pm.Normal("m")
         s = pm.LogNormal("s")
-        pm.Deterministic("g", pm.Normal("z", shape=5) * s + m)
+        pm.Deterministic("g", pm.Normal("z", dims="a") * s + m)
         pm.Deterministic("e", pm.Exponential("z_e", 1, shape=7) * s)
     return mod
 
@@ -102,3 +103,29 @@ def test_set_truncate(model_c: pm.Model):
     vip.truncate_lambda(g=0.2)
     np.testing.assert_allclose(vip.get_lambda()["g"], 1)
     np.testing.assert_allclose(vip.get_lambda()["m"], 0.9)
+
+
+@pytest.mark.xfail(reason="FIX shape computation for lambda")
+def test_lambda_shape():
+    with pm.Model(coords=dict(a=[1, 2])) as model:
+        b1 = pm.Normal("b1", dims="a")
+        b2 = pm.Normal("b2", shape=2)
+        b3 = pm.Normal("b3", size=2)
+        b4 = pm.Normal("b4", np.asarray([1, 2]))
+    model_v, vip = vip_reparametrize(model, ["b1", "b2", "b3", "b4"])
+    lams = vip.get_lambda()
+    for v in ["b1", "b2", "b3", "b4"]:
+        assert lams[v].shape == (2,), v
+
+
+@pytest.mark.xfail(reason="FIX shape computation for lambda")
+def test_lambda_shape_transformed_1d():
+    with pm.Model(coords=dict(a=[1, 2])) as model:
+        b1 = pm.Exponential("b1", 1, dims="a")
+        b2 = pm.Exponential("b2", 1, shape=2)
+        b3 = pm.Exponential("b3", 1, size=2)
+        b4 = pm.Exponential("b4", np.asarray([1, 2]))
+    model_v, vip = vip_reparametrize(model, ["b1", "b2", "b3", "b4"])
+    lams = vip.get_lambda()
+    for v in ["b1", "b2", "b3", "b4"]:
+        assert lams[v].shape == (2,), v
