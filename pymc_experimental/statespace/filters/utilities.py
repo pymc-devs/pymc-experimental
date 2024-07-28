@@ -1,4 +1,5 @@
 import pytensor.tensor as pt
+
 from pytensor.tensor.nlinalg import matrix_dot
 
 from pymc_experimental.statespace.core.representation import (

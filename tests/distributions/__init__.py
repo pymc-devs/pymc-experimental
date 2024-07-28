@@ -15,3 +15,5 @@
 
 from pymc_experimental.distributions import histogram_utils
 from pymc_experimental.distributions.histogram_utils import histogram_approximation
+
+__all__ = ["histogram_utils", "histogram_approximation"]

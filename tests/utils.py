@@ -1,4 +1,4 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 from pytensor.compile import SharedVariable
 from pytensor.graph import Constant, graph_inputs

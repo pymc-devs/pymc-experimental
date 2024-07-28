@@ -18,6 +18,7 @@ import pymc as pm
 import pytest
 import scipy.stats.distributions as sp
 
+
 # test support imports from pymc
 from pymc.testing import (
     BaseTestDistributionRandom,

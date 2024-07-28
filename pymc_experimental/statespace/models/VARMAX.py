@@ -1,8 +1,10 @@
-from typing import Any, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
+
 from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace
@@ -72,7 +74,6 @@ class BayesianVARMAX(PyMCStateSpace):
 
     Notes
     -----
-
     The VARMA model is a multivariate extension of the SARIMAX model. Given a set of timeseries :math:`\{x_t\}_{t=0}^T`,
     with :math:`x_t = \begin{bmatrix} x_{1,t} & x_{2,t} & \cdots & x_{k,t} \end{bmatrix}^T`, a VARMA models each series
     as a function of the histories of all series. Specifically, denoting the AR-MA order as (p, q),  a VARMA can be
@@ -140,9 +141,9 @@ class BayesianVARMAX(PyMCStateSpace):
 
     def __init__(
         self,
-        order: Tuple[int, int],
-        endog_names: list[str] = None,
-        k_endog: int = None,
+        order: tuple[int, int],
+        endog_names: list[str] | None = None,
+        k_endog: int | None = None,
         stationary_initialization: bool = False,
         filter_type: str = "standard",
         measurement_error: bool = False,
@@ -307,7 +308,7 @@ class BayesianVARMAX(PyMCStateSpace):
             self.ssm["initial_state_cov", :, :] = P0
 
         # Design matrix is a truncated identity (first k_obs states observed)
-        self.ssm[("design",) + np.diag_indices(self.k_endog)] = 1
+        self.ssm[("design", *np.diag_indices(self.k_endog))] = 1
 
         # Transition matrix has 4 blocks:
         # Upper left: AR coefs (k_obs, k_obs * min(p, 1))
@@ -320,14 +321,14 @@ class BayesianVARMAX(PyMCStateSpace):
                 slice(self.k_endog, self.k_endog * self.p),
                 slice(0, self.k_endog * (self.p - 1)),
             )
-            self.ssm[("transition",) + idx] = np.eye(self.k_endog * (self.p - 1))
+            self.ssm[("transition", *idx)] = np.eye(self.k_endog * (self.p - 1))
 
         if self.q > 1:
             idx = (
                 slice(-self.k_endog * (self.q - 1), None),
                 slice(-self.k_endog * self.q, -self.k_endog),
             )
-            self.ssm[("transition",) + idx] = np.eye(self.k_endog * (self.q - 1))
+            self.ssm[("transition", *idx)] = np.eye(self.k_endog * (self.q - 1))
 
         if self.p > 0:
             ar_param_idx = ("transition", slice(0, self.k_endog), slice(0, self.k_endog * self.p))
@@ -364,7 +365,7 @@ class BayesianVARMAX(PyMCStateSpace):
             self.ssm["selection", slice(self.k_endog * -self.q, end), :] = np.eye(self.k_endog)
 
         if self.measurement_error:
-            obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
+            obs_cov_idx = ("obs_cov", *np.diag_indices(self.k_endog))
             sigma_obs = self.make_and_register_variable(
                 "sigma_obs", shape=(self.k_endog,), dtype=floatX
             )

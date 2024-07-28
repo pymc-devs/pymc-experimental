@@ -1,4 +1,5 @@
 import itertools
+
 from contextlib import suppress as does_not_warn
 
 import numpy as np
@@ -6,6 +7,7 @@ import pandas as pd
 import pymc as pm
 import pytensor.tensor as pt
 import pytest
+
 from arviz import InferenceData, dict_to_dataset
 from pymc.distributions import transforms
 from pymc.logprob.abstract import _logprob
@@ -303,7 +305,7 @@ def test_recover_marginals_basic():
     assert "k" in post
     assert "lp_k" in post
     assert post.k.shape == post.y.shape
-    assert post.lp_k.shape == post.k.shape + (len(p),)
+    assert post.lp_k.shape == (*post.k.shape, len(p))
 
     def true_logp(y, sigma):
         y = y.repeat(len(p)).reshape(len(y), -1)
@@ -375,7 +377,7 @@ def test_recover_batched_marginal():
     assert "idx" in post
     assert "lp_idx" in post
     assert post.idx.shape == post.y.shape
-    assert post.lp_idx.shape == post.idx.shape + (2,)
+    assert post.lp_idx.shape == (*post.idx.shape, 2)
 
 
 @pytest.mark.xfail(reason="Still need to investigate")
@@ -404,11 +406,11 @@ def test_nested_recover_marginals():
     assert "idx" in post
     assert "lp_idx" in post
     assert post.idx.shape == post.y.shape
-    assert post.lp_idx.shape == post.idx.shape + (2,)
+    assert post.lp_idx.shape == (*post.idx.shape, 2)
     assert "sub_idx" in post
     assert "lp_sub_idx" in post
     assert post.sub_idx.shape == post.y.shape
-    assert post.lp_sub_idx.shape == post.sub_idx.shape + (2,)
+    assert post.lp_sub_idx.shape == (*post.sub_idx.shape, 2)
 
     def true_idx_logp(y):
         idx_0 = np.log(0.85 * 0.25 * norm.pdf(y, loc=0) + 0.15 * 0.25 * norm.pdf(y, loc=1))
@@ -638,7 +640,6 @@ def test_data_container():
 
 @pytest.mark.parametrize("univariate", (True, False))
 def test_vector_univariate_mixture(univariate):
-
     with MarginalModel() as m:
         idx = pm.Bernoulli("idx", p=0.5, shape=(2,) if univariate else ())
 
@@ -704,7 +705,7 @@ def test_marginalized_hmm_normal_emission(batch_chain, batch_emission):
     if batch_emission:
         test_value = np.broadcast_to(test_value, (3, 4))
         expected_logp *= 3
-    np.testing.assert_allclose(logp_fn({f"emission": test_value}), expected_logp)
+    np.testing.assert_allclose(logp_fn({"emission": test_value}), expected_logp)
 
 
 @pytest.mark.parametrize(
@@ -728,7 +729,7 @@ def test_marginalized_hmm_categorical_emission(categorical_emission):
     test_value = np.array([0, 0, 1])
     expected_logp = np.log(0.1344)  # Shown at the 10m22s mark in the video
     logp_fn = m.compile_logp()
-    np.testing.assert_allclose(logp_fn({f"emission": test_value}), expected_logp)
+    np.testing.assert_allclose(logp_fn({"emission": test_value}), expected_logp)
 
 
 @pytest.mark.parametrize("batch_emission1", (False, True))
@@ -764,7 +765,7 @@ def test_mutable_indexing_jax_backend():
     from pymc.sampling.jax import get_jaxified_logp
 
     with MarginalModel() as model:
-        data = pm.Data(f"data", np.zeros(10))
+        data = pm.Data("data", np.zeros(10))
 
         cat_effect = pm.Normal("cat_effect", sigma=1, shape=5)
         cat_effect_idx = pm.Data("cat_effect_idx", np.array([0, 1] * 5))

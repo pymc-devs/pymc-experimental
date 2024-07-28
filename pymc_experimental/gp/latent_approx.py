@@ -12,11 +12,11 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 from functools import partial
-from typing import Optional
 
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
+
 from pymc.gp.util import JITTER_DEFAULT, stabilize
 from pytensor.tensor.linalg import cholesky, solve_triangular
 
@@ -33,7 +33,7 @@ class ProjectedProcess(pm.gp.Latent):
     ## AKA: DTC
     def __init__(
         self,
-        n_inducing: Optional[int] = None,
+        n_inducing: int | None = None,
         *,
         mean_func=pm.gp.mean.Zero(),
         cov_func=pm.gp.cov.Constant(0.0),
@@ -59,20 +59,22 @@ class ProjectedProcess(pm.gp.Latent):
         self,
         name: str,
         X: np.ndarray,
-        X_inducing: Optional[np.ndarray] = None,
+        X_inducing: np.ndarray | None = None,
         jitter: float = JITTER_DEFAULT,
         **kwargs,
     ) -> np.ndarray:
         """
         Builds the GP prior with optional inducing points locations.
 
-        Parameters:
+        Parameters
+        ----------
         - name: Name for the GP variable.
         - X: Input data.
         - X_inducing: Optional. Inducing points for the GP.
         - jitter: Jitter to ensure numerical stability.
 
-        Returns:
+        Returns
+        -------
         - GP function
         """
         # Check if X is a numpy array
@@ -137,7 +139,7 @@ class KarhunenLoeveExpansion(pm.gp.Latent):
         super().__init__(mean_func=mean_func, cov_func=cov_func)
 
     def _build_prior(self, name, X, jitter=1e-6, **kwargs):
-        mu = self.mean_func(X)
+        self.mean_func(X)
         Kxx = pm.gp.util.stabilize(self.cov_func(X), jitter)
         vals, vecs = pt.linalg.eigh(Kxx)
         ## NOTE: REMOVED PRECISION CUTOFF

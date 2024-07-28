@@ -19,10 +19,9 @@ Experimental probability distributions for stochastic nodes in PyMC.
 The imports from pymc are not fully replicated here: add imports as necessary.
 """
 
-from typing import Tuple, Union
-
 import numpy as np
 import pytensor.tensor as pt
+
 from pymc import ChiSquared, CustomDist
 from pymc.distributions import transforms
 from pymc.distributions.dist_math import check_parameters
@@ -39,7 +38,7 @@ class GenExtremeRV(RandomVariable):
     name: str = "Generalized Extreme Value"
     signature = "(),(),()->()"
     dtype: str = "floatX"
-    _print_name: Tuple[str, str] = ("Generalized Extreme Value", "\\operatorname{GEV}")
+    _print_name: tuple[str, str] = ("Generalized Extreme Value", "\\operatorname{GEV}")
 
     def __call__(self, mu=0.0, sigma=1.0, xi=0.0, size=None, **kwargs) -> TensorVariable:
         return super().__call__(mu, sigma, xi, size=size, **kwargs)
@@ -47,11 +46,11 @@ class GenExtremeRV(RandomVariable):
     @classmethod
     def rng_fn(
         cls,
-        rng: Union[np.random.RandomState, np.random.Generator],
+        rng: np.random.RandomState | np.random.Generator,
         mu: np.ndarray,
         sigma: np.ndarray,
         xi: np.ndarray,
-        size: Tuple[int, ...],
+        size: tuple[int, ...],
     ) -> np.ndarray:
         # Notice negative here, since remainder of GenExtreme is based on Coles parametrization
         return stats.genextreme.rvs(c=-xi, loc=mu, scale=sigma, random_state=rng, size=size)

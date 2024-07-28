@@ -1,7 +1,9 @@
-from typing import Any, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pytensor.tensor as pt
+
 from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace, floatX
@@ -91,7 +93,6 @@ class BayesianSARIMA(PyMCStateSpace):
 
     Notes
     -----
-
         The ARIMAX model is a univariate time series model that posits the future evolution of a stationary time series will
     be a function of its past values, together with exogenous "innovations" and their past history. The model is
     described by its "order", a 3-tuple (p, d, q), that are:
@@ -172,8 +173,8 @@ class BayesianSARIMA(PyMCStateSpace):
 
     def __init__(
         self,
-        order: Tuple[int, int, int],
-        seasonal_order: Optional[Tuple[int, int, int, int]] = None,
+        order: tuple[int, int, int],
+        seasonal_order: tuple[int, int, int, int] | None = None,
         stationary_initialization: bool = True,
         filter_type: str = "standard",
         state_structure: str = "fast",
@@ -514,14 +515,14 @@ class BayesianSARIMA(PyMCStateSpace):
                     )
 
         # Set up the state covariance matrix
-        state_cov_idx = ("state_cov",) + np.diag_indices(self.k_posdef)
+        state_cov_idx = ("state_cov", *np.diag_indices(self.k_posdef))
         state_cov = self.make_and_register_variable(
             "sigma_state", shape=() if self.k_posdef == 1 else (self.k_posdef,), dtype=floatX
         )
         self.ssm[state_cov_idx] = state_cov**2
 
         if self.measurement_error:
-            obs_cov_idx = ("obs_cov",) + np.diag_indices(self.k_endog)
+            obs_cov_idx = ("obs_cov", *np.diag_indices(self.k_endog))
             obs_cov = self.make_and_register_variable(
                 "sigma_obs", shape=() if self.k_endog == 1 else (self.k_endog,), dtype=floatX
             )

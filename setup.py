@@ -13,6 +13,8 @@
 #   limitations under the License.
 
 import itertools
+import os
+
 from codecs import open
 from os.path import dirname, join, realpath
 
@@ -62,10 +64,6 @@ extras_require = dict(
 )
 extras_require["complete"] = sorted(set(itertools.chain.from_iterable(extras_require.values())))
 extras_require["dev"] = dev_install_reqs
-
-import os
-
-from setuptools import find_packages, setup
 
 
 def read_version():

@@ -2,6 +2,7 @@ import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
+
 from pymc import intX
 from pymc.distributions.dist_math import check_parameters
 from pymc.distributions.distribution import Continuous, SymbolicRandomVariable
@@ -41,7 +42,7 @@ def make_signature(sequence_names):
 
     for matrix in sequence_names:
         base_shape = matrix_to_shape[matrix]
-        matrix_to_shape[matrix] = (time,) + base_shape
+        matrix_to_shape[matrix] = (time, *base_shape)
 
     signature = ",".join(["(" + ",".join(shapes) + ")" for shapes in matrix_to_shape.values()])
 
@@ -66,6 +67,7 @@ class MvNormalSVD(MvNormal):
 
 try:
     import jax.random
+
     from pytensor.link.jax.dispatch.random import jax_sample_fn
 
     @jax_sample_fn.register(MvNormalSVDRV)
@@ -94,8 +96,6 @@ class LinearGaussianStateSpaceRV(SymbolicRandomVariable):
 
 
 class _LinearGaussianStateSpace(Continuous):
-    rv_op = LinearGaussianStateSpaceRV
-
     def __new__(
         cls,
         name,
@@ -233,7 +233,7 @@ class _LinearGaussianStateSpace(Continuous):
             step_fn,
             outputs_info=[init_dist_],
             sequences=None if len(sequences) == 0 else sequences,
-            non_sequences=non_sequences + [rng],
+            non_sequences=[*non_sequences, rng],
             n_steps=steps,
             mode=mode,
             strict=True,
@@ -289,8 +289,6 @@ class LinearGaussianStateSpace(Continuous):
             time_dim, state_dim, obs_dim = dims
             latent_dims = [time_dim, state_dim]
             obs_dims = [time_dim, obs_dim]
-
-        matrices = ()
 
         latent_obs_combined = _LinearGaussianStateSpace(
             f"{name}_combined",
@@ -360,8 +358,6 @@ class KalmanFilterRV(SymbolicRandomVariable):
 
 
 class SequenceMvNormal(Continuous):
-    rv_op = KalmanFilterRV
-
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls, *args, **kwargs)
 

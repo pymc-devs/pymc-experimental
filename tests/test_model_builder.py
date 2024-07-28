@@ -16,7 +16,6 @@ import hashlib
 import json
 import sys
 import tempfile
-from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -140,7 +139,7 @@ class test_ModelBuilder(ModelBuilder):
         self.y = y
 
     @staticmethod
-    def get_default_model_config() -> Dict:
+    def get_default_model_config() -> dict:
         return {
             "a": {"loc": 0, "scale": 10, "dims": ("numbers",)},
             "b": {"loc": 0, "scale": 10},
@@ -148,13 +147,13 @@ class test_ModelBuilder(ModelBuilder):
         }
 
     def _generate_and_preprocess_model_data(
-        self, X: Union[pd.DataFrame, pd.Series], y: pd.Series
+        self, X: pd.DataFrame | pd.Series, y: pd.Series
     ) -> None:
         self.X = X
         self.y = y
 
     @staticmethod
-    def get_default_sampler_config() -> Dict:
+    def get_default_sampler_config() -> dict:
         return {
             "draws": 10,
             "tune": 10,
@@ -226,7 +225,7 @@ def test_predict(fitted_model_instance):
     prediction_data = pd.DataFrame({"input": x_pred})
     pred = fitted_model_instance.predict(prediction_data["input"])
     # Perform elementwise comparison using numpy
-    assert type(pred) == np.ndarray
+    assert isinstance(pred, np.ndarray)
     assert len(pred) > 0
 
 

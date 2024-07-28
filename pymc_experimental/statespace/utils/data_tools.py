@@ -5,6 +5,7 @@ import pandas as pd
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
+
 from pymc import ImputationWarning, modelcontext
 from pytensor.tensor.sharedvar import TensorSharedVariable
 
@@ -22,7 +23,7 @@ NO_FREQ_INFO_WARNING = "No frequency was specific on the data's DateTimeIndex."
 
 
 def get_data_dims(data):
-    if not isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
+    if not isinstance(data, pt.TensorVariable | TensorSharedVariable):
         return
 
     data_name = getattr(data, "name", None)
@@ -150,7 +151,7 @@ def mask_missing_values_in_data(values, missing_fill_value=None):
             )
 
         impute_message = (
-            f"Provided data contains missing values and"
+            "Provided data contains missing values and"
             " will be automatically imputed as hidden states"
             " during Kalman filtering."
         )
@@ -163,11 +164,11 @@ def mask_missing_values_in_data(values, missing_fill_value=None):
 def register_data_with_pymc(
     data, n_obs, obs_coords, register_data=True, missing_fill_value=None, data_dims=None
 ):
-    if isinstance(data, (pt.TensorVariable, TensorSharedVariable)):
+    if isinstance(data, pt.TensorVariable | TensorSharedVariable):
         values, index = preprocess_tensor_data(data, n_obs, obs_coords)
     elif isinstance(data, np.ndarray):
         values, index = preprocess_numpy_data(data, n_obs, obs_coords)
-    elif isinstance(data, (pd.DataFrame, pd.Series)):
+    elif isinstance(data, pd.DataFrame | pd.Series):
         values, index = preprocess_pandas_data(data, n_obs, obs_coords)
     else:
         raise ValueError("Data should be one of pytensor tensor, numpy array, or pandas dataframe")

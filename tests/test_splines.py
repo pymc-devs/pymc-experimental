@@ -16,6 +16,7 @@
 import numpy as np
 import pytensor.tensor as pt
 import pytest
+
 from pytensor.sparse import SparseTensorType
 
 import pymc_experimental as pmx

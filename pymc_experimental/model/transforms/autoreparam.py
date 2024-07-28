@@ -1,13 +1,15 @@
 import logging
+
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 import scipy.special
+
 from pymc.distributions import SymbolicRandomVariable
 from pymc.logprob.transforms import Transform
 from pymc.model.fgraph import (
@@ -41,10 +43,10 @@ class VIP:
         \end{align*}
     """
 
-    _logit_lambda: Dict[str, pytensor.tensor.sharedvar.TensorSharedVariable]
+    _logit_lambda: dict[str, pytensor.tensor.sharedvar.TensorSharedVariable]
 
     @property
-    def variational_parameters(self) -> List[pytensor.tensor.sharedvar.TensorSharedVariable]:
+    def variational_parameters(self) -> list[pytensor.tensor.sharedvar.TensorSharedVariable]:
         r"""Return raw :math:`\operatorname{logit}(\lambda_k)` for custom optimization.
 
         Examples
@@ -111,7 +113,7 @@ class VIP:
         )
         self.truncate_lambda(**truncate)
 
-    def get_lambda(self) -> Dict[str, np.ndarray]:
+    def get_lambda(self) -> dict[str, np.ndarray]:
         r"""Get :math:`\lambda_k` that are currently used by the model.
 
         Returns
@@ -124,7 +126,7 @@ class VIP:
             for name, shared in self._logit_lambda.items()
         }
 
-    def set_lambda(self, **kwargs: Dict[str, Union[np.ndarray, float]]):
+    def set_lambda(self, **kwargs: dict[str, np.ndarray | float]):
         r"""Set :math:`\lambda_k` per variable."""
         for key, value in kwargs.items():
             logit_lam = scipy.special.logit(value)
@@ -135,7 +137,7 @@ class VIP:
             )
             shared.set_value(fill)
 
-    def set_all_lambda(self, value: Union[np.ndarray, float]):
+    def set_all_lambda(self, value: np.ndarray | float):
         r"""Set :math:`\lambda_k` globally."""
         config = dict.fromkeys(
             self._logit_lambda.keys(),
@@ -171,9 +173,9 @@ def vip_reparam_node(
     op: RandomVariable,
     node: Apply,
     name: str,
-    dims: List[Variable],
-    transform: Optional[Transform],
-) -> Tuple[ModelDeterministic, ModelNamed]:
+    dims: list[Variable],
+    transform: Transform | None,
+) -> tuple[ModelDeterministic, ModelNamed]:
     if not isinstance(node.op, RandomVariable | SymbolicRandomVariable):
         raise TypeError("Op should be RandomVariable type")
     # FIXME: This is wrong when size is None
@@ -210,8 +212,8 @@ def _vip_reparam_node(
     op: RandomVariable,
     node: Apply,
     name: str,
-    dims: List[Variable],
-    transform: Optional[Transform],
+    dims: list[Variable],
+    transform: Transform | None,
     lam: pt.TensorVariable,
 ) -> ModelDeterministic:
     raise NotImplementedError
@@ -222,8 +224,8 @@ def _(
     op: pm.Normal,
     node: Apply,
     name: str,
-    dims: List[Variable],
-    transform: Optional[Transform],
+    dims: list[Variable],
+    transform: Transform | None,
     lam: pt.TensorVariable,
 ) -> ModelDeterministic:
     rng, size, loc, scale = node.inputs
@@ -257,8 +259,8 @@ def _(
     op: pm.Exponential,
     node: Apply,
     name: str,
-    dims: List[Variable],
-    transform: Optional[Transform],
+    dims: list[Variable],
+    transform: Transform | None,
     lam: pt.TensorVariable,
 ) -> ModelDeterministic:
     rng, size, scale = node.inputs
@@ -293,7 +295,7 @@ def _(
 def vip_reparametrize(
     model: pm.Model,
     var_names: Sequence[str],
-) -> Tuple[pm.Model, VIP]:
+) -> tuple[pm.Model, VIP]:
     r"""Repametrize Model using Variationally Informed Parametrization (VIP).
 
     .. math::
@@ -424,6 +426,9 @@ def vip_reparametrize(
         lambda_names.append(lam.name)
     toposort_replace(fmodel, replacements, reverse=True)
     reparam_model = model_from_fgraph(fmodel)
-    model_lambdas = {n: reparam_model[l] for l, n in zip(lambda_names, var_names)}
+    model_lambdas = {
+        var_name: reparam_model[lambda_name]
+        for lambda_name, var_name in zip(lambda_names, var_names)
+    }
     vip = VIP(model_lambdas)
     return reparam_model, vip

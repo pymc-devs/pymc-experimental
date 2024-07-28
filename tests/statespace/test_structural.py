@@ -1,5 +1,6 @@
 import functools as ft
 import warnings
+
 from collections import defaultdict
 from typing import Optional
 
@@ -10,6 +11,7 @@ import pytensor
 import pytensor.tensor as pt
 import pytest
 import statsmodels.api as sm
+
 from numpy.testing import assert_allclose
 from scipy import linalg
 
@@ -164,20 +166,20 @@ def _assert_params_info_correct(param_info, coords, param_dims):
 
 def create_structural_model_and_equivalent_statsmodel(
     rng,
-    level: Optional[bool] = False,
-    trend: Optional[bool] = False,
-    seasonal: Optional[int] = None,
-    freq_seasonal: Optional[list[dict]] = None,
+    level: bool | None = False,
+    trend: bool | None = False,
+    seasonal: int | None = None,
+    freq_seasonal: list[dict] | None = None,
     cycle: bool = False,
-    autoregressive: Optional[int] = None,
-    exog: Optional[np.ndarray] = None,
-    irregular: Optional[bool] = False,
-    stochastic_level: Optional[bool] = True,
-    stochastic_trend: Optional[bool] = False,
-    stochastic_seasonal: Optional[bool] = True,
-    stochastic_freq_seasonal: Optional[list[bool]] = None,
-    stochastic_cycle: Optional[bool] = False,
-    damped_cycle: Optional[bool] = False,
+    autoregressive: int | None = None,
+    exog: np.ndarray | None = None,
+    irregular: bool | None = False,
+    stochastic_level: bool | None = True,
+    stochastic_trend: bool | None = False,
+    stochastic_seasonal: bool | None = True,
+    stochastic_freq_seasonal: list[bool] | None = None,
+    stochastic_cycle: bool | None = False,
+    damped_cycle: bool | None = False,
 ):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -300,7 +302,7 @@ def create_structural_model_and_equivalent_statsmodel(
             sm_params["sigma2.level"] = sigma
         if stochastic_trend:
             sigma = sigma_level_value.pop(0)
-            sm_params[f"sigma2.trend"] = sigma
+            sm_params["sigma2.trend"] = sigma
 
         comp = st.LevelTrendComponent(
             name="level", order=level_trend_order, innovations_order=level_trend_innov_order
@@ -624,7 +626,7 @@ def get_shift_factor(s):
     return 10 ** len(decimal)
 
 
-@pytest.mark.parametrize("n", np.arange(1, 6, dtype="int").tolist() + [None])
+@pytest.mark.parametrize("n", [*np.arange(1, 6, dtype="int").tolist(), None])
 @pytest.mark.parametrize("s", [5, 10, 25, 25.2])
 def test_frequency_seasonality(n, s, rng):
     mod = st.FrequencySeasonality(season_length=s, n=n, name="season")

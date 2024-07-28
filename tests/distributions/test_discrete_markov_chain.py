@@ -4,6 +4,7 @@ import pymc as pm
 # general imports
 import pytensor.tensor as pt
 import pytest
+
 from pymc.distributions.shape_utils import change_dist_size
 from pymc.logprob.utils import ParameterValueError
 

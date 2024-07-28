@@ -11,6 +11,7 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
+from importlib.util import find_spec
 
 
 def fit(method, **kwargs):
@@ -30,17 +31,14 @@ def fit(method, **kwargs):
     arviz.InferenceData
     """
     if method == "pathfinder":
-        try:
-            import blackjax
-        except ImportError as exc:
-            raise RuntimeError("Need BlackJAX to use `pathfinder`") from exc
+        if find_spec("blackjax") is None:
+            raise RuntimeError("Need BlackJAX to use `pathfinder`")
 
         from pymc_experimental.inference.pathfinder import fit_pathfinder
 
         return fit_pathfinder(**kwargs)
 
     if method == "laplace":
-
         from pymc_experimental.inference.laplace import laplace
 
         return laplace(**kwargs)

@@ -1,11 +1,14 @@
 import logging
-from typing import Any, Callable, Optional, Sequence, Union
+
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
+
 from arviz import InferenceData
 from pymc.model import modelcontext
 from pymc.model.transform.optimization import freeze_dims_and_data
@@ -220,10 +223,10 @@ class PyMCStateSpace:
         verbose: bool = True,
         measurement_error: bool = False,
     ):
-        self._fit_mode: Optional[str] = None
-        self._fit_coords: Optional[dict[str, Sequence[str]]] = None
-        self._fit_dims: Optional[dict[str, Sequence[str]]] = None
-        self._fit_data: Optional[pt.TensorVariable] = None
+        self._fit_mode: str | None = None
+        self._fit_coords: dict[str, Sequence[str]] | None = None
+        self._fit_dims: dict[str, Sequence[str]] | None = None
+        self._fit_data: pt.TensorVariable | None = None
 
         self._needs_exog_data = None
         self._exog_names = []
@@ -240,7 +243,7 @@ class PyMCStateSpace:
         self.ssm = PytensorRepresentation(k_endog, k_states, k_posdef)
 
         # This will be populated with PyMC random matrices after calling _insert_random_variables
-        self.subbed_ssm: Optional[list[pt.TensorVariable]] = None
+        self.subbed_ssm: list[pt.TensorVariable] | None = None
 
         if filter_type.lower() not in FILTER_FACTORY.keys():
             raise NotImplementedError(
@@ -491,7 +494,7 @@ class PyMCStateSpace:
         return placeholder
 
     def make_and_register_data(
-        self, name: str, shape: Union[int, tuple[int]], dtype: str = floatX
+        self, name: str, shape: int | tuple[int], dtype: str = floatX
     ) -> Variable:
         r"""
         Helper function to create a pytensor symbolic variable and register it in the _name_to_data dictionary
@@ -539,7 +542,7 @@ class PyMCStateSpace:
         Every statespace model needs to implement this function.
 
         Examples
-        ----------
+        --------
         As an example, consider an ARMA(2,2) model, which has five parameters (excluding the initial state distribution):
         2 AR parameters (:math:`\rho_1` and :math:`\rho_2`), 2 MA parameters (:math:`\theta_1` and :math:`theta_2`),
         and a single innovation covariance (:math:`\\sigma`). A common way of writing this statespace is:
@@ -586,9 +589,7 @@ class PyMCStateSpace:
         """
         raise NotImplementedError("The make_symbolic_statespace method has not been implemented!")
 
-    def _get_matrix_shape_and_dims(
-        self, name: str
-    ) -> tuple[Optional[tuple[int]], Optional[tuple[str]]]:
+    def _get_matrix_shape_and_dims(self, name: str) -> tuple[tuple[int] | None, tuple[str] | None]:
         """
         Get the shape and dimensions of a matrix associated with the specified name.
 
@@ -616,8 +617,8 @@ class PyMCStateSpace:
         data_len = len(self._fit_data)
 
         if name in self.kalman_filter.seq_names:
-            shape = (data_len,) + self.ssm[SHORT_NAME_TO_LONG[name]].type.shape
-            dims = (TIME_DIM,) + dims
+            shape = (data_len, *self.ssm[SHORT_NAME_TO_LONG[name]].type.shape)
+            dims = (TIME_DIM, *dims)
         else:
             shape = self.ssm[SHORT_NAME_TO_LONG[name]].type.shape
 
@@ -749,7 +750,7 @@ class PyMCStateSpace:
                 has_dims = dims is not None
 
                 if matrix.ndim == time_varying_ndim and has_dims:
-                    dims = (TIME_DIM,) + dims
+                    dims = (TIME_DIM, *dims)
 
                 x = pm.Deterministic(name, matrix, dims=dims)
                 registered_matrices.append(x)
@@ -786,11 +787,11 @@ class PyMCStateSpace:
 
     def build_statespace_graph(
         self,
-        data: Union[np.ndarray, pd.DataFrame, pt.TensorVariable],
+        data: np.ndarray | pd.DataFrame | pt.TensorVariable,
         register_data: bool = True,
-        mode: Optional[str] = None,
-        missing_fill_value: Optional[float] = None,
-        cov_jitter: Optional[float] = JITTER_DEFAULT,
+        mode: str | None = None,
+        missing_fill_value: float | None = None,
+        cov_jitter: float | None = JITTER_DEFAULT,
         save_kalman_filter_outputs_in_idata: bool = False,
     ) -> None:
         """
@@ -872,7 +873,7 @@ class PyMCStateSpace:
             smooth_states, smooth_covariances = self._build_smoother_graph(
                 filtered_states, filtered_covariances, self.unpack_statespace(), mode=mode
             )
-            all_kf_outputs = states + [smooth_states] + covs + [smooth_covariances]
+            all_kf_outputs = [*states, smooth_states, *covs, smooth_covariances]
             self._register_kalman_filter_outputs_with_pymc_model(all_kf_outputs)
 
         obs_dims = FILTER_OUTPUT_DIMS["predicted_observed_state"]
@@ -896,7 +897,7 @@ class PyMCStateSpace:
         filtered_states: pt.TensorVariable,
         filtered_covariances: pt.TensorVariable,
         matrices,
-        mode: Optional[str] = None,
+        mode: str | None = None,
         cov_jitter=JITTER_DEFAULT,
     ):
         """
@@ -1084,17 +1085,20 @@ class PyMCStateSpace:
         group_idata = getattr(idata, group)
 
         with pm.Model(coords=self._fit_coords) as forward_model:
-            [
-                x0,
-                P0,
-                c,
-                d,
-                T,
-                Z,
-                R,
-                H,
-                Q,
-            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph(data=data)
+            (
+                [
+                    x0,
+                    P0,
+                    c,
+                    d,
+                    T,
+                    Z,
+                    R,
+                    H,
+                    Q,
+                ],
+                grouped_outputs,
+            ) = self._kalman_filter_outputs_from_dummy_graph(data=data)
 
             for name, (mu, cov) in zip(FILTER_OUTPUT_TYPES, grouped_outputs):
                 dummy_ll = pt.zeros_like(mu)
@@ -1154,9 +1158,9 @@ class PyMCStateSpace:
         self,
         idata: InferenceData,
         group: str,
-        steps: Optional[int] = None,
+        steps: int | None = None,
         use_data_time_dim: bool = False,
-        random_seed: Optional[RandomState] = None,
+        random_seed: RandomState | None = None,
         **kwargs,
     ):
         """
@@ -1266,7 +1270,7 @@ class PyMCStateSpace:
         return idata_unconditional.posterior_predictive
 
     def sample_conditional_prior(
-        self, idata: InferenceData, random_seed: Optional[RandomState] = None, **kwargs
+        self, idata: InferenceData, random_seed: RandomState | None = None, **kwargs
     ) -> InferenceData:
         """
         Sample from the conditional prior; that is, given parameter draws from the prior distribution,
@@ -1296,7 +1300,7 @@ class PyMCStateSpace:
         return self._sample_conditional(idata, "prior", random_seed, **kwargs)
 
     def sample_conditional_posterior(
-        self, idata: InferenceData, random_seed: Optional[RandomState] = None, **kwargs
+        self, idata: InferenceData, random_seed: RandomState | None = None, **kwargs
     ):
         """
         Sample from the conditional posterior; that is, given parameter draws from the posterior distribution,
@@ -1327,9 +1331,9 @@ class PyMCStateSpace:
     def sample_unconditional_prior(
         self,
         idata: InferenceData,
-        steps: Optional[int] = None,
+        steps: int | None = None,
         use_data_time_dim: bool = False,
-        random_seed: Optional[RandomState] = None,
+        random_seed: RandomState | None = None,
         **kwargs,
     ) -> InferenceData:
         """
@@ -1380,9 +1384,9 @@ class PyMCStateSpace:
     def sample_unconditional_posterior(
         self,
         idata: InferenceData,
-        steps: Optional[int] = None,
+        steps: int | None = None,
         use_data_time_dim: bool = False,
-        random_seed: Optional[RandomState] = None,
+        random_seed: RandomState | None = None,
         **kwargs,
     ) -> InferenceData:
         """
@@ -1491,11 +1495,11 @@ class PyMCStateSpace:
     def forecast(
         self,
         idata: InferenceData,
-        start: Union[int, pd.Timestamp],
-        periods: int = None,
-        end: Union[int, pd.Timestamp] = None,
+        start: int | pd.Timestamp,
+        periods: int | None = None,
+        end: int | pd.Timestamp = None,
         filter_output="smoothed",
-        random_seed: Optional[RandomState] = None,
+        random_seed: RandomState | None = None,
         **kwargs,
     ) -> InferenceData:
         """
@@ -1604,19 +1608,20 @@ class PyMCStateSpace:
             cov_dims = ["data_time", ALL_STATE_DIM, ALL_STATE_AUX_DIM]
 
         with pm.Model(coords=temp_coords) as forecast_model:
-            [
-                x0,
-                P0,
-                c,
-                d,
-                T,
-                Z,
-                R,
-                H,
-                Q,
-            ], grouped_outputs = self._kalman_filter_outputs_from_dummy_graph(
-                data_dims=["data_time", OBS_STATE_DIM]
-            )
+            (
+                [
+                    x0,
+                    P0,
+                    c,
+                    d,
+                    T,
+                    Z,
+                    R,
+                    H,
+                    Q,
+                ],
+                grouped_outputs,
+            ) = self._kalman_filter_outputs_from_dummy_graph(data_dims=["data_time", OBS_STATE_DIM])
             group_idx = FILTER_OUTPUT_TYPES.index(filter_output)
 
             mu, cov = grouped_outputs[group_idx]
@@ -1667,11 +1672,11 @@ class PyMCStateSpace:
         idata,
         n_steps: int = 40,
         use_posterior_cov: bool = True,
-        shock_size: Optional[Union[float, np.ndarray]] = None,
-        shock_cov: Optional[np.ndarray] = None,
-        shock_trajectory: Optional[np.ndarray] = None,
+        shock_size: float | np.ndarray | None = None,
+        shock_cov: np.ndarray | None = None,
+        shock_trajectory: np.ndarray | None = None,
         orthogonalize_shocks: bool = False,
-        random_seed: Optional[RandomState] = None,
+        random_seed: RandomState | None = None,
         **kwargs,
     ):
         """

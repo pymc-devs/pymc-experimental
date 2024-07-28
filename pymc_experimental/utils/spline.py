@@ -18,6 +18,7 @@ import pytensor
 import pytensor.sparse as ps
 import pytensor.tensor as pt
 import scipy.interpolate
+
 from pytensor.graph.op import Apply, Op
 
 
@@ -43,9 +44,9 @@ class BSplineBasis(Op):
         eval_points, k, d = map(pt.as_tensor, inputs)
         if not (eval_points.ndim == 1 and np.issubdtype(eval_points.dtype, np.floating)):
             raise TypeError("eval_points should be a vector of floats")
-        if not k.type in pt.int_types:
+        if k.type not in pt.int_types:
             raise TypeError("k should be integer")
-        if not d.type in pt.int_types:
+        if d.type not in pt.int_types:
             raise TypeError("degree should be integer")
         if self.sparse:
             out_type = ps.SparseTensorType("csr", eval_points.dtype)()
