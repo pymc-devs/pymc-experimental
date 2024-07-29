@@ -67,9 +67,11 @@ class BayesianETS(PyMCStateSpace):
 
             \begin{align}
             y_t &= l_{t-1} + b_{t-1} + \epsilon_t \\
-            l_t &= l_{t-1} + \alpha \epsilon_t \\
-            b_t &= b_{t-1} + \beta \epsilon_t
+            l_t &= l_{t-1} + b_{t-1} + \alpha \epsilon_t \\
+            b_t &= b_{t-1} + \alpha \beta^\star \epsilon_t
             \end{align}
+
+        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^\star`.
 
     * `ETS(A,N,A)`: Additive seasonal method
 
@@ -78,8 +80,10 @@ class BayesianETS(PyMCStateSpace):
             \begin{align}
             y_t &= l_{t-1} + s_{t-m} + \epsilon_t \\
             l_t &= l_{t-1} + \alpha \epsilon_t \\
-            s_t &= s_{t-m} + \gamma \epsilon_t
+            s_t &= s_{t-m} + (1 - \alpha)\gamma^\star \epsilon_t
             \end{align}
+
+        [1]_ also consider an alternative parameterization with :math:`\gamma = (1 - \alpha) \gamma^\star`.
 
     * `ETS(A,A,A)`: Additive Holt-Winters method
 
@@ -88,9 +92,12 @@ class BayesianETS(PyMCStateSpace):
             \begin{align}
             y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
             l_t &= l_{t-1} + \alpha \epsilon_t \\
-            b_t &= b_{t-1} + \beta \epsilon_t \\
-            s_t &= s_{t-m} + \gamma \epsilon_t
+            b_t &= b_{t-1} + \alpha \beta^\star \epsilon_t \\
+            s_t &= s_{t-m} + (1 - \alpha) \gamma^\star \epsilon_t
             \end{align}
+
+        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^star` and
+        :math:`\gamma = (1 - \alpha) \gamma^\star`.
 
     * `ETS(A, Ad, N)`: Dampened trend method
 
@@ -99,8 +106,10 @@ class BayesianETS(PyMCStateSpace):
             \begin{align}
             y_t &= l_{t-1} + b_{t-1} + \epsilon_t \\
             l_t &= l_{t-1} + \alpha \epsilon_t \\
-            b_t &= \phi b_{t-1} + \beta \epsilon_t
+            b_t &= \phi b_{t-1} + \alpha \beta^\star \epsilon_t
             \end{align}
+
+        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^\star`.
 
     * `ETS(A, Ad, A)`: Dampened trend with seasonal method
 
@@ -109,9 +118,13 @@ class BayesianETS(PyMCStateSpace):
             \begin{align}
             y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
             l_t &= l_{t-1} + \alpha \epsilon_t \\
-            b_t &= \phi b_{t-1} + \beta \epsilon_t \\
-            s_t &= s_{t-m} + \gamma \epsilon_t
+            b_t &= \phi b_{t-1} + \alpha \beta^\star \epsilon_t \\
+            s_t &= s_{t-m} + (1 - \alpha) \gamma^\star \epsilon_t
             \end{align}
+
+        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^star` and
+        :math:`\gamma = (1 - \alpha) \gamma^\star`.
+
 
     Parameters
     ----------
@@ -138,6 +151,17 @@ class BayesianETS(PyMCStateSpace):
         The number of periods in a complete seasonal cycle. Ignored if `seasonal` is `False`.
     measurement_error: bool
         Whether to include a measurement error term in the model. Default is `False`.
+    use_transformed_parameterization: bool, default False
+        If true, use the :math:`\alpha, \beta, \gamma` parameterization, otherwise use the :math:`\alpha, \beta^\star,
+        \gamma^\star` parameterization. This will change the admissible region for the priors.
+
+        - Under the **non-transformed** parameterization, all of :math:`\alpha, \beta^\star, \gamma^\star` should be
+          between 0 and 1.
+        - Under the **transformed**  parameterization, :math:`\alpha \in (0, 1)`, :math:`\beta \in (0, \alpha)`, and
+          :math:`\gamma \in (0, 1 - \alpha)`
+
+        The :meth:`param_info` method will change to reflect the suggested intervals based on the value of this
+        argument.
     filter_type: str, default "standard"
         The type of Kalman Filter to use. Options are "standard", "single", "univariate", "steady_state",
         and "cholesky". See the docs for kalman filters for more details.
@@ -157,6 +181,7 @@ class BayesianETS(PyMCStateSpace):
         seasonal: bool = False,
         seasonal_periods: int | None = None,
         measurement_error: bool = False,
+        use_transformed_parameterization: bool = False,
         filter_type: str = "standard",
         verbose: bool = True,
     ):
@@ -184,6 +209,7 @@ class BayesianETS(PyMCStateSpace):
         self.damped_trend = damped_trend
         self.seasonal = seasonal
         self.seasonal_periods = seasonal_periods
+        self.use_transformed_parameterization = use_transformed_parameterization
 
         if self.seasonal and self.seasonal_periods is None:
             raise ValueError("If seasonal is True, seasonal_periods must be provided.")
@@ -258,15 +284,19 @@ class BayesianETS(PyMCStateSpace):
             },
             "alpha": {
                 "shape": None,
-                "constraints": "0 < Sum(alpha, beta, gamma) < 1",
+                "constraints": "0 < alpha < 1",
             },
             "beta": {
                 "shape": None,
-                "constraints": "0 < Sum(alpha, beta, gamma) < 1",
+                "constraints": "0 < beta < 1"
+                if not self.use_transformed_parameterization
+                else "0 < beta < alpha",
             },
             "gamma": {
                 "shape": None,
-                "constraints": "0 < Sum(alpha, beta, gamma) < 1",
+                "constraints": "0 < gamma< 1"
+                if not self.use_transformed_parameterization
+                else "0 < gamma < (1 - alpha)",
             },
             "phi": {
                 "shape": None,
@@ -342,10 +372,17 @@ class BayesianETS(PyMCStateSpace):
 
         # The shape of R can be pre-allocated, then filled with the required parameters
         R = pt.zeros((self.k_states, self.k_posdef))
-        R = pt.set_subtensor(R[0, :], 1.0)  # We will always have y_t = ... + e_t
 
         alpha = self.make_and_register_variable("alpha", shape=(), dtype=floatX)
         R = pt.set_subtensor(R[1, 0], alpha)  # and l_t = ... + alpha * e_t
+
+        # The R[0, 0] entry needs to be adjusted for a shift in the time indices. Consider the (A, N, N) model:
+        # y_t = l_{t-1} + e_t
+        # l_t = l_{t-1} + alpha * e_t
+        # We want the first equation to be in terms of time t on the RHS, because our observation equation is always
+        # y_t = Z @ x_t. Re-arranging equation 2, we get l_{t-1} = l_t - alpha * e_t --> y_t = l_t + e_t - alpha * e_t
+        # --> y_t = l_t + (1 - alpha) * e_t
+        R = pt.set_subtensor(R[0, :], (1 - alpha))
 
         # Shock and level component always exists, the base case is e_t = e_t and l_t = l_{t-1}
         T_base = pt.as_tensor_variable(np.array([[0.0, 0.0], [0.0, 1.0]]))
@@ -357,10 +394,12 @@ class BayesianETS(PyMCStateSpace):
             self.ssm["initial_state", 2] = initial_trend
 
             beta = self.make_and_register_variable("beta", shape=(), dtype=floatX)
-            R = pt.set_subtensor(R[2, 0], beta)
+            if self.use_transformed_parameterization:
+                R = pt.set_subtensor(R[2, 0], beta)
+            else:
+                R = pt.set_subtensor(R[2, 0], alpha * beta)
 
             # If a trend is requested, we have the following transition equations (omitting the shocks):
-            # y_t = l_{t-1} + b_{t-1}
             # l_t = l_{t-1} + b_{t-1}
             # b_t = b_{t-1}
             T_base = pt.as_tensor_variable(([0.0, 0.0, 0.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]))
@@ -369,7 +408,6 @@ class BayesianETS(PyMCStateSpace):
             phi = self.make_and_register_variable("phi", shape=(), dtype=floatX)
             # We are always in the case where we have a trend, so we can add the dampening parameter to T_base defined
             # in that branch. Transition equations become:
-            # y_t = l_{t-1} + phi * b_{t-1}
             # l_t = l_{t-1} + phi * b_{t-1}
             # b_t = phi * b_{t-1}
             T_base = pt.set_subtensor(T_base[1:, 2], phi)
@@ -384,7 +422,21 @@ class BayesianETS(PyMCStateSpace):
             self.ssm["initial_state", 2 + int(self.trend) :] = initial_seasonal
 
             gamma = self.make_and_register_variable("gamma", shape=(), dtype=floatX)
-            R = pt.set_subtensor(R[2 + int(self.trend), 0], gamma)
+
+            if self.use_transformed_parameterization:
+                param = gamma
+            else:
+                param = (1 - alpha) * gamma
+
+            R = pt.set_subtensor(R[2 + int(self.trend), 0], param)
+
+            # Additional adjustment to the R[0, 0] position is required. Start from:
+            # y_t = l_{t-1} + s_{t-m} + e_t
+            # l_t = l_{t-1} + alpha * e_t
+            # s_t = s_{t-m} + gamma * e_t
+            # Solve for l_{t-1} and s_{t-m} in terms of l_t and s_t, then substitute into the observation equation:
+            # y_t = l_t + s_t - alpha * e_t - gamma * e_t + e_t --> y_t = l_t + s_t + (1 - alpha - gamma) * e_t
+            R = pt.set_subtensor(R[0, 0], R[0, 0] - param)
 
             # The seasonal component is always going to look like a TimeFrequency structural component, see that
             # docstring for more details
