@@ -461,7 +461,7 @@ class PyMCStateSpace:
 
     def make_and_register_variable(
         self, name, shape: int | tuple[int, ...] | None = None, dtype=floatX
-    ) -> Variable:
+    ) -> pt.TensorVariable:
         """
         Helper function to create a pytensor symbolic variable and register it in the _name_to_variable dictionary
 
