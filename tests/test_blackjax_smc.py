@@ -80,8 +80,6 @@ def fast_model():
         ("NUTS", False, {"step_size": 0.1}),
     ],
 )
-
-
 def test_sample_smc_blackjax(kernel, check_for_integration_steps, inner_kernel_params):
     """
     When running the two gaussians model
