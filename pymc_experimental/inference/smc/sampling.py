@@ -24,6 +24,10 @@ import blackjax
 import jax
 import jax.numpy as jnp
 import numpy as np
+<<<<<<< Updated upstream
+=======
+from blackjax.smc import extend_params
+>>>>>>> Stashed changes
 
 from blackjax.smc.resampling import systematic
 from pymc import draw, modelcontext, to_inference_data
@@ -126,17 +130,17 @@ def sample_smc_blackjax(
 
     if kernel == "HMC":
         mcmc_kernel = blackjax.mcmc.hmc
-        mcmc_parameters = dict(
+        mcmc_parameters = extend_params(dict(
             step_size=inner_kernel_params["step_size"],
             inverse_mass_matrix=jnp.eye(posterior_dimensions),
             num_integration_steps=inner_kernel_params["integration_steps"],
-        )
+        ))
     elif kernel == "NUTS":
         mcmc_kernel = blackjax.mcmc.nuts
-        mcmc_parameters = dict(
+        mcmc_parameters = extend_params(dict(
             step_size=inner_kernel_params["step_size"],
             inverse_mass_matrix=jnp.eye(posterior_dimensions),
-        )
+        ))
     else:
         raise ValueError(f"Invalid kernel {kernel}, valid options are 'HMC' and 'NUTS'")
 

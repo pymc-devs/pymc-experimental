@@ -17,6 +17,10 @@ import pymc as pm
 import pytensor.tensor as pt
 import pytest
 import scipy
+<<<<<<< Updated upstream:tests/test_blackjax_smc.py
+=======
+from blackjax.smc import extend_params
+>>>>>>> Stashed changes:pymc_experimental/tests/test_blackjax_smc.py
 
 from numpy import dtype
 from xarray.core.utils import Frozen
@@ -80,7 +84,11 @@ def fast_model():
         ("NUTS", False, {"step_size": 0.1}),
     ],
 )
+<<<<<<< Updated upstream:tests/test_blackjax_smc.py
 @pytest.mark.xfail(reason="Still need to investigate")
+=======
+
+>>>>>>> Stashed changes:pymc_experimental/tests/test_blackjax_smc.py
 def test_sample_smc_blackjax(kernel, check_for_integration_steps, inner_kernel_params):
     """
     When running the two gaussians model
