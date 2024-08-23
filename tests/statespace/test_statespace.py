@@ -647,14 +647,30 @@ def test_forecast_with_exog_data(rng, exog_ss_mod, idata_exog):
     scenario.iloc[5, 0] = 1e9
 
     forecast_idata = exog_ss_mod.forecast(
-        idata_exog, periods=10, random_seed=rng, scenario={"data_exog": scenario}
+        idata_exog, periods=10, random_seed=rng, scenario=scenario
     )
 
-    # TODO: Why does it end up on t=7?
-    t_5 = forecast_idata.forecast_observed.isel(time=7, observed_state=0).to_numpy()
-    not_t_5 = (
-        forecast_idata.forecast_observed.isel(time=np.arange(10) != 7, observed_state=0)
-        .mean(dim="time")
-        .to_numpy()
+    components = exog_ss_mod.extract_components_from_idata(forecast_idata)
+    level = components.forecast_latent.sel(state="LevelTrend[level]")
+    betas = components.forecast_latent.sel(state=["exog[a]", "exog[b]", "exog[c]"])
+
+    scenario.index.name = "time"
+    scenario_xr = (
+        scenario.unstack()
+        .to_xarray()
+        .rename({"level_0": "state"})
+        .assign_coords(state=["exog[a]", "exog[b]", "exog[c]"])
     )
-    assert t_5.shape == not_t_5.shape
+
+    regression_effect = forecast_idata.forecast_observed.isel(observed_state=0) - level
+    regression_effect_expected = (betas * scenario_xr).sum(dim=["state"])
+
+    assert_allclose(regression_effect, regression_effect_expected)
+
+    # t_5 = forecast_idata.forecast_observed.isel(time=7, observed_state=0).to_numpy()
+    # not_t_5 = (
+    #     forecast_idata.forecast_observed.isel(time=np.arange(10) != 7, observed_state=0)
+    #     .mean(dim="time")
+    #     .to_numpy()
+    # )
+    # assert t_5.shape == not_t_5.shape
