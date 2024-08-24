@@ -111,6 +111,7 @@ class _LinearGaussianStateSpace(Continuous):
         steps=None,
         mode=None,
         sequence_names=None,
+        append_x0=True,
         **kwargs,
     ):
         # Ignore dims in support shape because they are just passed along to the "observed" and "latent" distributions
@@ -138,12 +139,27 @@ class _LinearGaussianStateSpace(Continuous):
             steps=steps,
             mode=mode,
             sequence_names=sequence_names,
+            append_x0=append_x0,
             **kwargs,
         )
 
     @classmethod
     def dist(
-        cls, a0, P0, c, d, T, Z, R, H, Q, steps=None, mode=None, sequence_names=None, **kwargs
+        cls,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        steps=None,
+        mode=None,
+        sequence_names=None,
+        append_x0=True,
+        **kwargs,
     ):
         steps = get_support_shape_1d(
             support_shape=steps, shape=kwargs.get("shape", None), support_shape_offset=0
@@ -155,11 +171,31 @@ class _LinearGaussianStateSpace(Continuous):
         steps = pt.as_tensor_variable(intX(steps), ndim=0)
 
         return super().dist(
-            [a0, P0, c, d, T, Z, R, H, Q, steps], mode=mode, sequence_names=sequence_names, **kwargs
+            [a0, P0, c, d, T, Z, R, H, Q, steps],
+            mode=mode,
+            sequence_names=sequence_names,
+            append_x0=append_x0,
+            **kwargs,
         )
 
     @classmethod
-    def rv_op(cls, a0, P0, c, d, T, Z, R, H, Q, steps, size=None, mode=None, sequence_names=None):
+    def rv_op(
+        cls,
+        a0,
+        P0,
+        c,
+        d,
+        T,
+        Z,
+        R,
+        H,
+        Q,
+        steps,
+        size=None,
+        mode=None,
+        sequence_names=None,
+        append_x0=True,
+    ):
         if sequence_names is None:
             sequence_names = []
 
@@ -239,8 +275,12 @@ class _LinearGaussianStateSpace(Continuous):
             strict=True,
         )
 
-        statespace_ = pt.concatenate([init_dist_[None], statespace], axis=0)
-        statespace_ = pt.specify_shape(statespace_, (steps + 1, None))
+        if append_x0:
+            statespace_ = pt.concatenate([init_dist_[None], statespace], axis=0)
+            statespace_ = pt.specify_shape(statespace_, (steps + 1, None))
+        else:
+            statespace_ = statespace
+            statespace_ = pt.specify_shape(statespace_, (steps, None))
 
         (ss_rng,) = tuple(updates.values())
         linear_gaussian_ss_op = LinearGaussianStateSpaceRV(
@@ -276,6 +316,7 @@ class LinearGaussianStateSpace(Continuous):
         k_endog=None,
         sequence_names=None,
         mode=None,
+        append_x0=True,
         **kwargs,
     ):
         dims = kwargs.pop("dims", None)
@@ -304,9 +345,10 @@ class LinearGaussianStateSpace(Continuous):
             steps=steps,
             mode=mode,
             sequence_names=sequence_names,
+            append_x0=append_x0,
             **kwargs,
         )
-        latent_obs_combined = pt.specify_shape(latent_obs_combined, (steps + 1, None))
+        latent_obs_combined = pt.specify_shape(latent_obs_combined, (steps + int(append_x0), None))
         if k_endog is None:
             k_endog = cls._get_k_endog(H)
         latent_slice = slice(None, -k_endog)
