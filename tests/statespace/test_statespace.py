@@ -366,7 +366,7 @@ def test_forecast_index(use_datetime_index):
 
     # From start and periods
     start = time_idx[-1]
-    periods = 11
+    periods = 10
 
     x0_index, forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, periods=periods)
     assert start not in forecast_idx
@@ -380,7 +380,7 @@ def test_forecast_index(use_datetime_index):
 
     assert x0_index == time_idx[start]
     assert forecast_idx.shape == (10,)
-    assert (forecast_idx == time_idx[start + 1 : start + periods]).all()
+    assert (forecast_idx == time_idx[start + 1 : start + periods + 1]).all()
 
     # From scenario index
     scenario = pd.DataFrame(0, index=forecast_idx, columns=[0, 1, 2])
@@ -500,7 +500,7 @@ def test_finalize_scenario_single(data_type, use_datetime_index):
     scenario = data_type(np.zeros((10,)))
 
     scenario = ss_mod._validate_scenario_data(scenario)
-    t0, forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=11)
+    t0, forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=10)
     scenario = ss_mod._finalize_scenario_initialization(scenario, forecast_index=forecast_idx)
 
     assert isinstance(scenario, pd.DataFrame)
@@ -514,11 +514,8 @@ def test_finalize_scenario_single(data_type, use_datetime_index):
     ids=["series", "dataframe", "array", "list", "tuple"],
 )
 @pytest.mark.parametrize("use_datetime_index", [True, False])
-def test_finalize_secenario_dict(data_type, use_datetime_index):
-    if data_type is pd.DataFrame:
-        # Ensure dataframes have the correct column name
-        data_type = partial(pd.DataFrame, columns=["column_1"])
-
+@pytest.mark.parametrize("use_scenario_index", [True, False])
+def test_finalize_secenario_dict(data_type, use_datetime_index, use_scenario_index):
     data_info = {
         "a": {"shape": (None, 1), "dims": ("time", "features_a")},
         "b": {"shape": (None, 2), "dims": ("time", "features_b")},
@@ -534,13 +531,38 @@ def test_finalize_secenario_dict(data_type, use_datetime_index):
     ss_mod._fit_coords = dict(features_a=["column_1"], features_b=["column_1", "column_2"])
     time_idx = _make_time_idx(ss_mod, use_datetime_index)
 
+    initial_index = (
+        pd.date_range(start=time_idx[-1], periods=10, freq=time_idx.freq)
+        if use_datetime_index
+        else pd.RangeIndex(time_idx[-1], time_idx[-1] + 10, 1)
+    )
+
+    if data_type is pd.DataFrame:
+        # Ensure dataframes have the correct column name
+        data_type = partial(pd.DataFrame, columns=["column_1"], index=initial_index)
+    elif data_type is pd.Series:
+        data_type = partial(pd.Series, index=initial_index)
+
     scenario = {
         "a": data_type(np.zeros((10,))),
-        "b": pd.DataFrame(np.zeros((10, 2)), columns=ss_mod._fit_coords["features_b"]),
+        "b": pd.DataFrame(
+            np.zeros((10, 2)), columns=ss_mod._fit_coords["features_b"], index=initial_index
+        ),
     }
 
     scenario = ss_mod._validate_scenario_data(scenario)
-    forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=10)
+
+    if use_scenario_index and data_type not in [np.array, list, tuple]:
+        t0, forecast_idx = ss_mod._build_forecast_index(
+            time_idx, scenario=scenario, periods=10, use_scenario_index=True
+        )
+    elif use_scenario_index and data_type in [np.array, list, tuple]:
+        t0, forecast_idx = ss_mod._build_forecast_index(
+            time_idx, scenario=scenario, start=-1, periods=10, use_scenario_index=True
+        )
+    else:
+        t0, forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=10)
+
     scenario = ss_mod._finalize_scenario_initialization(scenario, forecast_index=forecast_idx)
 
     assert list(scenario.keys()) == ["a", "b"]
@@ -678,18 +700,7 @@ def test_forecast_with_exog_data(rng, exog_ss_mod, idata_exog):
         .assign_coords(state=["exog[a]", "exog[b]", "exog[c]"])
     )
 
-    print(scenario.index)
-    print(level.coords)
-
     regression_effect = forecast_idata.forecast_observed.isel(observed_state=0) - level
     regression_effect_expected = (betas * scenario_xr).sum(dim=["state"])
 
     assert_allclose(regression_effect, regression_effect_expected)
-
-    # t_5 = forecast_idata.forecast_observed.isel(time=7, observed_state=0).to_numpy()
-    # not_t_5 = (
-    #     forecast_idata.forecast_observed.isel(time=np.arange(10) != 7, observed_state=0)
-    #     .mean(dim="time")
-    #     .to_numpy()
-    # )
-    # assert t_5.shape == not_t_5.shape
