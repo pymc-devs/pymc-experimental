@@ -292,7 +292,7 @@ def test_sampling_methods(group, kind, ss_mod, idata, rng):
 def _make_time_idx(mod, use_datetime_index=True):
     if use_datetime_index:
         mod._fit_coords["time"] = nile.index
-        time_idx = pd.DatetimeIndex(mod._fit_coords["time"].values, freq=nile.index.inferred_freq)
+        time_idx = nile.index
     else:
         mod._fit_coords["time"] = nile.reset_index().index
         time_idx = pd.RangeIndex(start=0, stop=nile.shape[0], step=1)
@@ -354,34 +354,50 @@ def test_forecast_index(use_datetime_index):
     ss_mod._fit_coords = dict()
     time_idx = _make_time_idx(ss_mod, use_datetime_index)
 
-    # From start and end date
+    # From start and end
     start = time_idx[-1]
-    end = time_idx.shift(10)[-1] if use_datetime_index else time_idx[-1] + 11
+    delta = pd.DateOffset(years=10) if use_datetime_index else 11
+    end = start + delta
 
-    forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, end=end)
-    assert start in forecast_idx
-    assert forecast_idx.shape == (11,)
+    x0_index, forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, end=end)
+    assert start not in forecast_idx
+    assert x0_index == start
+    assert forecast_idx.shape == (10,)
 
     # From start and periods
     start = time_idx[-1]
-    periods = 10
+    periods = 11
 
-    forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, periods=periods)
+    x0_index, forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, periods=periods)
+    assert start not in forecast_idx
+    assert x0_index == start
     assert forecast_idx.shape == (10,)
+
+    # From integer start
+    start = 10
+    x0_index, forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, periods=periods)
+    delta = forecast_idx.freq if use_datetime_index else 1
+
+    assert x0_index == time_idx[start]
+    assert forecast_idx.shape == (10,)
+    assert (forecast_idx == time_idx[start + 1 : start + periods]).all()
 
     # From scenario index
     scenario = pd.DataFrame(0, index=forecast_idx, columns=[0, 1, 2])
-    forecast_idx = ss_mod._build_forecast_index(
+    new_start, forecast_idx = ss_mod._build_forecast_index(
         time_index=time_idx, scenario=scenario, use_scenario_index=True
     )
+    assert x0_index not in forecast_idx
+    assert x0_index == (forecast_idx[0] - delta)
     assert forecast_idx.shape == (10,)
     assert forecast_idx.equals(scenario.index)
 
     # From dictionary of scenarios
     scenario = {"a": pd.DataFrame(0, index=forecast_idx, columns=[0, 1, 2])}
-    forecast_idx = ss_mod._build_forecast_index(
+    x0_index, forecast_idx = ss_mod._build_forecast_index(
         time_index=time_idx, scenario=scenario, use_scenario_index=True
     )
+    assert x0_index == (forecast_idx[0] - delta)
     assert forecast_idx.shape == (10,)
     assert forecast_idx.equals(scenario["a"].index)
 
@@ -484,7 +500,7 @@ def test_finalize_scenario_single(data_type, use_datetime_index):
     scenario = data_type(np.zeros((10,)))
 
     scenario = ss_mod._validate_scenario_data(scenario)
-    forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=10)
+    t0, forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=11)
     scenario = ss_mod._finalize_scenario_initialization(scenario, forecast_index=forecast_idx)
 
     assert isinstance(scenario, pd.DataFrame)
@@ -661,6 +677,9 @@ def test_forecast_with_exog_data(rng, exog_ss_mod, idata_exog):
         .rename({"level_0": "state"})
         .assign_coords(state=["exog[a]", "exog[b]", "exog[c]"])
     )
+
+    print(scenario.index)
+    print(level.coords)
 
     regression_effect = forecast_idata.forecast_observed.isel(observed_state=0) - level
     regression_effect_expected = (betas * scenario_xr).sum(dim=["state"])
