@@ -1697,36 +1697,102 @@ class PyMCStateSpace:
         periods: int | None = None,
         use_scenario_index: bool = False,
         scenario: pd.DataFrame | np.ndarray | None = None,
-    ) -> pd.Index:
+    ) -> tuple[int | pd.Timestamp, pd.RangeIndex | pd.DatetimeIndex]:
+        """
+        Construct a pandas Index for the requested forecast horizon.
+
+        Parameters
+        ----------
+        time_index: pd.RangeIndex or pd.DatetimeIndex
+            Index of the data used to fit the model
+        start: int or pd.Timestamp, optional
+            Date from which to begin forecasting. If using a datetime index, integer start will be interpreted
+            as a positional index. Otherwise, start must be found inside the time_index
+        end: int or pd.Timestamp, optional
+            Date at which to end forecasting. If using a datetime index, end must be a timestamp.
+        periods: int, optional
+            Number of periods to forecast
+        scenario:  pd.DataFrame, np.ndarray, optional
+            Scenario data to use for forecasting. If provided, the index of the scenario data will be used as the
+            forecast index. If provided, start, end, and periods will be ignored.
+        use_scenario_index: bool, default False
+            If True, the index of the scenario data will be used as the forecast index.
+
+
+        Returns
+        -------
+        start: int | pd.TimeStamp
+            The starting date index or time step from which to generate the forecasts.
+
+        forecast_index: pd.DatetimeIndex or pd.RangeIndex
+            Index for the forecast results
+        """
+
+        def get_or_create_index(x, start=None):
+            if isinstance(x, pd.DataFrame | pd.Series):
+                return x.index
+            elif isinstance(x, dict):
+                return get_or_create_index(next(iter(x.values())))
+            elif isinstance(x, np.ndarray | list | tuple):
+                if start is None:
+                    raise ValueError(
+                        "Provided scenario has no index and no start date was provided. This combination "
+                        "is ambiguous. Please provide a start date, or add an index to the scenario."
+                    )
+                n = x.shape[0] if isinstance(x, np.ndarray) else len(x)
+                return pd.RangeIndex(start, n + start, step=1, dtype="int")
+            else:
+                raise ValueError(f"{type(x)} is not a valid type for scenario data.")
+
+        x0_idx = None
+
         if use_scenario_index:
-            if isinstance(scenario, pd.DataFrame):
-                return scenario.index
-            if isinstance(scenario, dict):
-                first_df = next(
-                    (df for df in scenario.values() if isinstance(df, pd.DataFrame)), None
-                )
-                return first_df.index
+            forecast_index = get_or_create_index(scenario, start)
+            is_datetime = isinstance(forecast_index, pd.DatetimeIndex)
 
-        # Otherwise, build an index. It will be a DateTime index if we have all the necessary information, otherwise
-        # use a range index.
-        is_datetime = isinstance(time_index, pd.DatetimeIndex)
-        forecast_index = None
-
-        if is_datetime:
-            freq = time_index.inferred_freq
-
-            if end is not None:
-                forecast_index = pd.date_range(start, end=end, freq=freq)
-            if periods is not None:
-                forecast_index = pd.date_range(start, periods=periods, freq=freq)
+            # If the user provided an index, we want to take it as-is (without removing the start value). Instead,
+            # step one back and use this as the start value.
+            delta = forecast_index.freq if is_datetime else 1
+            x0_idx = forecast_index[0] - delta
 
         else:
-            if end is not None:
-                forecast_index = pd.RangeIndex(start, end, step=1, dtype="int")
-            if periods is not None:
-                forecast_index = pd.RangeIndex(start, start + periods, step=1, dtype="int")
+            # Otherwise, build an index. It will be a DateTime index if we have all the necessary information, otherwise
+            # use a range index.
+            is_datetime = isinstance(time_index, pd.DatetimeIndex)
+            forecast_index = None
 
-        return forecast_index
+            if is_datetime:
+                freq = time_index.inferred_freq
+                if isinstance(start, int):
+                    start = time_index[start]
+                if end is not None:
+                    forecast_index = pd.date_range(start, end=end, freq=freq)
+                if periods is not None:
+                    forecast_index = pd.date_range(start, periods=periods, freq=freq)
+
+            else:
+                if end is not None:
+                    forecast_index = pd.RangeIndex(start, end, step=1, dtype="int")
+                if periods is not None:
+                    forecast_index = pd.RangeIndex(start, start + periods, step=1, dtype="int")
+
+        if is_datetime:
+            if forecast_index.freq != time_index.freq:
+                raise ValueError(
+                    "The frequency of the forecast index must match the frequency on the data used "
+                    f"to fit the model. Got {forecast_index.freq}, expected {time_index.freq}"
+                )
+
+        if x0_idx is None:
+            x0_idx, forecast_index = forecast_index[0], forecast_index[1:]
+        if x0_idx in forecast_index:
+            raise ValueError("x0_idx should not be in the forecast index")
+        if x0_idx not in time_index:
+            raise ValueError("start must be in the data index used to fit the model.")
+
+        # The starting value should not be included in the forecast index. It will be used only to define x0 and P0,
+        # and no forecast will be associated with it.
+        return x0_idx, forecast_index
 
     def _finalize_scenario_initialization(
         self,
@@ -1888,7 +1954,7 @@ class PyMCStateSpace:
             verbose=verbose,
         )
 
-        forecast_index = self._build_forecast_index(
+        t0, forecast_index = self._build_forecast_index(
             time_index=time_index,
             start=start,
             end=end,
@@ -1904,7 +1970,6 @@ class PyMCStateSpace:
         if all([dim in temp_coords for dim in [filter_time_dim, ALL_STATE_DIM, OBS_STATE_DIM]]):
             dims = [TIME_DIM, ALL_STATE_DIM, OBS_STATE_DIM]
 
-        t0 = forecast_index[0]
         t0_idx = np.flatnonzero(time_index == t0)[0]
 
         temp_coords["data_time"] = time_index
