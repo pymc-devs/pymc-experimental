@@ -1550,7 +1550,7 @@ class PyMCStateSpace:
                 "one or the other to avoid this warning, or pass verbose = False."
             )
 
-    def _get_fit_time_index(self) -> pd.Index:
+    def _get_fit_time_index(self) -> pd.RangeIndex | pd.DatetimeIndex:
         time_index = self._fit_coords.get(TIME_DIM, None) if self._fit_coords is not None else None
         if time_index is None:
             raise ValueError(
@@ -1559,6 +1559,7 @@ class PyMCStateSpace:
 
         if isinstance(time_index[0], pd.Timestamp):
             time_index = pd.DatetimeIndex(time_index)
+            time_index.freq = time_index.inferred_freq
         else:
             time_index = np.array(time_index)
 
@@ -1728,26 +1729,33 @@ class PyMCStateSpace:
             Index for the forecast results
         """
 
-        def get_or_create_index(x, start=None):
+        def get_or_create_index(x, time_index, start=None):
             if isinstance(x, pd.DataFrame | pd.Series):
                 return x.index
             elif isinstance(x, dict):
-                return get_or_create_index(next(iter(x.values())))
+                return get_or_create_index(next(iter(x.values())), time_index, start)
             elif isinstance(x, np.ndarray | list | tuple):
                 if start is None:
                     raise ValueError(
                         "Provided scenario has no index and no start date was provided. This combination "
                         "is ambiguous. Please provide a start date, or add an index to the scenario."
                     )
+                is_datetime_index = isinstance(time_index, pd.DatetimeIndex)
                 n = x.shape[0] if isinstance(x, np.ndarray) else len(x)
+
+                if isinstance(start, int):
+                    start = time_index[start]
+                if is_datetime_index:
+                    return pd.date_range(start, periods=n, freq=time_index.freq)
                 return pd.RangeIndex(start, n + start, step=1, dtype="int")
+
             else:
                 raise ValueError(f"{type(x)} is not a valid type for scenario data.")
 
         x0_idx = None
 
         if use_scenario_index:
-            forecast_index = get_or_create_index(scenario, start)
+            forecast_index = get_or_create_index(scenario, time_index, start)
             is_datetime = isinstance(forecast_index, pd.DatetimeIndex)
 
             # If the user provided an index, we want to take it as-is (without removing the start value). Instead,
@@ -1768,13 +1776,16 @@ class PyMCStateSpace:
                 if end is not None:
                     forecast_index = pd.date_range(start, end=end, freq=freq)
                 if periods is not None:
-                    forecast_index = pd.date_range(start, periods=periods, freq=freq)
+                    # date_range include both start and end, but we're going to pop off the start later (it will be
+                    # interpreted as x0). So we need to add 1 to the periods so the user gets "periods" number of
+                    # forecasts back
+                    forecast_index = pd.date_range(start, periods=periods + 1, freq=freq)
 
             else:
                 if end is not None:
                     forecast_index = pd.RangeIndex(start, end, step=1, dtype="int")
                 if periods is not None:
-                    forecast_index = pd.RangeIndex(start, start + periods, step=1, dtype="int")
+                    forecast_index = pd.RangeIndex(start, start + periods + 1, step=1, dtype="int")
 
         if is_datetime:
             if forecast_index.freq != time_index.freq:
@@ -1933,7 +1944,7 @@ class PyMCStateSpace:
             )
             start = time_index[-1]
 
-        if not isinstance(scenario, dict):
+        if self._needs_exog_data and not isinstance(scenario, dict):
             if len(self.data_names) > 1:
                 raise ValueError(
                     "Model needs more than one exogenous data to do forecasting. In this case, you must "
@@ -1962,7 +1973,6 @@ class PyMCStateSpace:
             scenario=scenario,
             use_scenario_index=use_scenario_index,
         )
-
         scenario = self._finalize_scenario_initialization(scenario, forecast_index)
         temp_coords = self._fit_coords.copy()
 
@@ -2011,11 +2021,12 @@ class PyMCStateSpace:
                 x0,
                 P0,
                 *matrices,
-                steps=len(forecast_index[:-1]),
+                steps=len(forecast_index),
                 dims=dims,
                 mode=self._fit_mode,
                 sequence_names=self.kalman_filter.seq_names,
                 k_endog=self.k_endog,
+                append_x0=False,
             )
 
         forecast_model.rvs_to_initial_values = {
