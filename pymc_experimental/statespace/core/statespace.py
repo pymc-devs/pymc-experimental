@@ -1514,7 +1514,7 @@ class PyMCStateSpace:
 
     @staticmethod
     def _validate_forecast_args(
-        time_index: pd.Index,
+        time_index: pd.RangeIndex | pd.DatetimeIndex,
         start: int | pd.Timestamp,
         periods: int | None = None,
         end: int | pd.Timestamp = None,
@@ -1522,8 +1522,13 @@ class PyMCStateSpace:
         use_scenario_index: bool = False,
         verbose: bool = True,
     ):
-        if start not in time_index:
-            raise ValueError("start must be in the data index used to fit the model.")
+        if isinstance(start, pd.Timestamp) and start not in time_index:
+            raise ValueError("Datetime start must be in the data index used to fit the model.")
+        elif isinstance(start, int):
+            if abs(start) > len(time_index):
+                raise ValueError(
+                    "Integer start must be within the range of the data index used to fit the model."
+                )
         if periods is None and end is None:
             raise ValueError("Must specify one of either periods or end")
         if periods is not None and end is not None:
@@ -1571,6 +1576,22 @@ class PyMCStateSpace:
         name: str | None = None,
         verbose=True,
     ):
+        """
+        Validate the scenario data provided to the forecast method by checking that it has the correct shape and
+        dimensions.
+
+        Parameters
+        ----------
+        scenario
+        name
+        verbose
+
+        Returns
+        -------
+        scenario: pd.DataFrame | np.ndarray | dict[str, pd.DataFrame | np.ndarray]
+            Scenario data, validated and potentially modified.
+
+        """
         if not self._needs_exog_data:
             return scenario
 
@@ -1770,18 +1791,27 @@ class PyMCStateSpace:
             forecast_index = None
 
             if is_datetime:
-                freq = time_index.inferred_freq
+                freq = time_index.freq
                 if isinstance(start, int):
                     start = time_index[start]
+                if isinstance(end, int):
+                    raise ValueError(
+                        "end must be a timestamp if using a datetime index. To specify a number of "
+                        "timesteps from the start date, use the periods argument instead."
+                    )
                 if end is not None:
                     forecast_index = pd.date_range(start, end=end, freq=freq)
                 if periods is not None:
-                    # date_range include both start and end, but we're going to pop off the start later (it will be
-                    # interpreted as x0). So we need to add 1 to the periods so the user gets "periods" number of
-                    # forecasts back
+                    # date_range includes both the start and end date, but we're going to pop off the start later
+                    # (it will be interpreted as x0). So we need to add 1 to the periods so the user gets "periods"
+                    # number of forecasts back
                     forecast_index = pd.date_range(start, periods=periods + 1, freq=freq)
 
             else:
+                # If the user provided a positive integer as start, directly interpret it as the start time. If its
+                # negative, interpret it as a positional index.
+                if start < 0:
+                    start = time_index[start]
                 if end is not None:
                     forecast_index = pd.RangeIndex(start, end, step=1, dtype="int")
                 if periods is not None:
