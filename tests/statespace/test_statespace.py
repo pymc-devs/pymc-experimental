@@ -115,6 +115,18 @@ def pymc_mod(ss_mod):
 
 
 @pytest.fixture(scope="session")
+def ss_mod_no_exog(rng):
+    ll = st.LevelTrendComponent(order=2, innovations_order=1)
+    return ll.build()
+
+
+@pytest.fixture(scope="session")
+def ss_mod_no_exog_dt(rng):
+    ll = st.LevelTrendComponent(order=2, innovations_order=1)
+    return ll.build()
+
+
+@pytest.fixture(scope="session")
 def exog_ss_mod(rng):
     ll = st.LevelTrendComponent()
     reg = st.RegressionComponent(name="exog", state_names=["a", "b", "c"])
@@ -144,6 +156,42 @@ def exog_pymc_mod(exog_ss_mod, rng):
 
 
 @pytest.fixture(scope="session")
+def pymc_mod_no_exog(ss_mod_no_exog, rng):
+    y = pd.DataFrame(rng.normal(size=(100, 1)).astype(floatX), columns=["y"])
+
+    with pm.Model(coords=ss_mod_no_exog.coords) as m:
+        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        P0_sigma = pm.Exponential("P0_sigma", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(ss_mod_no_exog.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
+        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        ss_mod_no_exog.build_statespace_graph(y)
+
+    return m
+
+
+@pytest.fixture(scope="session")
+def pymc_mod_no_exog_dt(ss_mod_no_exog_dt, rng):
+    y = pd.DataFrame(
+        rng.normal(size=(100, 1)).astype(floatX),
+        columns=["y"],
+        index=pd.date_range("2020-01-01", periods=100, freq="D"),
+    )
+
+    with pm.Model(coords=ss_mod_no_exog_dt.coords) as m:
+        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        P0_sigma = pm.Exponential("P0_sigma", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(ss_mod_no_exog_dt.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
+        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        ss_mod_no_exog_dt.build_statespace_graph(y)
+
+    return m
+
+
+@pytest.fixture(scope="session")
 def idata(pymc_mod, rng):
     with pymc_mod:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
@@ -156,6 +204,24 @@ def idata(pymc_mod, rng):
 @pytest.fixture(scope="session")
 def idata_exog(exog_pymc_mod, rng):
     with exog_pymc_mod:
+        idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
+    idata.extend(idata_prior)
+    return idata
+
+
+@pytest.fixture(scope="session")
+def idata_no_exog(pymc_mod_no_exog, rng):
+    with pymc_mod_no_exog:
+        idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
+    idata.extend(idata_prior)
+    return idata
+
+
+@pytest.fixture(scope="session")
+def idata_no_exog_dt(pymc_mod_no_exog_dt, rng):
+    with pymc_mod_no_exog_dt:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
         idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
     idata.extend(idata_prior)
@@ -664,28 +730,75 @@ def test_invalid_scenarios():
         ss_mod._validate_scenario_data(scenario)
 
 
+@pytest.mark.filterwarnings("ignore:No time index found on the supplied data.")
 @pytest.mark.parametrize("filter_output", ["predicted", "filtered", "smoothed"])
-def test_forecast(filter_output, ss_mod, idata, rng):
-    time_idx = idata.posterior.coords["time"].values
-    forecast_idata = ss_mod.forecast(
-        idata, start=time_idx[-1], periods=10, filter_output=filter_output, random_seed=rng
+@pytest.mark.parametrize(
+    "mod_name, idata_name, start, end, periods",
+    [
+        ("ss_mod_no_exog", "idata_no_exog", None, None, 10),
+        ("ss_mod_no_exog", "idata_no_exog", -1, None, 10),
+        ("ss_mod_no_exog", "idata_no_exog", 10, None, 10),
+        ("ss_mod_no_exog", "idata_no_exog", 10, 21, None),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", None, None, 10),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", -1, None, 10),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", 10, None, 10),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", 10, "2020-01-21", None),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", "2020-03-01", "2020-03-11", None),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", "2020-03-01", None, 10),
+    ],
+    ids=[
+        "range_default",
+        "range_negative",
+        "range_int",
+        "range_end",
+        "datetime_default",
+        "datetime_negative",
+        "datetime_int",
+        "datetime_int_end",
+        "datetime_datetime_end",
+        "datetime_datetime",
+    ],
+)
+def test_forecast(filter_output, mod_name, idata_name, start, end, periods, rng, request):
+    mod = request.getfixturevalue(mod_name)
+    idata = request.getfixturevalue(idata_name)
+    time_idx = mod._get_fit_time_index()
+    is_datetime = isinstance(time_idx, pd.DatetimeIndex)
+
+    if isinstance(start, str):
+        t0 = pd.Timestamp(start)
+    elif isinstance(start, int):
+        t0 = time_idx[start]
+    else:
+        t0 = time_idx[-1]
+
+    delta = time_idx.freq if is_datetime else 1
+
+    forecast_idata = mod.forecast(
+        idata, start=start, end=end, periods=periods, filter_output=filter_output, random_seed=rng
     )
 
-    assert forecast_idata.coords["time"].values.shape == (10,)
+    forecast_idx = forecast_idata.coords["time"].values
+    forecast_idx = pd.DatetimeIndex(forecast_idx) if is_datetime else pd.Index(forecast_idx)
+
+    assert forecast_idx.shape == (10,)
     assert forecast_idata.forecast_latent.dims == ("chain", "draw", "time", "state")
     assert forecast_idata.forecast_observed.dims == ("chain", "draw", "time", "observed_state")
 
     assert not np.any(np.isnan(forecast_idata.forecast_latent.values))
     assert not np.any(np.isnan(forecast_idata.forecast_observed.values))
 
+    assert forecast_idx[0] == (t0 + delta)
+
 
 @pytest.mark.filterwarnings("ignore:No time index found on the supplied data.")
-def test_forecast_with_exog_data(rng, exog_ss_mod, idata_exog):
+@pytest.mark.parametrize("start", [None, -1, 10])
+def test_forecast_with_exog_data(rng, exog_ss_mod, idata_exog, start):
     scenario = pd.DataFrame(np.zeros((10, 3)), columns=["a", "b", "c"])
     scenario.iloc[5, 0] = 1e9
 
     forecast_idata = exog_ss_mod.forecast(
-        idata_exog, periods=10, random_seed=rng, scenario=scenario
+        idata_exog, start=start, periods=10, random_seed=rng, scenario=scenario
     )
 
     components = exog_ss_mod.extract_components_from_idata(forecast_idata)
