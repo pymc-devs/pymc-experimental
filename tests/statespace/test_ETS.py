@@ -255,3 +255,115 @@ def test_statespace_matches_statsmodels(rng, order: tuple[str, str, str], params
 
     for matrix, sm_matrix, name in zip(matrices[2:], sm_matrices, LONG_MATRIX_NAMES[2:]):
         assert_allclose(matrix, sm_matrix, err_msg=f"{name} does not match")
+
+
+@pytest.mark.parametrize("order, params", zip(orders, order_params), ids=order_names)
+@pytest.mark.parametrize("dense_cov", [True, False], ids=["dense", "diagonal"])
+def test_ETS_with_multiple_endog(rng, order, params, dense_cov):
+    seasonal_periods = 4
+    mod = BayesianETS(
+        order=order,
+        seasonal_periods=seasonal_periods,
+        measurement_error=False,
+        use_transformed_parameterization=True,
+        dense_innovation_covariance=dense_cov,
+        endog_names=["A", "B"],
+    )
+
+    single_mod = BayesianETS(
+        order=order,
+        seasonal_periods=seasonal_periods,
+        measurement_error=False,
+        use_transformed_parameterization=True,
+    )
+
+    simplex_params = ["alpha", "beta", "gamma"]
+    test_values = dict(zip(simplex_params, rng.dirichlet(alpha=np.ones(3), size=(mod.k_endog,)).T))
+    test_values["phi"] = rng.beta(1, 1, size=(mod.k_endog,))
+
+    test_values["initial_level"] = rng.normal(
+        size=mod.k_endog,
+    )
+    test_values["initial_trend"] = rng.normal(
+        size=mod.k_endog,
+    )
+    test_values["initial_seasonal"] = rng.normal(size=(mod.k_endog, seasonal_periods))
+    test_values["initial_state_cov"] = np.eye(mod.k_states)
+
+    if not dense_cov:
+        test_values["sigma_state"] = np.ones(
+            mod.k_endog,
+        )
+    else:
+        L = np.random.normal(size=(mod.k_endog, mod.k_endog))
+        test_values["state_cov"] = L @ L.T
+
+    # Compile functions for the joined model
+    matrices_pt = mod._unpack_statespace_with_placeholders()
+    inputs = list(explicit_graph_inputs(matrices_pt))
+    input_names = [x.name for x in inputs]
+
+    test_values_subset = {name: test_values[name] for name in input_names}
+    f_matrices = pytensor.function(inputs, matrices_pt)
+
+    matrices = f_matrices(**test_values_subset)
+
+    # Compile functions for the single model
+    single_matrices_pt = single_mod._unpack_statespace_with_placeholders()
+    single_inputs = list(explicit_graph_inputs(single_matrices_pt))
+    single_input_names = [x.name for x in single_inputs]
+
+    cursor = 0
+    single_test_values_subsets = []
+    for i in range(mod.k_endog):
+        single_slice = slice(cursor, cursor + single_mod.k_states)
+        d = {
+            name: (
+                test_values[name][i]
+                if name != "initial_state_cov"
+                else test_values_subset[name][single_slice, single_slice]
+            )
+            for name in single_input_names
+            if name != "sigma_state"
+        }
+        if dense_cov:
+            d["sigma_state"] = np.sqrt(test_values["state_cov"][i, i])
+        else:
+            d["sigma_state"] = test_values["sigma_state"][i]
+        single_test_values_subsets.append(d)
+        cursor += single_mod.k_states
+
+    f_single_matrices = pytensor.function(single_inputs, single_matrices_pt)
+    single_matrices = [f_single_matrices(**d) for d in single_test_values_subsets]
+    names = [x.name for x in matrices_pt]
+
+    for i, (x1, name) in enumerate(zip(matrices, names)):
+        cursor = 0
+        for j in range(mod.k_endog):
+            x2 = single_matrices[j][i]
+            state_slice = slice(cursor, cursor + single_mod.k_states)
+            obs_slice = slice(j, j + 1)  # Also endog_slice -- it's doing double duty
+            if name in ["state_intercept", "initial_state"]:
+                assert_allclose(x1[state_slice], x2, err_msg=f"{name} does not match for case {j}")
+            elif name in ["P0", "initial_state_cov", "transition"]:
+                assert_allclose(
+                    x1[state_slice, state_slice], x2, err_msg=f"{name} does not match for case {j}"
+                )
+            elif name == "selection":
+                assert_allclose(
+                    x1[state_slice, obs_slice], x2, err_msg=f"{name} does not match for case {j}"
+                )
+            elif name == "design":
+                assert_allclose(
+                    x1[obs_slice, state_slice], x2, err_msg=f"{name} does not match for case {j}"
+                )
+            elif name == "obs_intercept":
+                assert_allclose(x1[obs_slice], x2, err_msg=f"{name} does not match for case {j}")
+            elif name in ["obs_cov", "state_cov"]:
+                assert_allclose(
+                    x1[obs_slice, obs_slice], x2, err_msg=f"{name} does not match for case {j}"
+                )
+            else:
+                raise ValueError(f"You forgot {name} !")
+
+            cursor += single_mod.k_states
