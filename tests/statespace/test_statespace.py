@@ -380,7 +380,9 @@ def test_bad_forecast_arguments(use_datetime_index, caplog):
     time_idx = _make_time_idx(ss_mod, use_datetime_index)
 
     # Start value not in time index
-    with pytest.raises(ValueError, match="start must be in the data index used to fit the model"):
+    with pytest.raises(
+        ValueError, match="Integer start must be in the data index used to fit the model"
+    ):
         start = time_idx.shift(10)[-1] if use_datetime_index else time_idx[-1] + 11
         ss_mod._validate_forecast_args(time_index=time_idx, start=start, periods=10)
 
