@@ -220,11 +220,11 @@ class BayesianVARMAX(PyMCStateSpace):
                 "constraints": "Positive Semi-definite",
             },
             "ar_params": {
-                "shape": (self.k_states, self.p, self.k_states),
+                "shape": (self.k_endog, self.p, self.k_endog),
                 "constraints": "None",
             },
             "ma_params": {
-                "shape": (self.k_states, self.q, self.k_states),
+                "shape": (self.k_endog, self.q, self.k_endog),
                 "constraints": "None",
             },
         }
