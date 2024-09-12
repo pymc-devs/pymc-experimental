@@ -27,6 +27,7 @@ from pymc_experimental.statespace.filters import (
 )
 from pymc_experimental.statespace.filters.distributions import (
     LinearGaussianStateSpace,
+    MvNormalSVD,
     SequenceMvNormal,
 )
 from pymc_experimental.statespace.filters.utilities import stabilize
@@ -876,9 +877,8 @@ class PyMCStateSpace:
             cov_jitter=cov_jitter,
         )
 
-        outputs = filter_outputs
-        logp = outputs.pop(-1)
-        states, covs = outputs[:3], outputs[3:]
+        logp = filter_outputs.pop(-1)
+        states, covs = filter_outputs[:3], filter_outputs[3:]
         filtered_states, predicted_states, observed_states = states
         filtered_covariances, predicted_covariances, observed_covariances = covs
         if save_kalman_filter_outputs_in_idata:
@@ -2022,7 +2022,7 @@ class PyMCStateSpace:
 
         with pm.Model(coords=temp_coords) as forecast_model:
             (_, _, *matrices), grouped_outputs = self._kalman_filter_outputs_from_dummy_graph(
-                data_dims=["data_time", OBS_STATE_DIM]
+                data_dims=["data_time", OBS_STATE_DIM],
             )
 
             group_idx = FILTER_OUTPUT_TYPES.index(filter_output)
@@ -2038,7 +2038,7 @@ class PyMCStateSpace:
             if scenario is not None:
                 sub_dict = {
                     forecast_model[data_name]: pt.as_tensor_variable(
-                        scenario.get(data_name), name="data_var"
+                        scenario.get(data_name), name=data_name
                     )
                     for data_name in self.data_names
                 }
@@ -2185,16 +2185,16 @@ class PyMCStateSpace:
             if use_posterior_cov:
                 Q = post_Q
                 if orthogonalize_shocks:
-                    Q = pt.linalg.cholesky(Q)
+                    Q = pt.linalg.cholesky(Q) / pt.diag(Q)
             elif shock_cov is not None:
                 Q = pt.as_tensor_variable(shock_cov)
                 if orthogonalize_shocks:
-                    Q = pt.linalg.cholesky(Q)
+                    Q = pt.linalg.cholesky(Q) / pt.diag(Q)
 
             if shock_trajectory is None:
                 shock_trajectory = pt.zeros((n_steps, self.k_posdef))
                 if Q is not None:
-                    init_shock = pm.MvNormal("initial_shock", mu=0, cov=Q, dims=[SHOCK_DIM])
+                    init_shock = MvNormalSVD("initial_shock", mu=0, cov=Q, dims=[SHOCK_DIM])
                 else:
                     init_shock = pm.Deterministic(
                         "initial_shock",
