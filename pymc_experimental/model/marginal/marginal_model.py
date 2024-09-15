@@ -16,8 +16,7 @@ from pymc.model import Model
 from pymc.pytensorf import compile_pymc, constant_fold
 from pymc.util import RandomState, _get_seeds_per_chain, treedict
 from pytensor.compile import SharedVariable
-from pytensor.graph import FunctionGraph, clone_replace
-from pytensor.graph.basic import graph_inputs
+from pytensor.graph import FunctionGraph, clone_replace, graph_inputs
 from pytensor.graph.replace import vectorize_graph
 from pytensor.tensor import TensorVariable
 from pytensor.tensor.special import log_softmax
@@ -26,16 +25,16 @@ __all__ = ["MarginalModel", "marginalize"]
 
 from pymc_experimental.distributions import DiscreteMarkovChain
 from pymc_experimental.model.marginal.distributions import (
-    DiscreteMarginalMarkovChainRV,
-    FiniteDiscreteMarginalRV,
-    _add_reduce_batch_dependent_logps,
+    MarginalDiscreteMarkovChainRV,
+    MarginalFiniteDiscreteRV,
     get_domain_of_finite_discrete_rv,
+    reduce_batch_dependent_logps,
 )
 from pymc_experimental.model.marginal.graph_analysis import (
     find_conditional_dependent_rvs,
     find_conditional_input_rvs,
     is_conditional_dependent,
-    is_elemwise_subgraph,
+    subgraph_batch_dim_connection,
 )
 
 ModelRVs = TensorVariable | Sequence[TensorVariable] | str | Sequence[str]
@@ -424,17 +423,22 @@ class MarginalModel(Model):
             m = self.clone()
             marginalized_rv = m.vars_to_clone[marginalized_rv]
             m.unmarginalize([marginalized_rv])
-            dependent_vars = find_conditional_dependent_rvs(marginalized_rv, m.basic_RVs)
-            joint_logps = m.logp(vars=[marginalized_rv, *dependent_vars], sum=False)
+            dependent_rvs = find_conditional_dependent_rvs(marginalized_rv, m.basic_RVs)
+            logps = m.logp(vars=[marginalized_rv, *dependent_rvs], sum=False)
+
+            # Handle batch dims for marginalized value and its dependent RVs
+            dependent_rvs_dim_connections = subgraph_batch_dim_connection(
+                marginalized_rv, dependent_rvs
+            )
+            marginalized_logp, *dependent_logps = logps
+            joint_logp = marginalized_logp + reduce_batch_dependent_logps(
+                dependent_rvs_dim_connections,
+                [dependent_var.owner.op for dependent_var in dependent_rvs],
+                dependent_logps,
+            )
 
             marginalized_value = m.rvs_to_values[marginalized_rv]
             other_values = [v for v in m.value_vars if v is not marginalized_value]
-
-            # Handle batch dims for marginalized value and its dependent RVs
-            marginalized_logp, *dependent_logps = joint_logps
-            joint_logp = marginalized_logp + _add_reduce_batch_dependent_logps(
-                marginalized_rv.type, dependent_logps
-            )
 
             rv_shape = constant_fold(tuple(marginalized_rv.shape), raise_not_constant=False)
             rv_domain = get_domain_of_finite_discrete_rv(marginalized_rv)
@@ -448,37 +452,30 @@ class MarginalModel(Model):
                 0,
             )
 
-            joint_logps = vectorize_graph(
+            batched_joint_logp = vectorize_graph(
                 joint_logp,
                 replace={marginalized_value: rv_domain_tensor},
             )
-            joint_logps = pt.moveaxis(joint_logps, 0, -1)
+            batched_joint_logp = pt.moveaxis(batched_joint_logp, 0, -1)
 
-            rv_loglike_fn = None
-            joint_logps_norm = log_softmax(joint_logps, axis=-1)
+            joint_logp_norm = log_softmax(batched_joint_logp, axis=-1)
             if return_samples:
-                sample_rv_outs = pymc.Categorical.dist(logit_p=joint_logps)
+                rv_draws = pymc.Categorical.dist(logit_p=batched_joint_logp)
                 if isinstance(marginalized_rv.owner.op, DiscreteUniform):
-                    sample_rv_outs += rv_domain[0]
-
-                rv_loglike_fn = compile_pymc(
-                    inputs=other_values,
-                    outputs=[joint_logps_norm, sample_rv_outs],
-                    on_unused_input="ignore",
-                    random_seed=seed,
-                )
+                    rv_draws += rv_domain[0]
+                outputs = [joint_logp_norm, rv_draws]
             else:
-                rv_loglike_fn = compile_pymc(
-                    inputs=other_values,
-                    outputs=joint_logps_norm,
-                    on_unused_input="ignore",
-                    random_seed=seed,
-                )
+                outputs = joint_logp_norm
+
+            rv_loglike_fn = compile_pymc(
+                inputs=other_values,
+                outputs=outputs,
+                on_unused_input="ignore",
+                random_seed=seed,
+            )
 
             logvs = [rv_loglike_fn(**vs) for vs in posterior_pts]
 
-            logps = None
-            samples = None
             if return_samples:
                 logps, samples = zip(*logvs)
                 logps = np.array(logps)
@@ -552,61 +549,47 @@ def collect_shared_vars(outputs, blockers):
 
 
 def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs):
-    # TODO: This should eventually be integrated in a more general routine that can
-    #  identify other types of supported marginalization, of which finite discrete
-    #  RVs is just one
-
     dependent_rvs = find_conditional_dependent_rvs(rv_to_marginalize, all_rvs)
     if not dependent_rvs:
         raise ValueError(f"No RVs depend on marginalized RV {rv_to_marginalize}")
 
-    ndim_supp = {rv.owner.op.ndim_supp for rv in dependent_rvs}
-    if len(ndim_supp) != 1:
-        raise NotImplementedError(
-            "Marginalization with dependent variables of different support dimensionality not implemented"
-        )
-    [ndim_supp] = ndim_supp
-    if ndim_supp > 0:
-        raise NotImplementedError("Marginalization with dependent Multivariate RVs not implemented")
-
     marginalized_rv_input_rvs = find_conditional_input_rvs([rv_to_marginalize], all_rvs)
-    dependent_rvs_input_rvs = [
+    other_direct_rv_ancestors = [
         rv
         for rv in find_conditional_input_rvs(dependent_rvs, all_rvs)
         if rv is not rv_to_marginalize
     ]
 
-    # If the marginalized RV has batched dimensions, check that graph between
-    # marginalized RV and dependent RVs is composed strictly of Elemwise Operations.
-    # This implies (?) that the dimensions are completely independent and a logp graph
-    # can ultimately be generated that is proportional to the support domain and not
-    # to the variables dimensions
-    # We don't need to worry about this if the  RV is scalar.
-    if np.prod(constant_fold(tuple(rv_to_marginalize.shape), raise_not_constant=False)) != 1:
-        if not is_elemwise_subgraph(rv_to_marginalize, dependent_rvs_input_rvs, dependent_rvs):
-            raise NotImplementedError(
-                "The subgraph between a marginalized RV and its dependents includes non Elemwise operations. "
-                "This is currently not supported",
-            )
+    # If the marginalized RV has multiple dimensions, check that graph between
+    # marginalized RV and dependent RVs does not mix information from batch dimensions
+    # (otherwise logp would require enumerating over all combinations of batch dimension values)
+    try:
+        dependent_rvs_dim_connections = subgraph_batch_dim_connection(
+            rv_to_marginalize, dependent_rvs
+        )
+    except (ValueError, NotImplementedError) as e:
+        # For the perspective of the user this is a NotImplementedError
+        raise NotImplementedError(
+            "The graph between the marginalized and dependent RVs cannot be marginalized efficiently. "
+            "You can try splitting the marginalized RV into separate components and marginalizing them separately."
+        ) from e
 
-    input_rvs = list(set((*marginalized_rv_input_rvs, *dependent_rvs_input_rvs)))
-    rvs_to_marginalize = [rv_to_marginalize, *dependent_rvs]
+    input_rvs = list(set((*marginalized_rv_input_rvs, *other_direct_rv_ancestors)))
+    output_rvs = [rv_to_marginalize, *dependent_rvs]
 
-    outputs = rvs_to_marginalize
     # We are strict about shared variables in SymbolicRandomVariables
-    inputs = input_rvs + collect_shared_vars(rvs_to_marginalize, blockers=input_rvs)
+    inputs = input_rvs + collect_shared_vars(output_rvs, blockers=input_rvs)
 
     if isinstance(rv_to_marginalize.owner.op, DiscreteMarkovChain):
-        marginalize_constructor = DiscreteMarginalMarkovChainRV
+        marginalize_constructor = MarginalDiscreteMarkovChainRV
     else:
-        marginalize_constructor = FiniteDiscreteMarginalRV
+        marginalize_constructor = MarginalFiniteDiscreteRV
 
     marginalization_op = marginalize_constructor(
         inputs=inputs,
-        outputs=outputs,
-        ndim_supp=ndim_supp,
+        outputs=output_rvs,  # TODO: Add RNG updates to outputs so this can be used in the generative graph
+        dims_connections=dependent_rvs_dim_connections,
     )
-
-    marginalized_rvs = marginalization_op(*inputs)
-    fgraph.replace_all(tuple(zip(rvs_to_marginalize, marginalized_rvs)))
-    return rvs_to_marginalize, marginalized_rvs
+    new_output_rvs = marginalization_op(*inputs)
+    fgraph.replace_all(tuple(zip(output_rvs, new_output_rvs)))
+    return output_rvs, new_output_rvs

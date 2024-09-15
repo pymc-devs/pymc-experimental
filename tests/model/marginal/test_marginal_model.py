@@ -10,6 +10,7 @@ import pytest
 
 from arviz import InferenceData, dict_to_dataset
 from pymc.distributions import transforms
+from pymc.distributions.transforms import ordered
 from pymc.model.fgraph import fgraph_from_model
 from pymc.pytensorf import inputvars
 from pymc.util import UNSET
@@ -117,6 +118,36 @@ def test_one_to_many_marginalized_rvs():
     np.testing.assert_array_almost_equal(logp_x_y, ref_logp_x_y)
 
 
+def test_one_to_many_unaligned_marginalized_rvs():
+    """Test that marginalization works when there is more than one dependent RV with batch dimensions that are not aligned"""
+
+    def build_model(build_batched: bool):
+        with MarginalModel() as m:
+            if build_batched:
+                idx = pm.Bernoulli("idx", p=[0.75, 0.4], shape=(3, 2))
+            else:
+                idxs = [pm.Bernoulli(f"idx_{i}", p=(0.75 if i % 2 == 0 else 0.4)) for i in range(6)]
+                idx = pt.stack(idxs, axis=0).reshape((3, 2))
+
+            x = pm.Normal("x", mu=idx.T[:, :, None], shape=(2, 3, 1))
+            y = pm.Normal("y", mu=(idx * 2 - 1), shape=(1, 3, 2))
+
+        return m
+
+    m = build_model(build_batched=True)
+    ref_m = build_model(build_batched=False)
+
+    with pytest.warns(UserWarning, match="There are multiple dependent variables"):
+        m.marginalize(["idx"])
+        ref_m.marginalize([f"idx_{i}" for i in range(6)])
+
+    test_point = m.initial_point()
+    np.testing.assert_allclose(
+        m.compile_logp()(test_point),
+        ref_m.compile_logp()(test_point),
+    )
+
+
 def test_many_to_one_marginalized_rvs():
     """Test when random variables depend on multiple marginalized variables"""
     with MarginalModel() as m:
@@ -132,40 +163,127 @@ def test_many_to_one_marginalized_rvs():
     np.testing.assert_allclose(np.exp(logp({"z": 2})), 0.1 * 0.3)
 
 
-def test_nested_marginalized_rvs():
+@pytest.mark.parametrize("batched", (False, "left", "right"))
+def test_nested_marginalized_rvs(batched):
     """Test that marginalization works when there are nested marginalized RVs"""
 
-    with MarginalModel() as m:
-        sigma = pm.HalfNormal("sigma")
+    def build_model(build_batched: bool) -> MarginalModel:
+        idx_shape = (3,) if build_batched else ()
+        sub_idx_shape = (5,) if not build_batched else (5, 3) if batched == "left" else (3, 5)
 
-        idx = pm.Bernoulli("idx", p=0.75)
-        dep = pm.Normal("dep", mu=pt.switch(pt.eq(idx, 0), -1000.0, 1000.0), sigma=sigma)
+        with MarginalModel() as m:
+            sigma = pm.HalfNormal("sigma")
 
-        sub_idx = pm.Bernoulli("sub_idx", p=pt.switch(pt.eq(idx, 0), 0.15, 0.95), shape=(5,))
-        sub_dep = pm.Normal("sub_dep", mu=dep + sub_idx * 100, sigma=sigma, shape=(5,))
+            idx = pm.Bernoulli("idx", p=0.75, shape=idx_shape)
+            dep = pm.Normal("dep", mu=pt.switch(pt.eq(idx, 0), -1000.0, 1000.0), sigma=sigma)
 
-    ref_logp_fn = m.compile_logp(vars=[idx, dep, sub_idx, sub_dep])
+            sub_idx_p = pt.switch(pt.eq(idx, 0), 0.15, 0.95)
+            if build_batched and batched == "right":
+                sub_idx_p = sub_idx_p[..., None]
+                dep = dep[..., None]
+            sub_idx = pm.Bernoulli("sub_idx", p=sub_idx_p, shape=sub_idx_shape)
+            sub_dep = pm.Normal("sub_dep", mu=dep + sub_idx * 100, sigma=sigma)
 
+        return m
+
+    m = build_model(build_batched=batched)
     with pytest.warns(UserWarning, match="There are multiple dependent variables"):
-        m.marginalize([idx, sub_idx])
-
-    assert set(m.marginalized_rvs) == {idx, sub_idx}
+        m.marginalize(["idx", "sub_idx"])
+    assert sorted(m.name for m in m.marginalized_rvs) == ["idx", "sub_idx"]
 
     # Test logp
+    ref_m = build_model(build_batched=False)
+    ref_logp_fn = ref_m.compile_logp(
+        vars=[ref_m["idx"], ref_m["dep"], ref_m["sub_idx"], ref_m["sub_dep"]]
+    )
+
+    test_point = ref_m.initial_point()
+    test_point["dep"] = np.full_like(test_point["dep"], 1000)
+    test_point["sub_dep"] = np.full_like(test_point["sub_dep"], 1000 + 100)
+    ref_logp = logsumexp(
+        [
+            ref_logp_fn({**test_point, **{"idx": idx, "sub_idx": np.array(sub_idxs)}})
+            for idx in (0, 1)
+            for sub_idxs in itertools.product((0, 1), repeat=5)
+        ]
+    )
+    if batched:
+        ref_logp *= 3
+
     test_point = m.initial_point()
-    test_point["dep"] = 1000
-    test_point["sub_dep"] = np.full((5,), 1000 + 100)
+    test_point["dep"] = np.full_like(test_point["dep"], 1000)
+    test_point["sub_dep"] = np.full_like(test_point["sub_dep"], 1000 + 100)
+    logp = m.compile_logp(vars=[m["dep"], m["sub_dep"]])(test_point)
 
-    ref_logp = [
-        ref_logp_fn({**test_point, **{"idx": idx, "sub_idx": np.array(sub_idxs)}})
-        for idx in (0, 1)
-        for sub_idxs in itertools.product((0, 1), repeat=5)
-    ]
-    logp = m.compile_logp(vars=[dep, sub_dep])(test_point)
+    np.testing.assert_almost_equal(logp, ref_logp)
 
-    np.testing.assert_almost_equal(
-        logp,
-        logsumexp(ref_logp),
+
+@pytest.mark.parametrize("advanced_indexing", (False, True))
+def test_marginalized_index_as_key(advanced_indexing):
+    """Test we can marginalize graphs where indexing is used as a mapping."""
+
+    w = [0.1, 0.3, 0.6]
+    mu = pt.as_tensor([-1, 0, 1])
+
+    if advanced_indexing:
+        y_val = pt.as_tensor([[-1, -1], [0, 1]])
+        shape = (2, 2)
+    else:
+        y_val = -1
+        shape = ()
+
+    with MarginalModel() as m:
+        x = pm.Categorical("x", p=w, shape=shape)
+        y = pm.Normal("y", mu[x].T, sigma=1, observed=y_val)
+
+    m.marginalize(x)
+
+    marginal_logp = m.compile_logp(sum=False)({})[0]
+    ref_logp = pm.logp(pm.NormalMixture.dist(w=w, mu=mu.T, sigma=1, shape=shape), y_val).eval()
+
+    np.testing.assert_allclose(marginal_logp, ref_logp)
+
+
+def test_marginalized_index_as_value_and_key():
+    """Test we can marginalize graphs were marginalized_rv is indexed."""
+
+    def build_model(build_batched: bool) -> MarginalModel:
+        with MarginalModel() as m:
+            if build_batched:
+                latent_state = pm.Bernoulli("latent_state", p=0.3, size=(4,))
+            else:
+                latent_state = pm.math.stack(
+                    [pm.Bernoulli(f"latent_state_{i}", p=0.3) for i in range(4)]
+                )
+            # latent state is used as the indexed variable
+            latent_intensities = pt.where(latent_state[:, None], [0.0, 1.0, 2.0], [0.0, 10.0, 20.0])
+            picked_intensity = pm.Categorical("picked_intensity", p=[0.2, 0.2, 0.6])
+            # picked intensity is used as the indexing variable
+            pm.Normal(
+                "intensity",
+                mu=latent_intensities[:, picked_intensity],
+                observed=[0.5, 1.5, 5.0, 15.0],
+            )
+        return m
+
+    # We compare with the equivalent but less efficient batched model
+    m = build_model(build_batched=True)
+    ref_m = build_model(build_batched=False)
+
+    m.marginalize(["latent_state"])
+    ref_m.marginalize([f"latent_state_{i}" for i in range(4)])
+    test_point = {"picked_intensity": 1}
+    np.testing.assert_allclose(
+        m.compile_logp()(test_point),
+        ref_m.compile_logp()(test_point),
+    )
+
+    m.marginalize(["picked_intensity"])
+    ref_m.marginalize(["picked_intensity"])
+    test_point = {}
+    np.testing.assert_allclose(
+        m.compile_logp()(test_point),
+        ref_m.compile_logp()(test_point),
     )
 
 
@@ -228,6 +346,15 @@ class TestNotSupportedMixedDims:
             y = pm.Dirichlet("y", a=x * 10 + 1)
             with pytest.raises(NotImplementedError):
                 m.marginalize(x)
+
+    def test_mixed_dims_via_nested_marginalization(self):
+        with MarginalModel() as m:
+            x = pm.Bernoulli("x", p=0.7, shape=(3,))
+            y = pm.Bernoulli("y", p=0.7, shape=(2,))
+            z = pm.Normal("z", mu=pt.add.outer(x, y), shape=(3, 2))
+
+            with pytest.raises(NotImplementedError):
+                m.marginalize([x, y])
 
 
 def test_marginalized_deterministic_and_potential():
@@ -531,6 +658,62 @@ class TestFullModels:
             pt = {"norm": test_value}
             np.testing.assert_allclose(logp_fn(pt), ref_logp_fn(pt))
 
+    def test_k_censored_clusters_model(self):
+        def build_model(build_batched: bool) -> MarginalModel:
+            data = np.array([[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0]])
+            nobs = data.shape[0]
+            n_clusters = 5
+            coords = {
+                "cluster": range(n_clusters),
+                "ndim": ("x", "y"),
+                "obs": range(nobs),
+            }
+            with MarginalModel(coords=coords) as m:
+                if build_batched:
+                    idx = pm.Categorical("idx", p=np.ones(n_clusters) / n_clusters, dims=["obs"])
+                else:
+                    idx = pm.math.stack(
+                        [
+                            pm.Categorical(f"idx_{i}", p=np.ones(n_clusters) / n_clusters)
+                            for i in range(nobs)
+                        ]
+                    )
+
+                mu_x = pm.Normal(
+                    "mu_x",
+                    dims=["cluster"],
+                    transform=ordered,
+                    initval=np.linspace(-1, 1, n_clusters),
+                )
+                mu_y = pm.Normal("mu_y", dims=["cluster"])
+                mu = pm.math.stack([mu_x, mu_y], axis=-1)  # (cluster, ndim)
+                mu_indexed = mu[idx, :]
+
+                sigma = pm.HalfNormal("sigma")
+
+                y = pm.Censored(
+                    "y",
+                    dist=pm.Normal.dist(mu_indexed, sigma),
+                    lower=-3,
+                    upper=3,
+                    observed=data,
+                    dims=["obs", "ndim"],
+                )
+
+            return m
+
+        m = build_model(build_batched=True)
+        ref_m = build_model(build_batched=False)
+
+        m.marginalize([m["idx"]])
+        ref_m.marginalize([n for n in ref_m.named_vars if n.startswith("idx_")])
+
+        test_point = m.initial_point()
+        np.testing.assert_almost_equal(
+            m.compile_logp()(test_point),
+            ref_m.compile_logp()(test_point),
+        )
+
 
 class TestRecoverMarginals:
     def test_basic(self):
@@ -608,7 +791,7 @@ class TestRecoverMarginals:
         with MarginalModel() as m:
             sigma = pm.HalfNormal("sigma")
             idx = pm.Bernoulli("idx", p=0.7, shape=(3, 2))
-            y = pm.Normal("y", mu=idx, sigma=sigma, shape=(3, 2))
+            y = pm.Normal("y", mu=idx.T, sigma=sigma, shape=(2, 3))
 
         m.marginalize([idx])
 
@@ -626,10 +809,9 @@ class TestRecoverMarginals:
 
         idata = m.recover_marginals(idata, return_samples=True)
         post = idata.posterior
-        assert "idx" in post
-        assert "lp_idx" in post
-        assert post.idx.shape == post.y.shape
-        assert post.lp_idx.shape == (*post.idx.shape, 2)
+        assert post["y"].shape == (1, 20, 2, 3)
+        assert post["idx"].shape == (1, 20, 3, 2)
+        assert post["lp_idx"].shape == (1, 20, 3, 2, 2)
 
     def test_nested(self):
         """Test that marginalization works when there are nested marginalized RVs"""

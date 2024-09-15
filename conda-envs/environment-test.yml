@@ -10,6 +10,6 @@ dependencies:
 - xhistogram
 - statsmodels
 - pip:
-  - pymc>=5.16.1  # CI was failing to resolve
+  - pymc>=5.17.0  # CI was failing to resolve
   - blackjax
   - scikit-learn
