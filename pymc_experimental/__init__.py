@@ -16,7 +16,7 @@ import logging
 from pymc_experimental import gp, statespace, utils
 from pymc_experimental.distributions import *
 from pymc_experimental.inference.fit import fit
-from pymc_experimental.model.marginal_model import MarginalModel
+from pymc_experimental.model.marginal.marginal_model import MarginalModel
 from pymc_experimental.model.model_api import as_model
 from pymc_experimental.version import __version__
 
