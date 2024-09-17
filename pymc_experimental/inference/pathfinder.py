@@ -114,21 +114,23 @@ def fit_pathfinder(
     [pathfinder_seed, sample_seed] = _get_seeds_per_chain(random_seed, 2)
 
     print("Running pathfinder...", file=sys.stdout)
-    pathfinder_state, _ = blackjax.vi.pathfinder.approximate(
+    pathfinder_state, pathfinder_info = blackjax.vi.pathfinder.approximate(
         rng_key=jax.random.key(pathfinder_seed),
         logdensity_fn=logprob_fn,
         initial_position=ip_map.data,
         **pathfinder_kwargs,
     )
-    samples, _ = blackjax.vi.pathfinder.sample(
+
+    # retrieved logq
+    pathfinder_samples, logq = blackjax.vi.pathfinder.sample(
         rng_key=jax.random.key(sample_seed),
         state=pathfinder_state,
         num_samples=samples,
     )
 
     idata = convert_flat_trace_to_idata(
-        samples,
+        pathfinder_samples,
         postprocessing_backend=postprocessing_backend,
         model=model,
     )
-    return idata
+    return pathfinder_state, pathfinder_info, pathfinder_samples, logq, idata
