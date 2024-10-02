@@ -373,7 +373,6 @@ def test_recover_batched_marginal():
     assert post.lp_idx.shape == (*post.idx.shape, 2)
 
 
-@pytest.mark.xfail(reason="Still need to investigate")
 def test_nested_recover_marginals():
     """Test that marginalization works when there are nested marginalized RVs"""
 
