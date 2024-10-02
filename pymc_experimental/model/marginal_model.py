@@ -683,7 +683,7 @@ def replace_finite_discrete_marginal_subgraph(fgraph, rv_to_marginalize, all_rvs
                 "This is currently not supported",
             )
 
-    input_rvs = [*marginalized_rv_input_rvs, *dependent_rvs_input_rvs]
+    input_rvs = list(set((*marginalized_rv_input_rvs, *dependent_rvs_input_rvs)))
     rvs_to_marginalize = [rv_to_marginalize, *dependent_rvs]
 
     outputs = rvs_to_marginalize
