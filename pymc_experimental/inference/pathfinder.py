@@ -62,7 +62,7 @@ def convert_flat_trace_to_idata(
 
 
 def fit_pathfinder(
-    samples=1000,
+    num_samples=1000,
     random_seed: RandomSeed | None = None,
     postprocessing_backend="cpu",
     model=None,
@@ -120,14 +120,14 @@ def fit_pathfinder(
         initial_position=ip_map.data,
         **pathfinder_kwargs,
     )
-    samples, _ = blackjax.vi.pathfinder.sample(
+    pathfinder_samples, _ = blackjax.vi.pathfinder.sample(
         rng_key=jax.random.key(sample_seed),
         state=pathfinder_state,
-        num_samples=samples,
+        num_samples=num_samples,
     )
 
     idata = convert_flat_trace_to_idata(
-        samples,
+        pathfinder_samples,
         postprocessing_backend=postprocessing_backend,
         model=model,
     )
