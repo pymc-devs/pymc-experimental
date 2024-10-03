@@ -11,7 +11,6 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-import jax
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
@@ -20,6 +19,9 @@ import scipy
 
 from numpy import dtype
 from xarray.core.utils import Frozen
+
+jax = pytest.importorskip("jax")
+pytest.importorskip("blackjax")
 
 from pymc_experimental.inference.smc.sampling import (
     arviz_from_particles,

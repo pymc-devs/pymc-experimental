@@ -70,7 +70,8 @@ lines-between-types = 1
 [tool.ruff.lint.per-file-ignores]
 'tests/*.py' = [
   'F841', # Unused variable warning for test files -- common in pymc model declarations
-  'D106'  # Missing docstring for public method -- unittest test subclasses don't need docstrings
+  'D106',  # Missing docstring for public method -- unittest test subclasses don't need docstrings
+  'E402'  # Import at top, not respected when pytest.importorskip is required
 ]
 'tests/statespace/*.py' =  [
   'F401', # Unused import warning for test files -- this check removes imports of fixtures
