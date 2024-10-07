@@ -1,2 +1,2 @@
-pymc>=5.16.1
+pymc>=5.17.0
 scikit-learn

@@ -73,6 +73,7 @@ jobs:
       - uses: mamba-org/setup-micromamba@v1
         with:
           environment-file: conda-envs/windows-environment-test.yml
+          micromamba-version: "1.5.10-0"  # Until https://github.com/mamba-org/mamba/issues/3467 is not fixed
           create-args: >-
             python=${{matrix.python-version}}
           environment-name: pymc-experimental-test
