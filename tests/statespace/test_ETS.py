@@ -235,9 +235,12 @@ def test_statespace_matches_statsmodels(rng, order: tuple[str, str, str], params
     for i in range(1, seasonal_periods):
         sm_test_values[f"initial_seasonal.L{i}"] = test_values["initial_seasonal"][i]
 
-    x0 = np.r_[
-        0, *[test_values[name] for name in ["initial_level", "initial_trend", "initial_seasonal"]]
+    vals = [
+        np.atleast_1d(test_values[name])
+        for name in ["initial_level", "initial_trend", "initial_seasonal"]
     ]
+    x0 = np.concatenate([[0.0], *vals])
+
     mask = [True, True, order[1] != "N", *(order[2] != "N",) * seasonal_periods]
 
     sm_mod.initialize_known(initial_state=x0[mask], initial_state_cov=np.eye(mod.k_states))
@@ -367,3 +370,42 @@ def test_ETS_with_multiple_endog(rng, order, params, dense_cov):
                 raise ValueError(f"You forgot {name} !")
 
             cursor += single_mod.k_states
+
+
+def test_ETS_stationary_initialization():
+    mod = BayesianETS(
+        order=("A", "Ad", "A"),
+        seasonal_periods=4,
+        stationary_initialization=True,
+        initialization_dampening=0.66,
+    )
+
+    matrices = mod._unpack_statespace_with_placeholders()
+    inputs = list(explicit_graph_inputs(matrices))
+    input_names = [x.name for x in inputs]
+
+    # Make sure the stationary_dampening dummy variables was completely rewritten away
+    assert "stationary_dampening" not in input_names
+
+    # P0 should have been removed from param names
+    assert "P0" not in mod.param_names
+    assert "P0" not in mod.param_info.keys()
+
+    f = pytensor.function(inputs, matrices, mode="FAST_COMPILE")
+    test_values = f(**{x.name: np.full(x.type.shape, 0.5) for x in inputs})
+    outputs = {name: val for name, val in zip(LONG_MATRIX_NAMES, test_values)}
+
+    # Make sure that the transition matrix has ones in the expected positions, not the model dampening factor
+    assert outputs["transition"][1, 1] == 1.0
+    assert outputs["transition"][2, 2] == 0.5  # phi = 0.5 -- trend is dampened anyway
+    assert outputs["transition"][3, -1] == 1.0
+
+    # P0 should be equal to the solution to the Lyapunov equation using the dampening factors in the transition matrix
+    T_stationary = outputs["transition"].copy()
+    T_stationary[1, 1] = mod.initialization_dampening
+    T_stationary[3, -1] = mod.initialization_dampening
+
+    R, Q = outputs["selection"], outputs["state_cov"]
+    P0_expected = linalg.solve_discrete_lyapunov(T_stationary, R @ Q @ R.T)
+
+    assert_allclose(outputs["initial_state_cov"], P0_expected)
