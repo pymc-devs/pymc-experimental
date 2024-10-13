@@ -4,6 +4,9 @@ from typing import Any
 import numpy as np
 import pytensor.tensor as pt
 
+from pytensor import graph_replace
+from pytensor.tensor.slinalg import solve_discrete_lyapunov
+
 from pymc_experimental.statespace.core.statespace import PyMCStateSpace, floatX
 from pymc_experimental.statespace.models.utilities import make_default_coords
 from pymc_experimental.statespace.utils.constants import (
@@ -16,164 +19,6 @@ from pymc_experimental.statespace.utils.constants import (
 
 
 class BayesianETS(PyMCStateSpace):
-    r"""
-    Exponential Smoothing State Space Model
-
-    This class can represent a subset of exponential smoothing state space models, specifically those with additive
-    errors. Following .. [1], The general form of the model is:
-
-    .. math::
-
-        \begin{align}
-        y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
-        \epsilon_t &\sim N(0, \sigma)
-        \end{align}
-
-    where :math:`l_t` is the level component, :math:`b_t` is the trend component, and :math:`s_t` is the seasonal
-    component. These components can be included or excluded, leading to different model specifications. The following
-    models are possible:
-
-    * `ETS(A,N,N)`: Simple exponential smoothing
-
-        .. math::
-
-            \begin{align}
-            y_t &= l_{t-1} + \epsilon_t \\
-            l_t &= l_{t-1} + \alpha \epsilon_t
-            \end{align}
-
-    Where :math:`\alpha \in [0, 1]` is a mixing parameter between past observations and current innovations.
-    These equations arise by starting from the "component form":
-
-        .. math::
-
-            \begin{align}
-            \hat{y}_{t+1 | t} &= l_t \\
-            l_t &= \alpha y_t + (1 - \alpha) l_{t-1} \\
-            &= l_{t-1} + \alpha (y_t - l_{t-1})
-            &= l_{t-1} + \alpha \epsilon_t
-            \end{align}
-
-    Where $\epsilon_t$ are the forecast errors, assumed to be IID mean zero and normally distributed. The role of
-    :math:`\alpha` is clearest in the second line. The level of the time series at each time is a mixture of
-    :math:`\alpha` percent of the incoming data, and :math:`1 - \alpha` percent of the previous level. Recursive
-    substitution reveals that the level is a weighted composite of all previous observations; thus the name
-    "Exponential Smoothing".
-
-    Additional supposed specifications include:
-
-    * `ETS(A,A,N)`: Holt's linear trend method
-
-        .. math::
-
-            \begin{align}
-            y_t &= l_{t-1} + b_{t-1} + \epsilon_t \\
-            l_t &= l_{t-1} + b_{t-1} + \alpha \epsilon_t \\
-            b_t &= b_{t-1} + \alpha \beta^\star \epsilon_t
-            \end{align}
-
-        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^\star`.
-
-    * `ETS(A,N,A)`: Additive seasonal method
-
-        .. math::
-
-            \begin{align}
-            y_t &= l_{t-1} + s_{t-m} + \epsilon_t \\
-            l_t &= l_{t-1} + \alpha \epsilon_t \\
-            s_t &= s_{t-m} + (1 - \alpha)\gamma^\star \epsilon_t
-            \end{align}
-
-        [1]_ also consider an alternative parameterization with :math:`\gamma = (1 - \alpha) \gamma^\star`.
-
-    * `ETS(A,A,A)`: Additive Holt-Winters method
-
-        .. math::
-
-            \begin{align}
-            y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
-            l_t &= l_{t-1} + \alpha \epsilon_t \\
-            b_t &= b_{t-1} + \alpha \beta^\star \epsilon_t \\
-            s_t &= s_{t-m} + (1 - \alpha) \gamma^\star \epsilon_t
-            \end{align}
-
-        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^star` and
-        :math:`\gamma = (1 - \alpha) \gamma^\star`.
-
-    * `ETS(A, Ad, N)`: Dampened trend method
-
-        .. math::
-
-            \begin{align}
-            y_t &= l_{t-1} + b_{t-1} + \epsilon_t \\
-            l_t &= l_{t-1} + \alpha \epsilon_t \\
-            b_t &= \phi b_{t-1} + \alpha \beta^\star \epsilon_t
-            \end{align}
-
-        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^\star`.
-
-    * `ETS(A, Ad, A)`: Dampened trend with seasonal method
-
-        .. math::
-
-            \begin{align}
-            y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
-            l_t &= l_{t-1} + \alpha \epsilon_t \\
-            b_t &= \phi b_{t-1} + \alpha \beta^\star \epsilon_t \\
-            s_t &= s_{t-m} + (1 - \alpha) \gamma^\star \epsilon_t
-            \end{align}
-
-        [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^star` and
-        :math:`\gamma = (1 - \alpha) \gamma^\star`.
-
-
-    Parameters
-    ----------
-    endog: pd.DataFrame
-        The observed time series.
-    order: tuple of string, Optional
-        The exponential smoothing "order". This is a tuple of three strings, each of which should be one of 'A', 'Ad',
-        or 'N'.
-
-            - The first element indicates the type of errors to use. Only 'A' is allowed.
-            - The second element indicates the type of trend to use. 'A', Ad' or 'N' are allowed.
-            - The third element indicates the type of seasonal component to use. 'A' or 'N' are allowed.
-
-        If provided, the model will be initialized from the given order, and the `trend`, `damped_trend`, and `seasonal`
-        arguments will be ignored.
-
-    trend: bool
-        Whether to include a trend component.
-    damped_trend: bool
-        Whether to include a damping parameter on the trend component. Ignored if `trend` is `False`.
-    seasonal: bool
-        Whether to include a seasonal component.
-    seasonal_periods: int
-        The number of periods in a complete seasonal cycle. Ignored if `seasonal` is `False`.
-    measurement_error: bool
-        Whether to include a measurement error term in the model. Default is `False`.
-    use_transformed_parameterization: bool, default False
-        If true, use the :math:`\alpha, \beta, \gamma` parameterization, otherwise use the :math:`\alpha, \beta^\star,
-        \gamma^\star` parameterization. This will change the admissible region for the priors.
-
-        - Under the **non-transformed** parameterization, all of :math:`\alpha, \beta^\star, \gamma^\star` should be
-          between 0 and 1.
-        - Under the **transformed**  parameterization, :math:`\alpha \in (0, 1)`, :math:`\beta \in (0, \alpha)`, and
-          :math:`\gamma \in (0, 1 - \alpha)`
-
-        The :meth:`param_info` method will change to reflect the suggested intervals based on the value of this
-        argument.
-    filter_type: str, default "standard"
-        The type of Kalman Filter to use. Options are "standard", "single", "univariate", "steady_state",
-        and "cholesky". See the docs for kalman filters for more details.
-    verbose: bool, default True
-        If true, a message will be logged to the terminal explaining the variable names, dimensions, and supports.
-
-    References
-    ----------
-    .. [1] Hyndman, Rob J., and George Athanasopoulos. Forecasting: principles and practice. OTexts, 2018.
-    """
-
     def __init__(
         self,
         order: tuple[str, str, str] | None = None,
@@ -186,9 +31,198 @@ class BayesianETS(PyMCStateSpace):
         measurement_error: bool = False,
         use_transformed_parameterization: bool = False,
         dense_innovation_covariance: bool = False,
+        stationary_initialization: bool = False,
+        initialization_dampening: float = 0.8,
         filter_type: str = "standard",
         verbose: bool = True,
     ):
+        r"""
+        Exponential Smoothing State Space Model
+
+        This class can represent a subset of exponential smoothing state space models, specifically those with additive
+        errors. Following .. [1], The general form of the model is:
+
+        .. math::
+
+            \begin{align}
+            y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
+            \epsilon_t &\sim N(0, \sigma)
+            \end{align}
+
+        where :math:`l_t` is the level component, :math:`b_t` is the trend component, and :math:`s_t` is the seasonal
+        component. These components can be included or excluded, leading to different model specifications. The following
+        models are possible:
+
+        * `ETS(A,N,N)`: Simple exponential smoothing
+
+            .. math::
+
+                \begin{align}
+                y_t &= l_{t-1} + \epsilon_t \\
+                l_t &= l_{t-1} + \alpha \epsilon_t
+                \end{align}
+
+        Where :math:`\alpha \in [0, 1]` is a mixing parameter between past observations and current innovations.
+        These equations arise by starting from the "component form":
+
+            .. math::
+
+                \begin{align}
+                \hat{y}_{t+1 | t} &= l_t \\
+                l_t &= \alpha y_t + (1 - \alpha) l_{t-1} \\
+                &= l_{t-1} + \alpha (y_t - l_{t-1})
+                &= l_{t-1} + \alpha \epsilon_t
+                \end{align}
+
+        Where $\epsilon_t$ are the forecast errors, assumed to be IID mean zero and normally distributed. The role of
+        :math:`\alpha` is clearest in the second line. The level of the time series at each time is a mixture of
+        :math:`\alpha` percent of the incoming data, and :math:`1 - \alpha` percent of the previous level. Recursive
+        substitution reveals that the level is a weighted composite of all previous observations; thus the name
+        "Exponential Smoothing".
+
+        Additional supposed specifications include:
+
+        * `ETS(A,A,N)`: Holt's linear trend method
+
+            .. math::
+
+                \begin{align}
+                y_t &= l_{t-1} + b_{t-1} + \epsilon_t \\
+                l_t &= l_{t-1} + b_{t-1} + \alpha \epsilon_t \\
+                b_t &= b_{t-1} + \alpha \beta^\star \epsilon_t
+                \end{align}
+
+            [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^\star`.
+
+        * `ETS(A,N,A)`: Additive seasonal method
+
+            .. math::
+
+                \begin{align}
+                y_t &= l_{t-1} + s_{t-m} + \epsilon_t \\
+                l_t &= l_{t-1} + \alpha \epsilon_t \\
+                s_t &= s_{t-m} + (1 - \alpha)\gamma^\star \epsilon_t
+                \end{align}
+
+            [1]_ also consider an alternative parameterization with :math:`\gamma = (1 - \alpha) \gamma^\star`.
+
+        * `ETS(A,A,A)`: Additive Holt-Winters method
+
+            .. math::
+
+                \begin{align}
+                y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
+                l_t &= l_{t-1} + \alpha \epsilon_t \\
+                b_t &= b_{t-1} + \alpha \beta^\star \epsilon_t \\
+                s_t &= s_{t-m} + (1 - \alpha) \gamma^\star \epsilon_t
+                \end{align}
+
+            [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^star` and
+            :math:`\gamma = (1 - \alpha) \gamma^\star`.
+
+        * `ETS(A, Ad, N)`: Dampened trend method
+
+            .. math::
+
+                \begin{align}
+                y_t &= l_{t-1} + b_{t-1} + \epsilon_t \\
+                l_t &= l_{t-1} + \alpha \epsilon_t \\
+                b_t &= \phi b_{t-1} + \alpha \beta^\star \epsilon_t
+                \end{align}
+
+            [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^\star`.
+
+        * `ETS(A, Ad, A)`: Dampened trend with seasonal method
+
+            .. math::
+
+                \begin{align}
+                y_t &= l_{t-1} + b_{t-1} + s_{t-m} + \epsilon_t \\
+                l_t &= l_{t-1} + \alpha \epsilon_t \\
+                b_t &= \phi b_{t-1} + \alpha \beta^\star \epsilon_t \\
+                s_t &= s_{t-m} + (1 - \alpha) \gamma^\star \epsilon_t
+                \end{align}
+
+            [1]_ also consider an alternative parameterization with :math:`\beta = \alpha \beta^star` and
+            :math:`\gamma = (1 - \alpha) \gamma^\star`.
+
+
+        Parameters
+        ----------
+        order: tuple of string, Optional
+            The exponential smoothing "order". This is a tuple of three strings, each of which should be one of 'A', 'Ad',
+            or 'N'.
+
+                - The first element indicates the type of errors to use. Only 'A' is allowed.
+                - The second element indicates the type of trend to use. 'A', Ad' or 'N' are allowed.
+                - The third element indicates the type of seasonal component to use. 'A' or 'N' are allowed.
+
+            If provided, the model will be initialized from the given order, and the `trend`, `damped_trend`, and `seasonal`
+            arguments will be ignored.
+        endog_names: str or list of str, Optional
+            Names associated with observed states. If a list, the length should be equal to the number of time series
+            to be estimated.
+        k_endog: int, Optional
+            Number of time series to estimate. If endog_names are provided, this is ignored and len(endog_names) is
+            used instead.
+        trend: bool
+            Whether to include a trend component. Setting ``trend=True`` is equivalent to ``order[1] == 'A'``.
+        damped_trend: bool
+            Whether to include a damping parameter on the trend component. Ignored if `trend` is `False`. Setting
+            ``trend=True`` and ``damped_trend=True`` is equivalent to order[1] == 'Ad'.
+        seasonal: bool
+            Whether to include a seasonal component. Setting ``seasonal=True`` is equivalent to ``order[2] = 'A'``.
+        seasonal_periods: int
+            The number of periods in a complete seasonal cycle. Ignored if `seasonal` is `False`
+            (or if ``order[2] == "N"``)
+        measurement_error: bool
+            Whether to include a measurement error term in the model. Default is `False`.
+        use_transformed_parameterization: bool, default False
+            If true, use the :math:`\alpha, \beta, \gamma` parameterization, otherwise use the :math:`\alpha, \beta^\star,
+            \gamma^\star` parameterization. This will change the admissible region for the priors.
+
+            - Under the **non-transformed** parameterization, all of :math:`\alpha, \beta^\star, \gamma^\star` should be
+              between 0 and 1.
+            - Under the **transformed**  parameterization, :math:`\alpha \in (0, 1)`, :math:`\beta \in (0, \alpha)`, and
+              :math:`\gamma \in (0, 1 - \alpha)`
+
+            The :meth:`param_info` method will change to reflect the suggested intervals based on the value of this
+            argument.
+        dense_innovation_covariance: bool, default False
+            Whether to estimate a dense covariance for statespace innovations. In an ETS models, each observed variable
+            has a single source of stochastic variation. If True, these innovations are allowed to be correlated.
+            Ignored if ``k_endog == 1``
+        stationary_initialization: bool, default False
+            If True, the Kalman Filter's initial covariance matrix will be set to an approximate steady-state value.
+            The approximation is formed by adding a small dampening factor to each state. Specifically, the level state
+            for a ('A', 'N', 'N') model is written:
+
+            .. math::
+                \ell_t = \ell_{t-1} + \alpha * e_t
+
+            That this system is not stationary can be understood in ARIMA terms: the level is a random walk; that is,
+            :math:`rho = 1`. This can be remedied by pretending that we instead have a dampened system:
+
+            .. math::
+                \ell_t = \rho \ell_{t-1} + \alpha * e_t
+
+            With :math:`\rho \approx 1`, the system is stationary, and we can solve for the steady-state covariance
+            matrix. This is then used as the initial covariance matrix for the Kalman Filter. This is a heuristic
+            method that helps avoid setting a prior on the initial covariance matrix.
+        initialization_dampening: float, default 0.8
+            Dampening factor to add to non-stationary model components. This is only used for initialization, it does
+            *not* add dampening to the model. Ignored if `stationary_initialization` is `False`.
+        filter_type: str, default "standard"
+            The type of Kalman Filter to use. Options are "standard", "single", "univariate", "steady_state",
+            and "cholesky". See the docs for kalman filters for more details.
+        verbose: bool, default True
+            If true, a message will be logged to the terminal explaining the variable names, dimensions, and supports.
+
+        References
+        ----------
+        .. [1] Hyndman, Rob J., and George Athanasopoulos. Forecasting: principles and practice. OTexts, 2018.
+        """
+
         if order is not None:
             if len(order) != 3 or any(not isinstance(o, str) for o in order):
                 raise ValueError("Order must be a tuple of three strings.")
@@ -214,6 +248,15 @@ class BayesianETS(PyMCStateSpace):
         self.seasonal = seasonal
         self.seasonal_periods = seasonal_periods
         self.use_transformed_parameterization = use_transformed_parameterization
+        self.stationary_initialization = stationary_initialization
+
+        if (initialization_dampening >= 1.0) or (initialization_dampening < 0.0):
+            raise ValueError(
+                "Dampening term used for initialization must be between 0 and 1 (preferably close to"
+                "1.0)"
+            )
+
+        self.initialization_dampening = initialization_dampening
 
         if self.seasonal and self.seasonal_periods is None:
             raise ValueError("If seasonal is True, seasonal_periods must be provided.")
@@ -278,6 +321,9 @@ class BayesianETS(PyMCStateSpace):
             names.remove("sigma_state")
         else:
             names.remove("state_cov")
+
+        if self.stationary_initialization:
+            names.remove("P0")
 
         return names
 
@@ -408,13 +454,26 @@ class BayesianETS(PyMCStateSpace):
 
         return coords
 
+    def _stationary_initialization(self, T_stationary, mode=None):
+        # Solve for matrix quadratic for P0
+        R = self.ssm["selection"]
+        Q = self.ssm["state_cov"]
+
+        # TODO: How to get mode information to here? It's not available when the model is created.
+        method = "direct" if ((self.k_states < 50) or (mode == "JAX")) else "bilinear"
+
+        # ETS models are not stationary, but we can proceed *as if* the model were stationary by introducing large
+        # dampening factors on all components. We then set the initial covariance to the steady-state of that system,
+        # which we hope is similar enough to give a good initialization for the non-stationary system.
+
+        T_stationary = pt.specify_shape(T_stationary, (self.k_states, self.k_states))
+        P0 = solve_discrete_lyapunov(T_stationary, pt.linalg.matrix_dot(R, Q, R.T), method=method)
+        P0 = pt.specify_shape(P0, (self.k_states, self.k_states))
+
+        return P0
+
     def make_symbolic_graph(self) -> None:
         k_states_each = self.k_states // self.k_endog
-
-        P0 = self.make_and_register_variable(
-            "P0", shape=(self.k_states, self.k_states), dtype=floatX
-        )
-        self.ssm["initial_state_cov"] = P0
 
         initial_level = self.make_and_register_variable(
             "initial_level", shape=(self.k_endog,) if self.k_endog > 1 else (), dtype=floatX
@@ -436,6 +495,10 @@ class BayesianETS(PyMCStateSpace):
             "alpha", shape=() if self.k_endog == 1 else (self.k_endog,), dtype=floatX
         )
 
+        # This is a dummy value for initialization. When we do a stationary initialization, it will be set to a value
+        # close to 1. Otherwise, it will be 1. We do not want this value to exist outside of this method.
+        stationary_dampening = pt.scalar("dampen_dummy")
+
         if self.k_endog == 1:
             # The R[0, 0] entry needs to be adjusted for a shift in the time indices. Consider the (A, N, N) model:
             # y_t = l_{t-1} + e_t
@@ -452,7 +515,7 @@ class BayesianETS(PyMCStateSpace):
             R_list = [pt.set_subtensor(R[0, :], (1 - alpha[i])) for i, R in enumerate(R_list)]
 
         # Shock and level component always exists, the base case is e_t = e_t and l_t = l_{t-1}
-        T_base = pt.as_tensor_variable(np.array([[0.0, 0.0], [0.0, 1.0]]))
+        T_base = pt.set_subtensor(pt.zeros((2, 2))[1, 1], stationary_dampening)
 
         if self.trend:
             initial_trend = self.make_and_register_variable(
@@ -482,6 +545,7 @@ class BayesianETS(PyMCStateSpace):
             # l_t = l_{t-1} + b_{t-1}
             # b_t = b_{t-1}
             T_base = pt.as_tensor_variable(([0.0, 0.0, 0.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]))
+            T_base = pt.set_subtensor(T_base[[1, 2], [1, 2]], stationary_dampening)
 
         if self.damped_trend:
             phi = self.make_and_register_variable(
@@ -546,7 +610,10 @@ class BayesianETS(PyMCStateSpace):
             # The seasonal component is always going to look like a TimeFrequency structural component, see that
             # docstring for more details
             T_seasonals = [pt.eye(self.seasonal_periods, k=-1) for _ in range(self.k_endog)]
-            T_seasonals = [pt.set_subtensor(T_seasonal[0, -1], 1.0) for T_seasonal in T_seasonals]
+            T_seasonals = [
+                pt.set_subtensor(T_seasonal[0, -1], stationary_dampening)
+                for T_seasonal in T_seasonals
+            ]
 
             # Organize the components so it goes T1, T_seasonal_1, T2, T_seasonal_2, etc.
             T_components = [
@@ -560,7 +627,11 @@ class BayesianETS(PyMCStateSpace):
         self.ssm["selection"] = pt.specify_shape(R, shape=(self.k_states, self.k_posdef))
 
         T = pt.linalg.block_diag(*T_components)
-        self.ssm["transition"] = pt.specify_shape(T, (self.k_states, self.k_states))
+
+        # Remove the stationary_dampening dummies before saving the transition matrix
+        self.ssm["transition"] = pt.specify_shape(
+            graph_replace(T, {stationary_dampening: 1.0}), (self.k_states, self.k_states)
+        )
 
         Zs = [np.zeros((self.k_endog, self.k_states // self.k_endog)) for _ in range(self.k_endog)]
         for i, Z in enumerate(Zs):
@@ -593,3 +664,14 @@ class BayesianETS(PyMCStateSpace):
                 "sigma_obs", shape=() if self.k_endog == 1 else (self.k_endog,), dtype=floatX
             )
             self.ssm[obs_cov_idx] = obs_cov**2
+
+        if self.stationary_initialization:
+            T_stationary = graph_replace(T, {stationary_dampening: self.initialization_dampening})
+            P0 = self._stationary_initialization(T_stationary)
+
+        else:
+            P0 = self.make_and_register_variable(
+                "P0", shape=(self.k_states, self.k_states), dtype=floatX
+            )
+
+        self.ssm["initial_state_cov"] = P0
