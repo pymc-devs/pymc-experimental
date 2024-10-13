@@ -391,7 +391,8 @@ class BayesianETS(PyMCStateSpace):
         if self.trend:
             states += ["trend"]
         if self.seasonal:
-            states += [f"L{i}.season" for i in range(1, self.seasonal_periods + 1)]
+            states += ["seasonality"]
+            states += [f"L{i}.season" for i in range(1, self.seasonal_periods)]
 
         if self.k_endog > 1:
             states = [f"{name}_{state}" for name in self.endog_names for state in states]
