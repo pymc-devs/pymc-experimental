@@ -74,3 +74,12 @@ Model Transforms
 
    autoreparam.vip_reparametrize
    autoreparam.VIP
+
+
+Printing
+========
+.. currentmodule:: pymc_experimental.printing
+.. autosummary::
+   :toctree: generated/
+
+   model_table
