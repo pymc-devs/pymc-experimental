@@ -1,6 +1,9 @@
 API Reference
 ***************
 
+Model
+=====
+
 This reference provides detailed documentation for all modules, classes, and
 methods in the current release of PyMC experimental.
 
