@@ -15,6 +15,8 @@
 import collections
 import sys
 
+from collections.abc import Callable
+
 import arviz as az
 import blackjax
 import jax
@@ -22,11 +24,44 @@ import numpy as np
 import pymc as pm
 
 from packaging import version
+from pymc import Model
 from pymc.backends.arviz import coords_and_dims_for_inferencedata
 from pymc.blocking import DictToArrayBijection, RaveledVars
+from pymc.initial_point import make_initial_point_fn
 from pymc.model import modelcontext
+from pymc.model.core import Point
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import RandomSeed, _get_seeds_per_chain, get_default_varnames
+
+
+def get_jaxified_logp_ravel_inputs(
+    model: Model,
+    initial_points: dict | None = None,
+) -> tuple[Callable, DictToArrayBijection]:
+    """
+    Get jaxified logp function and ravel inputs for a PyMC model.
+
+    Parameters
+    ----------
+    model : Model
+        PyMC model to jaxify.
+
+    Returns
+    -------
+    tuple[Callable, DictToArrayBijection]
+        A tuple containing the jaxified logp function and the DictToArrayBijection.
+    """
+
+    new_logprob, new_input = pm.pytensorf.join_nonshared_inputs(
+        initial_points, (model.logp(),), model.value_vars, ()
+    )
+
+    logprob_fn_list = get_jaxified_graph([new_input], new_logprob)
+
+    def logprob_fn(x):
+        return logprob_fn_list(x)[0]
+
+    return logprob_fn, DictToArrayBijection.map(initial_points)
 
 
 def convert_flat_trace_to_idata(
@@ -37,7 +72,7 @@ def convert_flat_trace_to_idata(
 ):
     model = modelcontext(model)
     ip = model.initial_point()
-    ip_point_map_info = pm.blocking.DictToArrayBijection.map(ip).point_map_info
+    ip_point_map_info = DictToArrayBijection.map(ip).point_map_info
     trace = collections.defaultdict(list)
     for sample in samples:
         raveld_vars = RaveledVars(sample, ip_point_map_info)
@@ -62,10 +97,10 @@ def convert_flat_trace_to_idata(
 
 
 def fit_pathfinder(
-    num_samples=1000,
+    model=None,
+    num_draws=1000,
     random_seed: RandomSeed | None = None,
     postprocessing_backend="cpu",
-    model=None,
     **pathfinder_kwargs,
 ):
     """
@@ -99,22 +134,19 @@ def fit_pathfinder(
 
     model = modelcontext(model)
 
-    ip = model.initial_point()
-    ip_map = DictToArrayBijection.map(ip)
+    [jitter_seed, pathfinder_seed, sample_seed] = _get_seeds_per_chain(random_seed, 3)
 
-    new_logprob, new_input = pm.pytensorf.join_nonshared_inputs(
-        ip, (model.logp(),), model.value_vars, ()
+    # set initial points. PF requires jittering of initial points
+    ipfn = make_initial_point_fn(
+        model=model,
+        jitter_rvs=set(model.free_RVs),
+        # TODO: add argument for jitter strategy
     )
-
-    logprob_fn_list = get_jaxified_graph([new_input], new_logprob)
-
-    def logprob_fn(x):
-        return logprob_fn_list(x)[0]
-
-    [pathfinder_seed, sample_seed] = _get_seeds_per_chain(random_seed, 2)
+    ip = Point(ipfn(jitter_seed), model=model)
+    logprob_fn, ip_map = get_jaxified_logp_ravel_inputs(model, initial_points=ip)
 
     print("Running pathfinder...", file=sys.stdout)
-    pathfinder_state, _ = blackjax.vi.pathfinder.approximate(
+    pathfinder_state, pathfinder_info = blackjax.vi.pathfinder.approximate(
         rng_key=jax.random.key(pathfinder_seed),
         logdensity_fn=logprob_fn,
         initial_position=ip_map.data,
@@ -123,7 +155,7 @@ def fit_pathfinder(
     pathfinder_samples, _ = blackjax.vi.pathfinder.sample(
         rng_key=jax.random.key(sample_seed),
         state=pathfinder_state,
-        num_samples=num_samples,
+        num_samples=num_draws,
     )
 
     idata = convert_flat_trace_to_idata(
@@ -131,4 +163,4 @@ def fit_pathfinder(
         postprocessing_backend=postprocessing_backend,
         model=model,
     )
-    return idata
+    return pathfinder_state, pathfinder_info, pathfinder_samples, idata

@@ -17,12 +17,14 @@ import sys
 import numpy as np
 import pymc as pm
 import pytest
+import xarray as xr
 
 import pymc_experimental as pmx
 
+from pymc_experimental.inference.pathfinder import fit_pathfinder
 
-@pytest.mark.skipif(sys.platform == "win32", reason="JAX not supported on windows.")
-def test_pathfinder():
+
+def build_eight_schools_model():
     # Data of the Eight Schools Model
     J = 8
     y = np.array([28.0, 8.0, -3.0, 7.0, -1.0, 1.0, 18.0, 12.0])
@@ -35,6 +37,14 @@ def test_pathfinder():
         theta = pm.Normal("theta", mu=0, sigma=1, shape=J)
         obs = pm.Normal("obs", mu=mu + tau * theta, sigma=sigma, shape=J, observed=y)
 
+    return model
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="JAX not supported on windows.")
+def test_pathfinder():
+    model = build_eight_schools_model()
+
+    with model:
         idata = pmx.fit(method="pathfinder", random_seed=41)
 
     assert idata.posterior["mu"].shape == (1, 1000)
@@ -43,3 +53,65 @@ def test_pathfinder():
     # FIXME: pathfinder doesn't find a reasonable mean! Fix bug or choose model pathfinder can handle
     # np.testing.assert_allclose(idata.posterior["mu"].mean(), 5.0)
     np.testing.assert_allclose(idata.posterior["tau"].mean(), 4.15, atol=0.5)
+
+
+def test_pathfinder_pmx_equivalence():
+    model = build_eight_schools_model()
+    with model:
+        idata_pmx = pmx.fit(method="pathfinder", random_seed=41)
+        idata_pmx = idata_pmx[-1]
+
+    ntests = 2
+    runs = dict()
+    for k in range(ntests):
+        runs[k] = {}
+        (
+            runs[k]["pathfinder_state"],
+            runs[k]["pathfinder_info"],
+            runs[k]["pathfinder_samples"],
+            runs[k]["pathfinder_idata"],
+        ) = fit_pathfinder(model=model, random_seed=41)
+
+        runs[k]["finite_idx"] = (
+            np.argwhere(np.isfinite(runs[k]["pathfinder_info"].path.elbo)).ravel()[-1] + 1
+        )
+
+    np.testing.assert_allclose(
+        runs[0]["pathfinder_info"].path.elbo[: runs[0]["finite_idx"]],
+        runs[1]["pathfinder_info"].path.elbo[: runs[1]["finite_idx"]],
+    )
+
+    np.testing.assert_allclose(
+        runs[0]["pathfinder_info"].path.alpha,
+        runs[1]["pathfinder_info"].path.alpha,
+    )
+
+    np.testing.assert_allclose(
+        runs[0]["pathfinder_info"].path.beta,
+        runs[1]["pathfinder_info"].path.beta,
+    )
+
+    np.testing.assert_allclose(
+        runs[0]["pathfinder_info"].path.gamma,
+        runs[1]["pathfinder_info"].path.gamma,
+    )
+
+    np.testing.assert_allclose(
+        runs[0]["pathfinder_info"].path.position,
+        runs[1]["pathfinder_info"].path.position,
+    )
+
+    np.testing.assert_allclose(
+        runs[0]["pathfinder_info"].path.grad_position,
+        runs[1]["pathfinder_info"].path.grad_position,
+    )
+
+    xr.testing.assert_allclose(
+        idata_pmx.posterior,
+        runs[0]["pathfinder_idata"].posterior,
+    )
+
+    xr.testing.assert_allclose(
+        idata_pmx.posterior,
+        runs[1]["pathfinder_idata"].posterior,
+    )
