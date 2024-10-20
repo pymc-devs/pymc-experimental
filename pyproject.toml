@@ -20,9 +20,6 @@ filterwarnings =[
 
   # Warning coming from blackjax
   'ignore:jax\.tree_map is deprecated:DeprecationWarning',
-
-  # shutil error
-  'ignore: Use shutil\.which instead of find_executable:DeprecationWarning',
 ]
 
 [tool.coverage.report]

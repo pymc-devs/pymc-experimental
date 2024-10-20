@@ -250,7 +250,7 @@ class BayesianETS(PyMCStateSpace):
         self.use_transformed_parameterization = use_transformed_parameterization
         self.stationary_initialization = stationary_initialization
 
-        if (initialization_dampening >= 1.0) or (initialization_dampening < 0.0):
+        if not (0.0 < initialization_dampening < 1.0):
             raise ValueError(
                 "Dampening term used for initialization must be between 0 and 1 (preferably close to"
                 "1.0)"
