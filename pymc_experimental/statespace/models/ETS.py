@@ -455,20 +455,17 @@ class BayesianETS(PyMCStateSpace):
 
         return coords
 
-    def _stationary_initialization(self, T_stationary, mode=None):
+    def _stationary_initialization(self, T_stationary):
         # Solve for matrix quadratic for P0
         R = self.ssm["selection"]
         Q = self.ssm["state_cov"]
-
-        # TODO: How to get mode information to here? It's not available when the model is created.
-        method = "direct" if ((self.k_states < 50) or (mode == "JAX")) else "bilinear"
 
         # ETS models are not stationary, but we can proceed *as if* the model were stationary by introducing large
         # dampening factors on all components. We then set the initial covariance to the steady-state of that system,
         # which we hope is similar enough to give a good initialization for the non-stationary system.
 
         T_stationary = pt.specify_shape(T_stationary, (self.k_states, self.k_states))
-        P0 = solve_discrete_lyapunov(T_stationary, pt.linalg.matrix_dot(R, Q, R.T), method=method)
+        P0 = solve_discrete_lyapunov(T_stationary, pt.linalg.matrix_dot(R, Q, R.T))
         P0 = pt.specify_shape(P0, (self.k_states, self.k_states))
 
         return P0
