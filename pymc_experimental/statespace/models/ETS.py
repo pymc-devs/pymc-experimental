@@ -152,11 +152,6 @@ class BayesianETS(PyMCStateSpace):
         order: tuple of string, Optional
             The exponential smoothing "order". This is a tuple of three strings, each of which should be one of 'A', 'Ad',
             or 'N'.
-
-                - The first element indicates the type of errors to use. Only 'A' is allowed.
-                - The second element indicates the type of trend to use. 'A', Ad' or 'N' are allowed.
-                - The third element indicates the type of seasonal component to use. 'A' or 'N' are allowed.
-
             If provided, the model will be initialized from the given order, and the `trend`, `damped_trend`, and `seasonal`
             arguments will be ignored.
         endog_names: str or list of str, Optional
