@@ -11,6 +11,7 @@ AR_PARAM_DIM = "ar_lag"
 MA_PARAM_DIM = "ma_lag"
 SEASONAL_AR_PARAM_DIM = "seasonal_ar_lag"
 SEASONAL_MA_PARAM_DIM = "seasonal_ma_lag"
+ETS_SEASONAL_DIM = "seasonal_lag"
 
 NEVER_TIME_VARYING = ["initial_state", "initial_state_cov", "a0", "P0"]
 VECTOR_VALUED = ["initial_state", "state_intercept", "obs_intercept", "a0", "c", "d"]
