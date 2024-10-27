@@ -3,7 +3,11 @@ import pymc as pm
 import pytensor.tensor as pt
 import pytest
 
-from inference.jax_find_map import find_MAP, fit_laplace, make_jax_funcs_from_graph
+from pymc_experimental.inference.jax_find_map import (
+    find_MAP,
+    fit_laplace,
+    make_jax_funcs_from_graph,
+)
 
 pytest.importorskip("jax")
 
