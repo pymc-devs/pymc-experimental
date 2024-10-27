@@ -338,8 +338,9 @@ def make_jax_funcs_from_graph(
 
 
 def find_MAP(
-    model: pm.Model,
     method: minimize_method,
+    *,
+    model: pm.Model | None = None,
     use_grad: bool | None = None,
     use_hessp: bool | None = None,
     use_hess: bool | None = None,
@@ -357,7 +358,7 @@ def find_MAP(
     Parameters
     ----------
     model : pm.Model
-        The PyMC model to be fitted.
+        The PyMC model to be fit. If None, the current model context is used.
     method : str
         The optimization method to use. See scipy.optimize.minimize documentation for details.
     use_grad : bool | None, optional
@@ -391,6 +392,7 @@ def find_MAP(
         Dictionary with names of random variables as keys, and optimization results as values. If return_raw is True,
         also returns the object returned by ``scipy.optimize.minimize``.
     """
+    model = pm.modelcontext(model)
     frozen_model = freeze_dims_and_data(model)
 
     if jitter_rvs is None:

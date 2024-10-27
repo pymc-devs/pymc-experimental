@@ -65,20 +65,20 @@ def test_jax_functions_from_graph():
     ],
 )
 def test_JAX_map(method, use_grad, use_hess, rng):
-    with pm.Model() as m:
-        mu = pm.Normal("mu")
-        sigma = pm.Exponential("sigma", 1)
-        pm.Normal("y_hat", mu=mu, sigma=sigma, observed=rng.normal(loc=3, scale=1.5, size=100))
-
     extra_kwargs = {}
     if method == "dogleg":
         # HACK -- dogleg requires that the hessian of the objective function is PSD, so we have to pick a point
         # where this is true
         extra_kwargs = {"initvals": {"mu": 2, "sigma_log__": 1}}
 
-    optimized_point = find_MAP(
-        m, method, **extra_kwargs, use_grad=use_grad, use_hess=use_hess, progressbar=False
-    )
+    with pm.Model() as m:
+        mu = pm.Normal("mu")
+        sigma = pm.Exponential("sigma", 1)
+        pm.Normal("y_hat", mu=mu, sigma=sigma, observed=rng.normal(loc=3, scale=1.5, size=100))
+
+        optimized_point = find_MAP(
+            method=method, **extra_kwargs, use_grad=use_grad, use_hess=use_hess, progressbar=False
+        )
     mu_hat, log_sigma_hat = optimized_point["mu"], optimized_point["sigma_log__"]
 
     assert np.isclose(mu_hat, 3, atol=0.5)
@@ -102,12 +102,12 @@ def test_fit_laplace_coords(rng, transform_samples):
             observed=rng.normal(loc=3, scale=1.5, size=(100, 3)),
             dims=["obs_idx", "city"],
         )
-    optimized_point = find_MAP(
-        model,
-        "Newton-CG",
-        use_grad=True,
-        progressbar=False,
-    )
+
+        optimized_point = find_MAP(
+            method="Newton-CG",
+            use_grad=True,
+            progressbar=False,
+        )
 
     for value in optimized_point.values():
         assert value.shape == (3,)
@@ -145,9 +145,9 @@ def test_fit_laplace_ragged_coords(rng):
             dims=["obs_idx", "city"],
         )
 
-    optimized_point, _ = find_MAP(
-        ragged_dim_model, "Newton-CG", use_grad=True, progressbar=False, return_raw=True
-    )
+        optimized_point, _ = find_MAP(
+            method="Newton-CG", use_grad=True, progressbar=False, return_raw=True
+        )
 
     idata = fit_laplace(optimized_point, ragged_dim_model, progressbar=False)
 
@@ -176,12 +176,12 @@ def test_fit_laplace(transform_samples):
             observed=np.random.default_rng().normal(loc=3, scale=1.5, size=(10000,)),
         )
 
-    optimized_point = find_MAP(
-        simp_model,
-        "Newton-CG",
-        use_grad=True,
-        progressbar=False,
-    )
+        optimized_point = find_MAP(
+            method="Newton-CG",
+            use_grad=True,
+            progressbar=False,
+        )
+
     idata = fit_laplace(
         optimized_point, simp_model, transform_samples=transform_samples, progressbar=False
     )
