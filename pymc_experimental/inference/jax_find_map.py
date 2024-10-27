@@ -162,7 +162,7 @@ def fit_laplace(
     )
 
     f_logp, f_grad, f_hess, f_hessp = make_jax_funcs_from_graph(
-        logp,
+        cast(TensorVariable, logp),
         use_grad=True,
         use_hess=True,
         use_hessp=False,
@@ -376,8 +376,8 @@ def find_MAP(
         Seed for the random number generator or a numpy Generator for reproducibility
     return_raw: bool | False, optinal
         Whether to also return the full output of `scipy.optimize.minimize`
-    jitter : bool, optional
-        Whether to add jitter to the initial values. Defaults to False.
+    jitter_rvs : list of TensorVariables, optional
+        Variables whose initial values should be jittered. If None, all variables are jittered.
     progressbar : bool, optional
         Whether to display a progress bar during optimization. Defaults to True.
     include_transformed: bool, optional
