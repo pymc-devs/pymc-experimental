@@ -13,3 +13,4 @@ dependencies:
   - pymc>=5.17.0  # CI was failing to resolve
   - blackjax
   - scikit-learn
+  - better_optimize
