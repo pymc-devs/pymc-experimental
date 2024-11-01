@@ -4,17 +4,19 @@ import numpy as np
 import pytensor.tensor as pt
 
 from pymc.distributions import Bernoulli, Categorical, DiscreteUniform
+from pymc.distributions.distribution import _support_point, support_point
 from pymc.logprob.abstract import MeasurableOp, _logprob
 from pymc.logprob.basic import conditional_logp, logp
 from pymc.pytensorf import constant_fold
 from pytensor import Variable
 from pytensor.compile.builders import OpFromGraph
 from pytensor.compile.mode import Mode
-from pytensor.graph import Op, vectorize_graph
+from pytensor.graph import FunctionGraph, Op, vectorize_graph
 from pytensor.graph.replace import clone_replace, graph_replace
 from pytensor.scan import map as scan_map
 from pytensor.scan import scan
 from pytensor.tensor import TensorVariable
+from pytensor.tensor.random.type import RandomType
 
 from pymc_experimental.distributions import DiscreteMarkovChain
 
@@ -42,6 +44,56 @@ class MarginalRV(OpFromGraph, MeasurableOp):
                 )
             )
         return tuple(support_axes_vars)
+
+
+@_support_point.register
+def support_point_marginal_rv(op: MarginalRV, rv, *inputs):
+    """Support point for a marginalized RV.
+
+    The support point of a marginalized RV is the support point of the inner RV,
+    conditioned on the marginalized RV taking its support point.
+    """
+    outputs = rv.owner.outputs
+
+    inner_rv = op.inner_outputs[outputs.index(rv)]
+    marginalized_inner_rv, *other_dependent_inner_rvs = (
+        out
+        for out in op.inner_outputs
+        if out is not inner_rv and not isinstance(out.type, RandomType)
+    )
+
+    # Replace references to inner rvs by the dummy variables (including the marginalized RV)
+    # This is necessary because the inner RVs may depend on each other
+    marginalized_inner_rv_dummy = marginalized_inner_rv.clone()
+    other_dependent_inner_rv_to_dummies = {
+        inner_rv: inner_rv.clone() for inner_rv in other_dependent_inner_rvs
+    }
+    inner_rv = clone_replace(
+        inner_rv,
+        replace={marginalized_inner_rv: marginalized_inner_rv_dummy}
+        | other_dependent_inner_rv_to_dummies,
+    )
+
+    # Get support point of inner RV and marginalized RV
+    inner_rv_support_point = support_point(inner_rv)
+    marginalized_inner_rv_support_point = support_point(marginalized_inner_rv)
+
+    replacements = [
+        # Replace the marginalized RV dummy by its support point
+        (marginalized_inner_rv_dummy, marginalized_inner_rv_support_point),
+        # Replace other dependent RVs dummies by the respective outer outputs.
+        # PyMC will replace them by their support points later
+        *(
+            (v, outputs[op.inner_outputs.index(k)])
+            for k, v in other_dependent_inner_rv_to_dummies.items()
+        ),
+        # Replace outer input RVs
+        *zip(op.inner_inputs, inputs),
+    ]
+    fgraph = FunctionGraph(outputs=[inner_rv_support_point], clone=False)
+    fgraph.replace_all(replacements, import_missing=True)
+    [rv_support_point] = fgraph.outputs
+    return rv_support_point
 
 
 class MarginalFiniteDiscreteRV(MarginalRV):
