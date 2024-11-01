@@ -12,8 +12,8 @@ methods in the current release of PyMC experimental.
    :toctree: generated/
 
    as_model
-   MarginalModel
    marginalize
+   recover_marginals
    model_builder.ModelBuilder
 
 Inference
@@ -53,6 +53,7 @@ Utils
 
    spline.bspline_interpolation
    prior.prior_from_idata
+   model_equivalence.equivalent_models
 
 
 Statespace Models
