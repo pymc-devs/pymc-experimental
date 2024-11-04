@@ -31,11 +31,13 @@ def fit(method, **kwargs):
     arviz.InferenceData
     """
     if method == "pathfinder":
+        # TODO: Remove this once we have a pure PyMC implementation
         if find_spec("blackjax") is None:
             raise RuntimeError("Need BlackJAX to use `pathfinder`")
 
         from pymc_experimental.inference.pathfinder import fit_pathfinder
 
+        # TODO: edit **kwargs to be more consistent with fit_pathfinder with blackjax and pymc backends.
         return fit_pathfinder(**kwargs)
 
     if method == "laplace":
