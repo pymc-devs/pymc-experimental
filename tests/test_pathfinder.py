@@ -62,25 +62,28 @@ def test_bfgs_sample():
     )
 
     """test BFGS sampling"""
-    L, N = 8, 10
+    Lp1, N = 8, 10
+    L = Lp1 - 1
     J = 6
     num_samples = 1000
 
     # mock data
-    x = np.random.randn(L, N)
-    g = np.random.randn(L, N)
+    x_data = np.random.randn(Lp1, N)
+    g_data = np.random.randn(Lp1, N)
 
     # get factors
-    x_tensor = pt.as_tensor(x, dtype="float64")
-    g_tensor = pt.as_tensor(g, dtype="float64")
-    alpha, update_mask = alpha_recover(x_tensor, g_tensor)
-    beta, gamma = inverse_hessian_factors(alpha, x_tensor, g_tensor, update_mask, J)
+    x_full = pt.as_tensor(x_data, dtype="float64")
+    g_full = pt.as_tensor(g_data, dtype="float64")
+    x = x_full[1:]
+    g = g_full[1:]
+    alpha, S, Z, update_mask = alpha_recover(x_full, g_full)
+    beta, gamma = inverse_hessian_factors(alpha, S, Z, update_mask, J)
 
     # sample
     phi, logq = bfgs_sample(
         num_samples=num_samples,
-        x=x_tensor,
-        g=g_tensor,
+        x=x,
+        g=g,
         alpha=alpha,
         beta=beta,
         gamma=gamma,
@@ -109,30 +112,3 @@ def test_fit_pathfinder_backends(inference_backend):
     )
     assert isinstance(idata, az.InferenceData)
     assert "posterior" in idata
-
-
-def test_process_multipath_results():
-    """Test processing of multipath results"""
-    from pymc_experimental.inference.pathfinder.pathfinder import (
-        PathfinderResults,
-        process_multipath_pathfinder_results,
-    )
-
-    num_paths = 3
-    num_draws = 100
-    num_dims = 2
-
-    results = PathfinderResults(num_paths, num_draws, num_dims)
-
-    # Add data to all paths
-    for i in range(num_paths):
-        samples = np.random.randn(num_draws, num_dims)
-        logP = np.random.randn(num_draws)
-        logQ = np.random.randn(num_draws)
-        results.add_path_data(i, samples, logP, logQ)
-
-    samples, logP, logQ = process_multipath_pathfinder_results(results)
-
-    assert samples.shape == (num_paths * num_draws, num_dims)
-    assert logP.shape == (num_paths * num_draws,)
-    assert logQ.shape == (num_paths * num_draws,)

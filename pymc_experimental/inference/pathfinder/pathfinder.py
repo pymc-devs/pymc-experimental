@@ -150,55 +150,6 @@ def convert_flat_trace_to_idata(
     return idata
 
 
-def _get_delta_x_delta_g(x, g):
-    # x or g: (L - 1, N)
-    return pt.diff(x, axis=0), pt.diff(g, axis=0)
-
-
-def _get_chi_matrix(diff, update_mask, J):
-    _, N = diff.shape
-    j_last = pt.as_tensor(J - 1)  # since indexing starts at 0
-
-    def chi_update(chi_lm1, diff_l):
-        chi_l = pt.roll(chi_lm1, -1, axis=0)
-        # z_xi_l = pt.set_subtensor(z_xi_l[j_last], z_l)
-        # z_xi_l[j_last] = z_l
-        return pt.set_subtensor(chi_l[j_last], diff_l)
-
-    def no_op(chi_lm1, diff_l):
-        return chi_lm1
-
-    def scan_body(update_mask_l, diff_l, chi_lm1):
-        return pt.switch(update_mask_l, chi_update(chi_lm1, diff_l), no_op(chi_lm1, diff_l))
-
-    update_mask = pt.concatenate([pt.as_tensor([False], dtype="bool"), update_mask], axis=-1)
-    diff = pt.concatenate([pt.zeros((1, N), dtype="float64"), diff], axis=0)
-
-    chi_init = pt.zeros((J, N))
-    chi_mat, _ = pytensor.scan(
-        fn=scan_body,
-        outputs_info=chi_init,
-        sequences=[
-            update_mask,
-            diff,
-        ],
-    )
-
-    chi_mat = chi_mat.dimshuffle(0, 2, 1)
-
-    return chi_mat
-
-
-def _get_s_xi_z_xi(x, g, update_mask, J):
-    L, N = x.shape
-    S, Z = _get_delta_x_delta_g(x, g)
-
-    s_xi = _get_chi_matrix(S, update_mask, J)
-    z_xi = _get_chi_matrix(Z, update_mask, J)
-
-    return s_xi, z_xi
-
-
 def alpha_recover(x, g, epsilon: float = 1e-11):
     """
     epsilon: float
@@ -229,8 +180,9 @@ def alpha_recover(x, g, epsilon: float = 1e-11):
             return_alpha_lm1(alpha_lm1, s_l, z_l),
         )
 
-    L, N = x.shape
-    S, Z = _get_delta_x_delta_g(x, g)
+    Lp1, N = x.shape
+    S = pt.diff(x, axis=0)
+    Z = pt.diff(g, axis=0)
     alpha_l_init = pt.ones(N)
     SZ = (S * Z).sum(axis=-1)
 
@@ -241,20 +193,54 @@ def alpha_recover(x, g, epsilon: float = 1e-11):
         fn=scan_body,
         outputs_info=alpha_l_init,
         sequences=[update_mask, S, Z],
-        n_steps=L - 1,
+        n_steps=Lp1 - 1,
         strict=True,
     )
 
-    # alpha: (L, N), update_mask: (L-1, N)
-    alpha = pt.concatenate([pt.ones(N)[None, :], alpha], axis=0)
+    # alpha: (L, N), update_mask: (L, N)
+    # alpha = pt.concatenate([pt.ones(N)[None, :], alpha], axis=0)
     # assert np.all(alpha.eval() > 0), "alpha cannot be negative"
-    return alpha, update_mask
+    return alpha, S, Z, update_mask
 
 
-def inverse_hessian_factors(alpha, x, g, update_mask, J):
+def inverse_hessian_factors(alpha, S, Z, update_mask, J):
+    def get_chi_matrix(diff, update_mask, J):
+        L, N = diff.shape
+        j_last = pt.as_tensor(J - 1)  # since indexing starts at 0
+
+        def chi_update(chi_lm1, diff_l):
+            chi_l = pt.roll(chi_lm1, -1, axis=0)
+            # z_xi_l = pt.set_subtensor(z_xi_l[j_last], z_l)
+            # z_xi_l[j_last] = z_l
+            return pt.set_subtensor(chi_l[j_last], diff_l)
+
+        def no_op(chi_lm1, diff_l):
+            return chi_lm1
+
+        def scan_body(update_mask_l, diff_l, chi_lm1):
+            return pt.switch(update_mask_l, chi_update(chi_lm1, diff_l), no_op(chi_lm1, diff_l))
+
+        # NOTE: removing first index so that L starts at 1
+        # update_mask = pt.concatenate([pt.as_tensor([False], dtype="bool"), update_mask], axis=-1)
+        # diff = pt.concatenate([pt.zeros((1, N), dtype="float64"), diff], axis=0)
+
+        chi_init = pt.zeros((J, N))
+        chi_mat, _ = pytensor.scan(
+            fn=scan_body,
+            outputs_info=chi_init,
+            sequences=[
+                update_mask,
+                diff,
+            ],
+        )
+
+        chi_mat = chi_mat.dimshuffle(0, 2, 1)
+
+        return chi_mat
+
     L, N = alpha.shape
-    # s_xi, z_xi = get_s_xi_z_xi(x, g, update_mask, J)
-    s_xi, z_xi = _get_s_xi_z_xi(x, g, update_mask, J)
+    s_xi = get_chi_matrix(S, update_mask, J)
+    z_xi = get_chi_matrix(Z, update_mask, J)
 
     # (L, J, J)
     sz_xi = pt.matrix_transpose(s_xi) @ z_xi
@@ -414,7 +400,7 @@ def single_pathfinder(
     # TODO: apply the above excerpt to the Pathfinder algorithm.
     """
 
-    history = lbfgs(
+    lbfgs_history = lbfgs(
         fn=neg_logp_func,
         grad_fn=neg_dlogp_func,
         x0=ip_map.data,
@@ -425,14 +411,21 @@ def single_pathfinder(
         maxls=maxls,
     )
 
-    alpha, update_mask = alpha_recover(history.x, history.g, epsilon=epsilon)
+    # x_full, g_full: (L+1, N)
+    x_full = pt.as_tensor(lbfgs_history.x, dtype="float64")
+    g_full = pt.as_tensor(lbfgs_history.g, dtype="float64")
 
-    beta, gamma = inverse_hessian_factors(alpha, history.x, history.g, update_mask, J=maxcor)
+    # ignore initial point - x, g: (L, N)
+    x = x_full[1:]
+    g = g_full[1:]
+
+    alpha, S, Z, update_mask = alpha_recover(x_full, g_full, epsilon=epsilon)
+    beta, gamma = inverse_hessian_factors(alpha, S, Z, update_mask, J=maxcor)
 
     phi, logQ_phi = bfgs_sample(
         num_samples=num_elbo_draws,
-        x=history.x,
-        g=history.g,
+        x=x,
+        g=g,
         alpha=alpha,
         beta=beta,
         gamma=gamma,
@@ -450,8 +443,8 @@ def single_pathfinder(
 
     psi, logQ_psi = bfgs_sample(
         num_samples=num_draws,
-        x=history.x[lstar],
-        g=history.g[lstar],
+        x=x[lstar],
+        g=g[lstar],
         alpha=alpha[lstar],
         beta=beta[lstar],
         gamma=gamma[lstar],

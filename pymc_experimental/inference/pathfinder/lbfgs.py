@@ -2,16 +2,14 @@ from collections.abc import Callable
 from typing import NamedTuple
 
 import numpy as np
-import pytensor.tensor as pt
 
-from pytensor.tensor.variable import TensorVariable
 from scipy.optimize import minimize
 
 
 class LBFGSHistory(NamedTuple):
-    x: TensorVariable
-    f: TensorVariable
-    g: TensorVariable
+    x: np.ndarray
+    f: np.ndarray
+    g: np.ndarray
 
 
 class LBFGSHistoryManager:
@@ -40,9 +38,9 @@ class LBFGSHistoryManager:
         f = self.f_history[: self.count]
         g = self.g_history[: self.count] if self.g_history is not None else None
         return LBFGSHistory(
-            x=pt.as_tensor(x, "x", dtype="float64"),
-            f=pt.as_tensor(f, "f", dtype="float64"),
-            g=pt.as_tensor(g, "g", dtype="float64"),
+            x=x,
+            f=f,
+            g=g,
         )
 
     def __call__(self, x):
