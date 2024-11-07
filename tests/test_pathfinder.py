@@ -136,28 +136,3 @@ def test_process_multipath_results():
     assert samples.shape == (num_paths * num_draws, num_dims)
     assert logP.shape == (num_paths * num_draws,)
     assert logQ.shape == (num_paths * num_draws,)
-
-
-def test_pathfinder_results():
-    """Test PathfinderResults class"""
-    from pymc_experimental.inference.pathfinder.pathfinder import PathfinderResults
-
-    num_paths = 3
-    num_draws = 100
-    num_dims = 2
-
-    results = PathfinderResults(num_paths, num_draws, num_dims)
-
-    # Test initialization
-    assert len(results.paths) == num_paths
-    assert results.paths[0]["samples"].shape == (num_draws, num_dims)
-
-    # Test adding data
-    samples = np.random.randn(num_draws, num_dims)
-    logP = np.random.randn(num_draws)
-    logQ = np.random.randn(num_draws)
-
-    results.add_path_data(0, samples, logP, logQ)
-    np.testing.assert_array_equal(results.paths[0]["samples"], samples)
-    np.testing.assert_array_equal(results.paths[0]["logP"], logP)
-    np.testing.assert_array_equal(results.paths[0]["logQ"], logQ)

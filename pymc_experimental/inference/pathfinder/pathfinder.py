@@ -20,6 +20,7 @@ import sys
 
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Literal
 
 import arviz as az
 import blackjax
@@ -68,7 +69,7 @@ class PathfinderResults:
 
 def get_jaxified_logp_of_ravel_inputs(
     model: Model,
-) -> tuple[Callable, DictToArrayBijection]:
+) -> Callable:
     """
     Get jaxified logp function and ravel inputs for a PyMC model.
 
@@ -198,7 +199,12 @@ def _get_s_xi_z_xi(x, g, update_mask, J):
     return s_xi, z_xi
 
 
-def alpha_recover(x, g):
+def alpha_recover(x, g, epsilon: float = 1e-11):
+    """
+    epsilon: float
+        value used to filter out large changes in the direction of the update gradient at each iteration l in L. iteration l are only accepted if delta_theta[l] * delta_grad[l] > epsilon * L2_norm(delta_grad[l]) for each l in L.
+    """
+
     def compute_alpha_l(alpha_lm1, s_l, z_l):
         # alpha_lm1: (N,)
         # s_l: (N,)
@@ -227,7 +233,9 @@ def alpha_recover(x, g):
     S, Z = _get_delta_x_delta_g(x, g)
     alpha_l_init = pt.ones(N)
     SZ = (S * Z).sum(axis=-1)
-    update_mask = SZ > 1e-11 * pt.linalg.norm(Z, axis=-1)
+
+    # Q: Line 5 of Algorithm 3 in Zhang et al., (2022) sets SZ < 1e-11 * L2(Z) as opposed to the ">" sign
+    update_mask = SZ > epsilon * pt.linalg.norm(Z, axis=-1)
 
     alpha, _ = pytensor.scan(
         fn=scan_body,
@@ -289,23 +297,8 @@ def inverse_hessian_factors(alpha, x, g, update_mask, J):
     return beta, gamma
 
 
-def _batched(x, g, alpha, beta, gamma):
-    var_list = [x, g, alpha, beta, gamma]
-    ndims = np.array([2, 2, 2, 3, 3])
-    var_ndims = np.array([var.ndim for var in var_list])
-
-    if all(var_ndims == ndims):
-        return True
-    elif all(var_ndims == ndims - 1):
-        return False
-    else:
-        raise ValueError(
-            "All variables must have the same number of dimensions, either matching ndims or ndims - 1."
-        )
-
-
 def bfgs_sample(
-    num_samples,
+    num_samples: int,
     x,  # position
     g,  # grad
     alpha,
@@ -326,7 +319,19 @@ def bfgs_sample(
 
     rng = pytensor.shared(np.random.default_rng(seed=random_seed))
 
-    if not _batched(x, g, alpha, beta, gamma):
+    def batched(x, g, alpha, beta, gamma):
+        var_list = [x, g, alpha, beta, gamma]
+        ndims = np.array([2, 2, 2, 3, 3])
+        var_ndims = np.array([var.ndim for var in var_list])
+
+        if np.all(var_ndims == ndims):
+            return True
+        elif np.all(var_ndims == ndims - 1):
+            return False
+        else:
+            raise ValueError("Incorrect number of dimensions.")
+
+    if not batched(x, g, alpha, beta, gamma):
         x = pt.atleast_2d(x)
         g = pt.atleast_2d(g)
         alpha = pt.atleast_2d(alpha)
@@ -372,12 +377,8 @@ def bfgs_sample(
 
 
 def compute_logp(logp_func, arr):
-    """
-    **IMPORTANT**
-    replace nan with -np.inf otherwise np.argmax(elbo) will return you the first index at nan!!!!
-    """
-
     logP = np.apply_along_axis(logp_func, axis=-1, arr=arr)
+    # replace nan with -inf since np.argmax will return the first index at nan
     return np.where(np.isnan(logP), -np.inf, logP)
 
 
@@ -385,13 +386,14 @@ def single_pathfinder(
     model,
     num_draws: int,
     maxcor: int | None = None,
-    maxiter=1000,
-    ftol=1e-10,
-    gtol=1e-16,
-    maxls=1000,
+    maxiter: int = 1000,
+    ftol: float = 1e-10,
+    gtol: float = 1e-16,
+    maxls: int = 1000,
     num_elbo_draws: int = 10,
-    random_seed: RandomSeed = None,
     jitter: float = 2.0,
+    epsilon: float = 1e-11,
+    random_seed: RandomSeed | None = None,
 ):
     jitter_seed, pathfinder_seed, sample_seed = _get_seeds_per_chain(random_seed, 3)
     logp_func, dlogp_func = get_logp_dlogp_of_ravel_inputs(model)
@@ -423,7 +425,7 @@ def single_pathfinder(
         maxls=maxls,
     )
 
-    alpha, update_mask = alpha_recover(history.x, history.g)
+    alpha, update_mask = alpha_recover(history.x, history.g, epsilon=epsilon)
 
     beta, gamma = inverse_hessian_factors(alpha, history.x, history.g, update_mask, J=maxcor)
 
@@ -486,6 +488,10 @@ def make_initial_pathfinder_point(
     DictToArrayBijection
         bijection containing jittered initial point
     """
+
+    # TODO: replace rng.uniform (pseudo random sequence) with scipy.stats.qmc.Sobol (quasi-random sequence)
+    # Sobol is a better low discrepancy sequence than uniform.
+
     ipfn = make_initial_point_fn(
         model=model,
     )
@@ -498,7 +504,7 @@ def make_initial_pathfinder_point(
     return ip_map
 
 
-def _run_single_pathfinder(model, path_id, random_seed, **kwargs):
+def _run_single_pathfinder(model, path_id: int, random_seed: RandomSeed, **kwargs):
     """Helper to run single pathfinder instance"""
     try:
         # Handle pickling
@@ -553,13 +559,13 @@ def process_multipath_pathfinder_results(
         processed samples, logP and logQ arrays
     """
     # path[samples]: (I, M, N)
-    num_dims = results.paths[0]["samples"].shape[-1]
+    N = results.paths[0]["samples"].shape[-1]
 
     paths_array = np.array([results.paths[i] for i in range(results.num_paths)])
     logP = np.concatenate([path["logP"] for path in paths_array])
     logQ = np.concatenate([path["logQ"] for path in paths_array])
     samples = np.concatenate([path["samples"] for path in paths_array])
-    samples = samples.reshape(-1, num_dims, order="F")
+    samples = samples.reshape(-1, N, order="F")
 
     # adjust log densities
     log_I = np.log(results.num_paths)
@@ -575,12 +581,13 @@ def multipath_pathfinder(
     num_draws: int,
     num_draws_per_path: int,
     maxcor: int | None = None,
-    maxiter=1000,
-    ftol=1e-10,
-    gtol=1e-16,
-    maxls=1000,
+    maxiter: int = 1000,
+    ftol: float = 1e-10,
+    gtol: float = 1e-16,
+    maxls: int = 1000,
     num_elbo_draws: int = 10,
     jitter: float = 2.0,
+    epsilon: float = 1e-11,
     psis_resample: bool = True,
     random_seed: RandomSeed = None,
     **pathfinder_kwargs,
@@ -603,6 +610,7 @@ def multipath_pathfinder(
             "maxls": maxls,
             "num_elbo_draws": num_elbo_draws,
             "jitter": jitter,
+            "epsilon": epsilon,
             **pathfinder_kwargs,
         }
         kwargs_pickled = {k: cloudpickle.dumps(v) for k, v in kwargs.items()}
@@ -645,20 +653,21 @@ def multipath_pathfinder(
 
 def fit_pathfinder(
     model,
-    num_paths=1,
-    num_draws=1000,
-    num_draws_per_path=1000,
-    maxcor=None,
-    maxiter=1000,
-    ftol=1e-10,
-    gtol=1e-16,
+    num_paths: int = 1,  # I
+    num_draws: int = 1000,  # R
+    num_draws_per_path: int = 1000,  # M
+    maxcor: int | None = None,  # J
+    maxiter: int = 1000,  # L^max
+    ftol: float = 1e-10,
+    gtol: float = 1e-16,
     maxls=1000,
-    num_elbo_draws: int = 10,
+    num_elbo_draws: int = 10,  # K
     jitter: float = 2.0,
+    epsilon: float = 1e-11,
     psis_resample: bool = True,
     random_seed: RandomSeed | None = None,
-    postprocessing_backend="cpu",
-    inference_backend="pymc",
+    postprocessing_backend: Literal["cpu", "gpu"] = "cpu",
+    inference_backend: Literal["pymc", "blackjax"] = "pymc",
     **pathfinder_kwargs,
 ):
     """
@@ -686,11 +695,13 @@ def fit_pathfinder(
     gtol : float, optional
         Tolerance for the norm of the gradient (default is 1e-16).
     maxls : int, optional
-        Maximum number of line search steps (default is 1000).
+        Maximum number of line search steps for the L-BFGS algorithm (default is 1000).
     num_elbo_draws : int, optional
         Number of draws for the Evidence Lower Bound (ELBO) estimation (default is 10).
     jitter : float, optional
         Amount of jitter to apply to initial points (default is 2.0).
+    epsilon: float
+        value used to filter out large changes in the direction of the update gradient at each iteration l in L. iteration l are only accepted if delta_theta[l] * delta_grad[l] > epsilon * L2_norm(delta_grad[l]) for each l in L. (default is 1e-11).
     psis_resample : bool, optional
         Whether to apply Pareto Smoothed Importance Sampling Resampling (default is True). If false, the samples are returned as is (i.e. no resampling is applied) of the size num_draws_per_path * num_paths.
     random_seed : RandomSeed, optional
@@ -733,6 +744,7 @@ def fit_pathfinder(
             maxls=maxls,
             num_elbo_draws=num_elbo_draws,
             jitter=jitter,
+            epsilon=epsilon,
             psis_resample=psis_resample,
             random_seed=random_seed,
             **pathfinder_kwargs,
