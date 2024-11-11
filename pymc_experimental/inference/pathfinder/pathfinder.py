@@ -13,18 +13,16 @@
 #   limitations under the License.
 
 import collections
+import functools
 import logging
 import multiprocessing
 import platform
-import sys
 
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Literal
 
 import arviz as az
 import blackjax
-import cloudpickle
 import jax
 import numpy as np
 import pymc as pm
@@ -38,33 +36,52 @@ from pymc.blocking import DictToArrayBijection, RaveledVars
 from pymc.initial_point import make_initial_point_fn
 from pymc.model import modelcontext
 from pymc.model.core import Point
+from pymc.pytensorf import compile_pymc, find_rng_nodes, replace_rng_nodes, reseed_rngs
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import RandomSeed, _get_seeds_per_chain, get_default_varnames
+from pytensor.graph import Apply, Op
+from pytensor.tensor.variable import TensorVariable
 
 from pymc_experimental.inference.pathfinder.importance_sampling import psir
-from pymc_experimental.inference.pathfinder.lbfgs import lbfgs
+from pymc_experimental.inference.pathfinder.lbfgs import LBFGSOp
 
 logger = logging.getLogger(__name__)
 
 REGULARISATION_TERM = 1e-8
 
 
-class PathfinderResults:
-    def __init__(self, num_paths: int, num_draws_per_path: int, num_dims: int):
-        self.num_paths = num_paths
-        self.num_draws_per_path = num_draws_per_path
-        self.paths = {}
-        for path_id in range(num_paths):
-            self.paths[path_id] = {
-                "samples": np.empty((num_draws_per_path, num_dims)),
-                "logP": np.empty(num_draws_per_path),
-                "logQ": np.empty(num_draws_per_path),
-            }
+def make_seeded_function(
+    func: Callable | None = None,
+    inputs: list[TensorVariable] | None = [],
+    outputs: list[TensorVariable] | None = None,
+    compile_kwargs: dict = {},
+) -> Callable:
+    if (outputs is None) and (func is not None):
+        outputs = func(*inputs)
+    elif (outputs is None) and (func is None):
+        raise ValueError("func must be provided if outputs are not provided")
 
-    def add_path_data(self, path_id: int, samples, logP, logQ):
-        self.paths[path_id]["samples"][:] = samples
-        self.paths[path_id]["logP"][:] = logP
-        self.paths[path_id]["logQ"][:] = logQ
+    if not isinstance(outputs, list | tuple):
+        outputs = [outputs]
+
+    outputs = replace_rng_nodes(outputs)
+    default_compile_kwargs = {"mode": pytensor.compile.mode.FAST_RUN}
+    compile_kwargs = default_compile_kwargs | compile_kwargs
+    func_compiled = compile_pymc(
+        inputs=inputs,
+        outputs=outputs,
+        on_unused_input="ignore",
+        **compile_kwargs,
+    )
+    rngs = find_rng_nodes(func_compiled.maker.fgraph.outputs)
+
+    @functools.wraps(func_compiled)
+    def inner(random_seed=None, *args, **kwargs):
+        if random_seed is not None:
+            reseed_rngs(rngs, random_seed)
+        return func_compiled(*args, **kwargs)
+
+    return inner
 
 
 def get_jaxified_logp_of_ravel_inputs(
@@ -101,16 +118,12 @@ def get_logp_dlogp_of_ravel_inputs(
 ):  # -> tuple[Callable[..., Any], Callable[..., Any]]:
     initial_points = model.initial_point()
     ip_map = DictToArrayBijection.map(initial_points)
-    compiled_logp_func = DictToArrayBijection.mapf(
-        model.compile_logp(jacobian=False), initial_points
-    )
+    compiled_logp_func = DictToArrayBijection.mapf(model.compile_logp(), initial_points)
 
     def logp_func(x):
         return compiled_logp_func(RaveledVars(x, ip_map.point_map_info))
 
-    compiled_dlogp_func = DictToArrayBijection.mapf(
-        model.compile_dlogp(jacobian=False), initial_points
-    )
+    compiled_dlogp_func = DictToArrayBijection.mapf(model.compile_dlogp(), initial_points)
 
     def dlogp_func(x):
         return compiled_dlogp_func(RaveledVars(x, ip_map.point_map_info))
@@ -139,7 +152,7 @@ def convert_flat_trace_to_idata(
 
     var_names = model.unobserved_value_vars
     vars_to_sample = list(get_default_varnames(var_names, include_transformed=include_transformed))
-    print("Transforming variables...", file=sys.stdout)
+    logger.info("Transforming variables...")
 
     if inference_backend == "pymc":
         # TODO: we need to remove JAX dependency as win32 users can now use Pathfinder with inference_backend="pymc".
@@ -215,8 +228,29 @@ def alpha_recover(x, g, epsilon: float = 1e-11):
     return alpha, S, Z, update_mask
 
 
+def get_chi_matrix(diff, update_mask, J):
+    L, N = diff.shape
+
+    diff_masked = update_mask[:, None] * diff
+
+    # diff_padded: (L-1+J, N)
+    diff_padded = pt.pad(diff_masked, ((J, 0), (0, 0)), mode="constant")
+
+    index = pt.arange(L)[:, None] + pt.arange(J)[None, :]
+    index = index.reshape((L, J))
+
+    # diff_xi (L, N, J) # The J-th column needs to have the last update
+    diff_xi = diff_padded[index].dimshuffle(0, 2, 1)
+
+    return diff_xi
+
+
 def inverse_hessian_factors(alpha, S, Z, update_mask, J):
-    def get_chi_matrix(diff, update_mask, J):
+    # NOTE: get_chi_matrix_1 is a modified version of get_chi_matrix_2 to closely follow Zhang et al., (2022)
+    # NOTE: get_chi_matrix_2 is from blackjax which may have been incorrectly implemented
+    # NOTE: need to check which of the two is correct
+
+    def get_chi_matrix_1(diff, update_mask, J):
         L, N = diff.shape
         j_last = pt.as_tensor(J - 1)  # since indexing starts at 0
 
@@ -250,9 +284,27 @@ def inverse_hessian_factors(alpha, S, Z, update_mask, J):
 
         return chi_mat
 
+    def get_chi_matrix_2(diff, update_mask, J):
+        L, N = diff.shape
+
+        diff_masked = update_mask[:, None] * diff
+
+        # diff_padded: (L+J, N)
+        pad_width = pt.zeros(shape=(2, 2), dtype="int32")
+        pad_width = pt.set_subtensor(pad_width[0, 0], J)
+        diff_padded = pt.pad(diff_masked, pad_width, mode="constant")
+
+        index = pt.arange(L)[:, None] + pt.arange(J)[None, :]
+        index = index.reshape((L, J))
+
+        # chi_mat (L, N, J) # The J-th column needs to have the last update
+        chi_mat = diff_padded[index].dimshuffle(0, 2, 1)
+
+        return chi_mat
+
     L, N = alpha.shape
-    s_xi = get_chi_matrix(S, update_mask, J)
-    z_xi = get_chi_matrix(Z, update_mask, J)
+    s_xi = get_chi_matrix_1(S, update_mask, J)
+    z_xi = get_chi_matrix_1(Z, update_mask, J)
 
     # (L, J, J)
     sz_xi = pt.matrix_transpose(s_xi) @ z_xi
@@ -302,8 +354,9 @@ def bfgs_sample(
     alpha,
     beta,
     gamma,
+    index: int | None = None,
     # random_seed: RandomSeed | None = None,
-    rng,
+    # rng,
 ):
     # batch: L = 8
     # alpha_l: (N,)         => (L, N)
@@ -329,6 +382,13 @@ def bfgs_sample(
             return False
         else:
             raise ValueError("Incorrect number of dimensions.")
+
+    if index is not None:
+        x = x[index]
+        g = g[index]
+        alpha = alpha[index]
+        beta = beta[index]
+        gamma = gamma[index]
 
     if not batched(x, g, alpha, beta, gamma):
         x = pt.atleast_2d(x)
@@ -358,7 +418,7 @@ def bfgs_sample(
         + pt.batched_dot((beta @ gamma @ pt.matrix_transpose(beta)), g)
     )  # fmt: off
 
-    u = pt.random.normal(size=(L, num_samples, N), rng=rng)
+    u = pt.random.normal(size=(L, num_samples, N))
 
     phi = (
         mu[..., None]
@@ -375,164 +435,10 @@ def bfgs_sample(
     return phi, logdensity
 
 
-def compute_logp(logp_func, arr):
-    logP = np.apply_along_axis(logp_func, axis=-1, arr=arr)
-    # replace nan with -inf since np.argmax will return the first index at nan
-    return np.where(np.isnan(logP), -np.inf, logP)
-
-
-_x = pt.matrix("_x", dtype="float64")
-_g = pt.matrix("_g", dtype="float64")
-_alpha = pt.matrix("_alpha", dtype="float64")
-_beta = pt.tensor3("_beta", dtype="float64")
-_gamma = pt.tensor3("_gamma", dtype="float64")
-_epsilon = pt.scalar("_epsilon", dtype="float64")
-_maxcor = pt.iscalar("_maxcor")
-_alpha, _S, _Z, _update_mask = alpha_recover(_x, _g, epsilon=_epsilon)
-_beta, _gamma = inverse_hessian_factors(_alpha, _S, _Z, _update_mask, J=_maxcor)
-
-_num_elbo_draws = pt.iscalar("_num_elbo_draws")
-_dummy_rng = pytensor.shared(np.random.default_rng(), name="_dummy_rng")
-_phi, _logQ_phi = bfgs_sample(
-    num_samples=_num_elbo_draws,
-    x=_x,
-    g=_g,
-    alpha=_alpha,
-    beta=_beta,
-    gamma=_gamma,
-    rng=_dummy_rng,
-)
-
-_num_draws = pt.iscalar("_num_draws")
-_x_lstar = pt.dvector("_x_lstar")
-_g_lstar = pt.dvector("_g_lstar")
-_alpha_lstar = pt.dvector("_alpha_lstar")
-_beta_lstar = pt.dmatrix("_beta_lstar")
-_gamma_lstar = pt.dmatrix("_gamma_lstar")
-
-
-_psi, _logQ_psi = bfgs_sample(
-    num_samples=_num_draws,
-    x=_x_lstar,
-    g=_g_lstar,
-    alpha=_alpha_lstar,
-    beta=_beta_lstar,
-    gamma=_gamma_lstar,
-    rng=_dummy_rng,
-)
-
-alpha_recover_compiled = pytensor.function(
-    inputs=[_x, _g, _epsilon],
-    outputs=[_alpha, _S, _Z, _update_mask],
-)
-inverse_hessian_factors_compiled = pytensor.function(
-    inputs=[_alpha, _S, _Z, _update_mask, _maxcor],
-    outputs=[_beta, _gamma],
-)
-bfgs_sample_compiled = pytensor.function(
-    inputs=[_num_elbo_draws, _x, _g, _alpha, _beta, _gamma],
-    outputs=[_phi, _logQ_phi],
-)
-bfgs_sample_lstar_compiled = pytensor.function(
-    inputs=[_num_draws, _x_lstar, _g_lstar, _alpha_lstar, _beta_lstar, _gamma_lstar],
-    outputs=[_psi, _logQ_psi],
-)
-
-
-def single_pathfinder(
-    model,
-    num_draws: int,
-    maxcor: int | None = None,
-    maxiter: int = 1000,
-    ftol: float = 1e-10,
-    gtol: float = 1e-16,
-    maxls: int = 1000,
-    num_elbo_draws: int = 10,
-    jitter: float = 2.0,
-    epsilon: float = 1e-11,
+def make_initial_points(
     random_seed: RandomSeed | None = None,
-):
-    jitter_seed, pathfinder_seed, sample_seed = _get_seeds_per_chain(random_seed, 3)
-    logp_func, dlogp_func = get_logp_dlogp_of_ravel_inputs(model)
-    ip_map = make_initial_pathfinder_point(model, jitter=jitter, random_seed=jitter_seed)
-
-    def neg_logp_func(x):
-        return -logp_func(x)
-
-    def neg_dlogp_func(x):
-        return -dlogp_func(x)
-
-    if maxcor is None:
-        maxcor = np.ceil(2 * ip_map.data.shape[0] / 3).astype("int32")
-
-    """
-    The following excerpt is from Zhang et al., (2022):
-    "In some cases, the optimization path terminates at the initialization point and in others it can fail to generate a positive deﬁnite inverse Hessian estimate. In both of these settings, Pathﬁnder essentially fails. Rather than worry about coding exceptions or failure return codes, Pathﬁnder returns the last iteration of the optimization path as a single approximating draw with infinity for the approximate normal log density of the draw. This ensures that failed ﬁts get zero importance weights in the multi-path Pathﬁnder algorithm, which we describe in the next section."
-    # TODO: apply the above excerpt to the Pathfinder algorithm.
-    """
-
-    lbfgs_history = lbfgs(
-        fn=neg_logp_func,
-        grad_fn=neg_dlogp_func,
-        x0=ip_map.data,
-        maxcor=maxcor,
-        maxiter=maxiter,
-        ftol=ftol,
-        gtol=gtol,
-        maxls=maxls,
-    )
-
-    # x, g: (L+1, N)
-    x = lbfgs_history.x
-    g = lbfgs_history.g
-    alpha, S, Z, update_mask = alpha_recover_compiled(x, g, epsilon)
-    beta, gamma = inverse_hessian_factors_compiled(alpha, S, Z, update_mask, maxcor)
-
-    # ignore initial point - x, g: (L, N)
-    x = x[1:]
-    g = g[1:]
-
-    rng = pytensor.shared(np.random.default_rng(pathfinder_seed), borrow=True)
-    phi, logQ_phi = bfgs_sample_compiled.copy(swap={_dummy_rng: rng})(
-        num_elbo_draws,
-        x,
-        g,
-        alpha,
-        beta,
-        gamma,
-    )
-
-    # .vectorize is slower than apply_along_axis
-    logP_phi = compute_logp(logp_func, phi)
-    # logQ_phi = logQ_phi.eval()
-    elbo = (logP_phi - logQ_phi).mean(axis=-1)
-    lstar = np.argmax(elbo)
-
-    # BUG: elbo may all be -inf for all l in L. So np.argmax(elbo) will return 0 which is wrong. Still, this won't affect the posterior samples in the multipath Pathfinder scenario because of PSIS/PSIR step. However, the user is left unaware of a failed Pathfinder run.
-    # TODO: handle this case, e.g. by warning of a failed Pathfinder run and skip the following bfgs_sample step to save time.
-
-    rng.set_value(np.random.default_rng(sample_seed), borrow=True)
-    psi, logQ_psi = bfgs_sample_lstar_compiled.copy(swap={_dummy_rng: rng})(
-        num_draws,
-        x[lstar],
-        g[lstar],
-        alpha[lstar],
-        beta[lstar],
-        gamma[lstar],
-    )
-    # psi = psi.eval()
-    # logQ_psi = logQ_psi.eval()
-    logP_psi = compute_logp(logp_func, psi)
-    # psi: (1, M, N)
-    # logP_psi: (1, M)
-    # logQ_psi: (1, M)
-    return psi, logP_psi, logQ_psi
-
-
-def make_initial_pathfinder_point(
-    model,
+    model=None,
     jitter: float = 2.0,
-    random_seed: RandomSeed | None = None,
 ) -> DictToArrayBijection:
     """
     create jittered initial point for pathfinder
@@ -548,8 +454,8 @@ def make_initial_pathfinder_point(
 
     Returns
     -------
-    DictToArrayBijection
-        bijection containing jittered initial point
+    ndarray
+        jittered initial point
     """
 
     # TODO: replace rng.uniform (pseudo random sequence) with scipy.stats.qmc.Sobol (quasi-random sequence)
@@ -564,31 +470,166 @@ def make_initial_pathfinder_point(
     rng = np.random.default_rng(random_seed)
     jitter_value = rng.uniform(-jitter, jitter, size=ip_map.data.shape)
     ip_map = ip_map._replace(data=ip_map.data + jitter_value)
-    return ip_map
+    return ip_map.data
 
 
-def _run_single_pathfinder(model, path_id: int, random_seed: RandomSeed, **kwargs):
-    """Helper to run single pathfinder instance"""
-    try:
-        # Handle pickling
-        in_out_pickled = isinstance(model, bytes)
-        if in_out_pickled:
-            model = cloudpickle.loads(model)
-            kwargs = {k: cloudpickle.loads(v) for k, v in kwargs.items()}
-
-        # Run pathfinder with explicit random_seed
-        samples, logP, logQ = single_pathfinder(model=model, random_seed=random_seed, **kwargs)
-
-        # Return results
-        if in_out_pickled:
-            return cloudpickle.dumps((samples, logP, logQ))
-        return samples, logP, logQ
-
-    except Exception as e:
-        logger.error(f"Error in path {path_id}: {e!s}")
-        raise
+def compute_logp(logp_func, arr):
+    # .vectorize is slower than apply_along_axis
+    logP = np.apply_along_axis(logp_func, axis=-1, arr=arr)
+    # replace nan with -inf since np.argmax will return the first index at nan
+    nan_mask = np.isnan(logP)
+    logger.info(f"Number of NaNs in logP: {np.sum(nan_mask)}")
+    return np.where(nan_mask, -np.inf, logP)
 
 
+class LogLike(Op):
+    __props__ = ()
+
+    def __init__(self, logp_func):
+        self.logp_func = logp_func
+        super().__init__()
+
+    def make_node(self, inputs):
+        # Convert inputs to tensor variables
+        inputs = pt.as_tensor(inputs)
+        outputs = pt.tensor(dtype="float64", shape=(None, None))
+        return Apply(self, [inputs], [outputs])
+
+    def perform(self, node: Apply, inputs, outputs) -> None:
+        phi = inputs[0]
+        logp = compute_logp(self.logp_func, arr=phi)
+        outputs[0][0] = logp
+
+
+def make_initial_points_fn(model, jitter):
+    return functools.partial(make_initial_points, model=model, jitter=jitter)
+
+
+def make_lbfgs_fn(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls):
+    x0 = pt.dvector("x0")
+    lbfgs_op = LBFGSOp(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls)
+    return pytensor.function([x0], lbfgs_op(x0))
+
+
+def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
+    """Returns a compiled function f where:
+    f-inputs:
+        seeds:list[int, int],
+        x_full: ndarray[L+1, N],
+        g_full: ndarray[L+1, N]
+    f-outputs:
+        psi: ndarray[1, M, N],
+        logP_psi: ndarray[1, M],
+        logQ_psi: ndarray[1, M]
+    """
+
+    # x_full, g_full: (L+1, N)
+    x_full = pt.matrix("x", dtype="float64")
+    g_full = pt.matrix("g", dtype="float64")
+
+    num_draws = pt.constant(num_draws, "num_draws", dtype="int32")
+    num_elbo_draws = pt.constant(num_elbo_draws, "num_elbo_draws", dtype="int32")
+    epsilon = pt.constant(epsilon, "epsilon", dtype="float64")
+    maxcor = pt.constant(maxcor, "maxcor", dtype="int32")
+
+    alpha, S, Z, update_mask = alpha_recover(x_full, g_full, epsilon=epsilon)
+    beta, gamma = inverse_hessian_factors(alpha, S, Z, update_mask, J=maxcor)
+
+    # ignore initial point - x, g: (L, N)
+    x = x_full[1:]
+    g = g_full[1:]
+
+    phi, logQ_phi = bfgs_sample(
+        num_samples=num_elbo_draws,
+        x=x,
+        g=g,
+        alpha=alpha,
+        beta=beta,
+        gamma=gamma,
+    )
+
+    loglike = LogLike(logp_func)
+    logP_phi = loglike(phi)
+    elbo = pt.mean(logP_phi - logQ_phi, axis=-1)
+    lstar = pt.argmax(elbo)
+
+    psi, logQ_psi = bfgs_sample(
+        num_samples=num_draws,
+        x=x,
+        g=g,
+        alpha=alpha,
+        beta=beta,
+        gamma=gamma,
+        index=lstar,
+    )
+    logP_psi = loglike(psi)
+
+    return make_seeded_function(
+        inputs=[x_full, g_full],
+        outputs=[psi, logP_psi, logQ_psi],
+    )
+
+
+def make_single_pathfinder_fn(
+    model,
+    num_draws: int,
+    maxcor: int | None = None,
+    maxiter: int = 1000,
+    ftol: float = 1e-10,
+    gtol: float = 1e-16,
+    maxls: int = 1000,
+    num_elbo_draws: int = 10,
+    jitter: float = 2.0,
+    epsilon: float = 1e-11,
+):
+    logp_func, dlogp_func = get_logp_dlogp_of_ravel_inputs(model)
+
+    def neg_logp_func(x):
+        return -logp_func(x)
+
+    def neg_dlogp_func(x):
+        return -dlogp_func(x)
+
+    N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
+    if maxcor is None:
+        maxcor = np.ceil(2 * N / 3).astype("int32")
+
+    # initial_point_fn: (jitter_seed) -> x0
+    initial_point_fn = make_initial_points_fn(model=model, jitter=jitter)
+
+    # lbfgs_fn: (x0) -> (x, g)
+    lbfgs_fn = make_lbfgs_fn(neg_logp_func, neg_dlogp_func, maxcor, maxiter, ftol, gtol, maxls)
+
+    # pathfinder_body_fn: (tuple[elbo_draw_seed, num_draws_seed], x, g) -> (psi, logP_psi, logQ_psi)
+    pathfinder_body_fn = make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon)
+
+    """
+    The following excerpt is from Zhang et al., (2022):
+    "In some cases, the optimization path terminates at the initialization point and in others it can fail to generate a positive deﬁnite inverse Hessian estimate. In both of these settings, Pathﬁnder essentially fails. Rather than worry about coding exceptions or failure return codes, Pathﬁnder returns the last iteration of the optimization path as a single approximating draw with infinity for the approximate normal log density of the draw. This ensures that failed ﬁts get zero importance weights in the multi-path Pathﬁnder algorithm, which we describe in the next section."
+    # TODO: apply the above excerpt to the Pathfinder algorithm.
+    """
+
+    """
+    BUG: elbo may all be -inf for all l in L. So np.argmax(elbo) will return 0 which is wrong. Still, this won't affect the posterior samples in the multipath Pathfinder scenario because of PSIS/PSIR step. However, the user is left unaware of a failed Pathfinder run.
+    # TODO: handle this case, e.g. by warning of a failed Pathfinder run and skip the following bfgs_sample step to save time.
+    """
+
+    def single_pathfinder_fn(random_seed):
+        # pathfinder_body_fn has 2 shared variable RNGs in the graph as bfgs_sample gets called twice.
+        jitter_seed, *pathfinder_seed = _get_seeds_per_chain(random_seed, 3)
+        x0 = initial_point_fn(jitter_seed)
+        x, g = lbfgs_fn(x0)
+        psi, logP_psi, logQ_psi = pathfinder_body_fn(pathfinder_seed, x, g)
+        # psi: (1, M, N)
+        # logP_psi: (1, M)
+        # logQ_psi: (1, M)
+        return psi, logP_psi, logQ_psi
+
+    # single_pathfinder_fn: (random_seed) -> (psi, logP_psi, logQ_psi)
+    return single_pathfinder_fn
+
+
+# keep this in case we need it for multiprocessing
 def _get_mp_context(mp_ctx=None):
     """code snippet taken from ParallelSampler in pymc/pymc/sampling/parallel.py"""
     if mp_ctx is None or isinstance(mp_ctx, str):
@@ -604,38 +645,6 @@ def _get_mp_context(mp_ctx=None):
 
         mp_ctx = multiprocessing.get_context(mp_ctx)
     return mp_ctx
-
-
-def process_multipath_pathfinder_results(
-    results: PathfinderResults,
-):
-    """process pathfinder results to prepare for pareto smoothed importance resampling (PSIR)
-
-    Parameters
-    ----------
-    results : PathfinderResults
-        results from pathfinder
-
-    Returns
-    -------
-    tuple
-        processed samples, logP and logQ arrays
-    """
-    # path[samples]: (I, M, N)
-    N = results.paths[0]["samples"].shape[-1]
-
-    paths_array = np.array([results.paths[i] for i in range(results.num_paths)])
-    logP = np.concatenate([path["logP"] for path in paths_array])
-    logQ = np.concatenate([path["logQ"] for path in paths_array])
-    samples = np.concatenate([path["samples"] for path in paths_array])
-    samples = samples.reshape(-1, N, order="F")
-
-    # adjust log densities
-    log_I = np.log(results.num_paths)
-    logP -= log_I
-    logQ -= log_I
-
-    return samples, logP, logQ
 
 
 def multipath_pathfinder(
@@ -655,61 +664,49 @@ def multipath_pathfinder(
     random_seed: RandomSeed = None,
     **pathfinder_kwargs,
 ):
-    """Run multiple pathfinder instances in parallel."""
-    ctx = _get_mp_context(None)
     seeds = _get_seeds_per_chain(random_seed, num_paths + 1)
     path_seeds = seeds[:-1]
     choice_seed = seeds[-1]
 
-    try:
-        num_dims = DictToArrayBijection.map(model.initial_point()).data.shape[0]
-        model_pickled = cloudpickle.dumps(model)
-        kwargs = {
-            "num_draws": num_draws_per_path,  # for single pathfinder only
-            "maxcor": maxcor,
-            "maxiter": maxiter,
-            "ftol": ftol,
-            "gtol": gtol,
-            "maxls": maxls,
-            "num_elbo_draws": num_elbo_draws,
-            "jitter": jitter,
-            "epsilon": epsilon,
-            **pathfinder_kwargs,
-        }
-        kwargs_pickled = {k: cloudpickle.dumps(v) for k, v in kwargs.items()}
-    except Exception as e:
-        raise ValueError(
-            "Failed to pickle model or kwargs. This might be due to spawn context "
-            f"limitations. Error: {e!s}"
-        )
+    num_dims = DictToArrayBijection.map(model.initial_point()).data.shape[0]
 
-    mpf_results = PathfinderResults(num_paths, num_draws_per_path, num_dims)
-    with ProcessPoolExecutor(mp_context=ctx) as executor:
-        futures = {}
-        try:
-            for path_id, path_seed in enumerate(path_seeds):
-                future = executor.submit(
-                    _run_single_pathfinder, model_pickled, path_id, path_seed, **kwargs_pickled
-                )
-                futures[future] = path_id
-                logger.debug(f"Submitted path {path_id} with seed {path_seed}")
-        except Exception as e:
-            logger.error(f"Failed to submit path {path_id}: {e!s}")
-            raise
+    single_pathfinder_fn = make_single_pathfinder_fn(
+        model,
+        num_draws_per_path,
+        maxcor,
+        maxiter,
+        ftol,
+        gtol,
+        maxls,
+        num_elbo_draws,
+        jitter,
+        epsilon,
+    )
 
-        failed_paths = []
-        for future in as_completed(futures):
-            path_id = futures[future]
-            try:
-                samples, logP, logQ = cloudpickle.loads(future.result())
-                mpf_results.add_path_data(path_id, samples, logP, logQ)
-            except Exception as e:
-                failed_paths.append(path_id)
-                logger.error(f"Path {path_id} failed: {e!s}")
+    results = [single_pathfinder_fn(seed) for seed in path_seeds]
 
-    samples, logP, logQ = process_multipath_pathfinder_results(mpf_results)
+    # FIXME: large jitter leads to shape mismatch in beta in the inverse_hessian_factors function
+    # ValueError: Shape mismatch: summation axis sizes unequal. x.shape is (0, 0, 0), y.shape is (0, N, 2J).
+    # beta = pt.concatenate([alpha_diag @ z_xi, s_xi], axis=-1)
+    # TODO: handle ValueError in inverse_hessian_factors
+
+    samples, logP, logQ = zip(*results)
+    samples = np.concatenate(samples)
+    logP = np.concatenate(logP)
+    logQ = np.concatenate(logQ)
+
+    samples = samples.reshape(num_paths * num_draws_per_path, num_dims, order="C")
+    logP = logP.reshape(num_paths * num_draws_per_path, order="C")
+    logQ = logQ.reshape(num_paths * num_draws_per_path, order="C")
+
+    # adjust log densities
+    log_I = np.log(num_paths)
+    logP -= log_I
+    logQ -= log_I
+    logiw = logP - logQ
     if psis_resample:
-        return psir(samples, logP=logP, logQ=logQ, num_draws=num_draws, random_seed=choice_seed)
+        # return psir(samples, logP=logP, logQ=logQ, num_draws=num_draws, random_seed=choice_seed)
+        return psir(samples, logiw=logiw, num_draws=num_draws, random_seed=choice_seed)
     else:
         return samples
 
@@ -845,7 +842,7 @@ def fit_pathfinder(
     else:
         raise ValueError(f"Invalid inference_backend: {inference_backend}")
 
-    print("Running pathfinder...", file=sys.stdout)
+    logger.info("Transforming variables...")
 
     idata = convert_flat_trace_to_idata(
         pathfinder_samples,

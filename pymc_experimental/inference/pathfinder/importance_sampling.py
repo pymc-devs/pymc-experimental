@@ -2,15 +2,35 @@ import logging
 
 import arviz as az
 import numpy as np
+import pytensor.tensor as pt
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+from pytensor.graph import Apply, Op
+from pytensor.tensor.variable import TensorVariable
+
 logger = logging.getLogger(__name__)
 
 
+class PSIS(Op):
+    __props__ = ()
+
+    def make_node(self, inputs):
+        logweights = pt.as_tensor(inputs)
+        psislw = pt.dvector()
+        pareto_k = pt.dscalar()
+        return Apply(self, [logweights], [psislw, pareto_k])
+
+    def perform(self, node: Apply, inputs, outputs) -> None:
+        logweights = inputs[0]
+        psislw, pareto_k = az.psislw(logweights)
+        outputs[0][0] = psislw
+        outputs[1][0] = pareto_k
+
+
 def psir(
-    samples: np.ndarray,
-    logP: np.ndarray,
-    logQ: np.ndarray,
+    samples: TensorVariable,
+    # logP: TensorVariable,
+    # logQ: TensorVariable,
+    logiw: TensorVariable,
     num_draws: int = 1000,
     random_seed: int | None = None,
 ) -> np.ndarray:
@@ -48,14 +68,10 @@ def psir(
 
     Zhang, L., Carpenter, B., Gelman, A., & Vehtari, A. (2022). Pathfinder: Parallel quasi-Newton variational inference. Journal of Machine Learning Research, 23(306), 1-49.
     """
-
-    def logsumexp(x):
-        c = x.max()
-        return c + np.log(np.sum(np.exp(x - c)))
-
-    logiw = np.reshape(logP - logQ, -1, order="F")
-    psislw, pareto_k = az.psislw(logiw)
-
+    # logiw = np.reshape(logP - logQ, (-1,), order="F")
+    # logiw = (logP - logQ).ravel()
+    psislw, pareto_k = PSIS()(logiw)
+    pareto_k = pareto_k.eval()
     # FIXME: pareto_k is mostly bad, find out why!
     if pareto_k <= 0.70:
         pass
@@ -68,6 +84,6 @@ def psir(
             "consider reparametrising the model, increasing ftol, gtol or maxcor parameters"
         )
 
-    p = np.exp(psislw - logsumexp(psislw))
+    p = pt.exp(psislw - pt.logsumexp(psislw)).eval()
     rng = np.random.default_rng(random_seed)
-    return rng.choice(samples, size=num_draws, p=p, shuffle=False, axis=0)
+    return rng.choice(samples, size=num_draws, replace=True, p=p, shuffle=False, axis=0)
