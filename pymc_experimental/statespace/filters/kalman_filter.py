@@ -642,15 +642,15 @@ class StandardFilter(BaseFilter):
         PZT = P.dot(Z.T)
         F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
 
-        F_inv = pt.linalg.solve(F, self.eye_endog, assume_a="pos", check_finite=False)
-
-        K = PZT.dot(F_inv)
+        K = pt.linalg.solve(F.T, PZT.T, assume_a="pos", check_finite=False).T
         I_KZ = self.eye_states - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
 
-        inner_term = matrix_dot(v.T, F_inv, v)
+        F_inv_v = pt.linalg.solve(F, v, assume_a="pos", check_finite=False)
+        inner_term = v.T @ F_inv_v
+
         F_logdet = pt.log(pt.linalg.det(F))
 
         ll = pt.switch(

@@ -1,4 +1,7 @@
+from functools import partial
+
 import numpy as np
+import pandas as pd
 import pymc as pm
 import pytensor
 import pytensor.tensor as pt
@@ -14,7 +17,7 @@ from pymc_experimental.statespace.utils.constants import (
     MATRIX_NAMES,
     SMOOTHER_OUTPUT_NAMES,
 )
-from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
+from tests.statespace.utilities.shared_fixtures import (
     rng,
 )
 from tests.statespace.utilities.test_helpers import (
@@ -28,18 +31,26 @@ nile = load_nile_test_data()
 ALL_SAMPLE_OUTPUTS = MATRIX_NAMES + FILTER_OUTPUT_NAMES + SMOOTHER_OUTPUT_NAMES
 
 
-def make_statespace_mod(k_endog, k_states, k_posdef, filter_type, verbose=False):
+def make_statespace_mod(k_endog, k_states, k_posdef, filter_type, verbose=False, data_info=None):
     class StateSpace(PyMCStateSpace):
         def make_symbolic_graph(self):
             pass
 
-    return StateSpace(
+        @property
+        def data_info(self):
+            return data_info
+
+    ss = StateSpace(
         k_states=k_states,
         k_endog=k_endog,
         k_posdef=k_posdef,
         filter_type=filter_type,
         verbose=verbose,
     )
+    ss._needs_exog_data = data_info is not None
+    ss._exog_names = list(data_info.keys()) if data_info is not None else []
+
+    return ss
 
 
 @pytest.fixture(scope="session")
@@ -104,6 +115,18 @@ def pymc_mod(ss_mod):
 
 
 @pytest.fixture(scope="session")
+def ss_mod_no_exog(rng):
+    ll = st.LevelTrendComponent(order=2, innovations_order=1)
+    return ll.build()
+
+
+@pytest.fixture(scope="session")
+def ss_mod_no_exog_dt(rng):
+    ll = st.LevelTrendComponent(order=2, innovations_order=1)
+    return ll.build()
+
+
+@pytest.fixture(scope="session")
 def exog_ss_mod(rng):
     ll = st.LevelTrendComponent()
     reg = st.RegressionComponent(name="exog", state_names=["a", "b", "c"])
@@ -133,6 +156,42 @@ def exog_pymc_mod(exog_ss_mod, rng):
 
 
 @pytest.fixture(scope="session")
+def pymc_mod_no_exog(ss_mod_no_exog, rng):
+    y = pd.DataFrame(rng.normal(size=(100, 1)).astype(floatX), columns=["y"])
+
+    with pm.Model(coords=ss_mod_no_exog.coords) as m:
+        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        P0_sigma = pm.Exponential("P0_sigma", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(ss_mod_no_exog.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
+        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        ss_mod_no_exog.build_statespace_graph(y)
+
+    return m
+
+
+@pytest.fixture(scope="session")
+def pymc_mod_no_exog_dt(ss_mod_no_exog_dt, rng):
+    y = pd.DataFrame(
+        rng.normal(size=(100, 1)).astype(floatX),
+        columns=["y"],
+        index=pd.date_range("2020-01-01", periods=100, freq="D"),
+    )
+
+    with pm.Model(coords=ss_mod_no_exog_dt.coords) as m:
+        initial_trend = pm.Normal("initial_trend", dims=["trend_state"])
+        P0_sigma = pm.Exponential("P0_sigma", 1)
+        P0 = pm.Deterministic(
+            "P0", pt.eye(ss_mod_no_exog_dt.k_states) * P0_sigma, dims=["state", "state_aux"]
+        )
+        sigma_trend = pm.Exponential("sigma_trend", 1, dims=["trend_shock"])
+        ss_mod_no_exog_dt.build_statespace_graph(y)
+
+    return m
+
+
+@pytest.fixture(scope="session")
 def idata(pymc_mod, rng):
     with pymc_mod:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
@@ -145,6 +204,24 @@ def idata(pymc_mod, rng):
 @pytest.fixture(scope="session")
 def idata_exog(exog_pymc_mod, rng):
     with exog_pymc_mod:
+        idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
+    idata.extend(idata_prior)
+    return idata
+
+
+@pytest.fixture(scope="session")
+def idata_no_exog(pymc_mod_no_exog, rng):
+    with pymc_mod_no_exog:
+        idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
+        idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
+    idata.extend(idata_prior)
+    return idata
+
+
+@pytest.fixture(scope="session")
+def idata_no_exog_dt(pymc_mod_no_exog_dt, rng):
+    with pymc_mod_no_exog_dt:
         idata = pm.sample(draws=10, tune=0, chains=1, random_seed=rng)
         idata_prior = pm.sample_prior_predictive(draws=10, random_seed=rng)
     idata.extend(idata_prior)
@@ -278,25 +355,470 @@ def test_sampling_methods(group, kind, ss_mod, idata, rng):
             assert not np.any(np.isnan(test_idata[f"{group}_{output}"].values))
 
 
-@pytest.mark.parametrize("filter_output", ["predicted", "filtered", "smoothed"])
-def test_forecast(filter_output, ss_mod, idata, rng):
-    time_idx = idata.posterior.coords["time"].values
-    forecast_idata = ss_mod.forecast(
-        idata, start=time_idx[-1], periods=10, filter_output=filter_output, random_seed=rng
+def _make_time_idx(mod, use_datetime_index=True):
+    if use_datetime_index:
+        mod._fit_coords["time"] = nile.index
+        time_idx = nile.index
+    else:
+        mod._fit_coords["time"] = nile.reset_index().index
+        time_idx = pd.RangeIndex(start=0, stop=nile.shape[0], step=1)
+
+    return time_idx
+
+
+@pytest.mark.parametrize("use_datetime_index", [True, False])
+def test_bad_forecast_arguments(use_datetime_index, caplog):
+    ss_mod = make_statespace_mod(
+        k_endog=1, k_posdef=1, k_states=2, filter_type="standard", verbose=False
     )
 
-    assert forecast_idata.coords["time"].values.shape == (10,)
+    # Not-fit model raises
+    ss_mod._fit_coords = dict()
+    with pytest.raises(ValueError, match="Has this model been fit?"):
+        ss_mod._get_fit_time_index()
+
+    time_idx = _make_time_idx(ss_mod, use_datetime_index)
+
+    # Start value not in time index
+    match = (
+        "Datetime start must be in the data index used to fit the model"
+        if use_datetime_index
+        else "Integer start must be within the range of the data index used to fit the model."
+    )
+    with pytest.raises(ValueError, match=match):
+        start = time_idx.shift(10)[-1] if use_datetime_index else time_idx[-1] + 11
+        ss_mod._validate_forecast_args(time_index=time_idx, start=start, periods=10)
+
+    # End value cannot be inferred
+    with pytest.raises(ValueError, match="Must specify one of either periods or end"):
+        start = time_idx[-1]
+        ss_mod._validate_forecast_args(time_index=time_idx, start=start)
+
+    # Unnecessary args warn on verbose
+    start = time_idx[-1]
+    forecast_idx = pd.date_range(start=start, periods=10, freq="YS-JAN")
+    scenario = pd.DataFrame(0, index=forecast_idx, columns=[0, 1, 2])
+
+    ss_mod._validate_forecast_args(
+        time_index=time_idx, start=start, periods=10, scenario=scenario, use_scenario_index=True
+    )
+    last_message = caplog.messages[-1]
+    assert "start, end, and periods arguments are ignored" in last_message
+
+    # Verbose=False silences warning
+    ss_mod._validate_forecast_args(
+        time_index=time_idx,
+        start=start,
+        periods=10,
+        scenario=scenario,
+        use_scenario_index=True,
+        verbose=False,
+    )
+    assert len(caplog.messages) == 1
+
+
+@pytest.mark.parametrize("use_datetime_index", [True, False])
+def test_forecast_index(use_datetime_index):
+    ss_mod = make_statespace_mod(
+        k_endog=1, k_posdef=1, k_states=2, filter_type="standard", verbose=False
+    )
+    ss_mod._fit_coords = dict()
+    time_idx = _make_time_idx(ss_mod, use_datetime_index)
+
+    # From start and end
+    start = time_idx[-1]
+    delta = pd.DateOffset(years=10) if use_datetime_index else 11
+    end = start + delta
+
+    x0_index, forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, end=end)
+    assert start not in forecast_idx
+    assert x0_index == start
+    assert forecast_idx.shape == (10,)
+
+    # From start and periods
+    start = time_idx[-1]
+    periods = 10
+
+    x0_index, forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, periods=periods)
+    assert start not in forecast_idx
+    assert x0_index == start
+    assert forecast_idx.shape == (10,)
+
+    # From integer start
+    start = 10
+    x0_index, forecast_idx = ss_mod._build_forecast_index(time_idx, start=start, periods=periods)
+    delta = forecast_idx.freq if use_datetime_index else 1
+
+    assert x0_index == time_idx[start]
+    assert forecast_idx.shape == (10,)
+    assert (forecast_idx == time_idx[start + 1 : start + periods + 1]).all()
+
+    # From scenario index
+    scenario = pd.DataFrame(0, index=forecast_idx, columns=[0, 1, 2])
+    new_start, forecast_idx = ss_mod._build_forecast_index(
+        time_index=time_idx, scenario=scenario, use_scenario_index=True
+    )
+    assert x0_index not in forecast_idx
+    assert x0_index == (forecast_idx[0] - delta)
+    assert forecast_idx.shape == (10,)
+    assert forecast_idx.equals(scenario.index)
+
+    # From dictionary of scenarios
+    scenario = {"a": pd.DataFrame(0, index=forecast_idx, columns=[0, 1, 2])}
+    x0_index, forecast_idx = ss_mod._build_forecast_index(
+        time_index=time_idx, scenario=scenario, use_scenario_index=True
+    )
+    assert x0_index == (forecast_idx[0] - delta)
+    assert forecast_idx.shape == (10,)
+    assert forecast_idx.equals(scenario["a"].index)
+
+
+@pytest.mark.parametrize(
+    "data_type",
+    [pd.Series, pd.DataFrame, np.array, list, tuple],
+    ids=["series", "dataframe", "array", "list", "tuple"],
+)
+def test_validate_scenario(data_type):
+    if data_type is pd.DataFrame:
+        # Ensure dataframes have the correct column name
+        data_type = partial(pd.DataFrame, columns=["column_1"])
+
+    # One data case
+    data_info = {"a": {"shape": (None, 1), "dims": ("time", "features_a")}}
+    ss_mod = make_statespace_mod(
+        k_endog=1,
+        k_posdef=1,
+        k_states=2,
+        filter_type="standard",
+        verbose=False,
+        data_info=data_info,
+    )
+    ss_mod._fit_coords = dict(features_a=["column_1"])
+
+    scenario = data_type(np.zeros(10))
+    scenario = ss_mod._validate_scenario_data(scenario)
+
+    # Lists and tuples are cast to 2d arrays
+    if data_type in [tuple, list]:
+        assert isinstance(scenario, np.ndarray)
+        assert scenario.shape == (10, 1)
+
+    # A one-item dictionary should also work
+    scenario = {"a": scenario}
+    ss_mod._validate_scenario_data(scenario)
+
+    # Now data has to be a dictionary
+    data_info.update({"b": {"shape": (None, 1), "dims": ("time", "features_b")}})
+    ss_mod = make_statespace_mod(
+        k_endog=1,
+        k_posdef=1,
+        k_states=2,
+        filter_type="standard",
+        verbose=False,
+        data_info=data_info,
+    )
+    ss_mod._fit_coords = dict(features_a=["column_1"], features_b=["column_1"])
+
+    scenario = {"a": data_type(np.zeros(10)), "b": data_type(np.zeros(10))}
+    ss_mod._validate_scenario_data(scenario)
+
+    # Mixed data types
+    data_info.update({"a": {"shape": (None, 10), "dims": ("time", "features_a")}})
+    ss_mod = make_statespace_mod(
+        k_endog=1,
+        k_posdef=1,
+        k_states=2,
+        filter_type="standard",
+        verbose=False,
+        data_info=data_info,
+    )
+    ss_mod._fit_coords = dict(
+        features_a=[f"column_{i}" for i in range(10)], features_b=["column_1"]
+    )
+
+    scenario = {
+        "a": pd.DataFrame(np.zeros((10, 10)), columns=ss_mod._fit_coords["features_a"]),
+        "b": data_type(np.arange(10)),
+    }
+
+    ss_mod._validate_scenario_data(scenario)
+
+
+@pytest.mark.parametrize(
+    "data_type",
+    [pd.Series, pd.DataFrame, np.array, list, tuple],
+    ids=["series", "dataframe", "array", "list", "tuple"],
+)
+@pytest.mark.parametrize("use_datetime_index", [True, False])
+def test_finalize_scenario_single(data_type, use_datetime_index):
+    if data_type is pd.DataFrame:
+        # Ensure dataframes have the correct column name
+        data_type = partial(pd.DataFrame, columns=["column_1"])
+
+    data_info = {"a": {"shape": (None, 1), "dims": ("time", "features_a")}}
+    ss_mod = make_statespace_mod(
+        k_endog=1,
+        k_posdef=1,
+        k_states=2,
+        filter_type="standard",
+        verbose=False,
+        data_info=data_info,
+    )
+    ss_mod._fit_coords = dict(features_a=["column_1"])
+
+    time_idx = _make_time_idx(ss_mod, use_datetime_index)
+
+    scenario = data_type(np.zeros((10,)))
+
+    scenario = ss_mod._validate_scenario_data(scenario)
+    t0, forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=10)
+    scenario = ss_mod._finalize_scenario_initialization(scenario, forecast_index=forecast_idx)
+
+    assert isinstance(scenario, pd.DataFrame)
+    assert scenario.index.equals(forecast_idx)
+    assert scenario.columns == ["column_1"]
+
+
+@pytest.mark.parametrize(
+    "data_type",
+    [pd.Series, pd.DataFrame, np.array, list, tuple],
+    ids=["series", "dataframe", "array", "list", "tuple"],
+)
+@pytest.mark.parametrize("use_datetime_index", [True, False])
+@pytest.mark.parametrize("use_scenario_index", [True, False])
+def test_finalize_secenario_dict(data_type, use_datetime_index, use_scenario_index):
+    data_info = {
+        "a": {"shape": (None, 1), "dims": ("time", "features_a")},
+        "b": {"shape": (None, 2), "dims": ("time", "features_b")},
+    }
+    ss_mod = make_statespace_mod(
+        k_endog=1,
+        k_posdef=1,
+        k_states=2,
+        filter_type="standard",
+        verbose=False,
+        data_info=data_info,
+    )
+    ss_mod._fit_coords = dict(features_a=["column_1"], features_b=["column_1", "column_2"])
+    time_idx = _make_time_idx(ss_mod, use_datetime_index)
+
+    initial_index = (
+        pd.date_range(start=time_idx[-1], periods=10, freq=time_idx.freq)
+        if use_datetime_index
+        else pd.RangeIndex(time_idx[-1], time_idx[-1] + 10, 1)
+    )
+
+    if data_type is pd.DataFrame:
+        # Ensure dataframes have the correct column name
+        data_type = partial(pd.DataFrame, columns=["column_1"], index=initial_index)
+    elif data_type is pd.Series:
+        data_type = partial(pd.Series, index=initial_index)
+
+    scenario = {
+        "a": data_type(np.zeros((10,))),
+        "b": pd.DataFrame(
+            np.zeros((10, 2)), columns=ss_mod._fit_coords["features_b"], index=initial_index
+        ),
+    }
+
+    scenario = ss_mod._validate_scenario_data(scenario)
+
+    if use_scenario_index and data_type not in [np.array, list, tuple]:
+        t0, forecast_idx = ss_mod._build_forecast_index(
+            time_idx, scenario=scenario, periods=10, use_scenario_index=True
+        )
+    elif use_scenario_index and data_type in [np.array, list, tuple]:
+        t0, forecast_idx = ss_mod._build_forecast_index(
+            time_idx, scenario=scenario, start=-1, periods=10, use_scenario_index=True
+        )
+    else:
+        t0, forecast_idx = ss_mod._build_forecast_index(time_idx, start=time_idx[-1], periods=10)
+
+    scenario = ss_mod._finalize_scenario_initialization(scenario, forecast_index=forecast_idx)
+
+    assert list(scenario.keys()) == ["a", "b"]
+    assert all(isinstance(value, pd.DataFrame) for value in scenario.values())
+    assert all(value.index.equals(forecast_idx) for value in scenario.values())
+
+
+def test_invalid_scenarios():
+    data_info = {"a": {"shape": (None, 1), "dims": ("time", "features_a")}}
+    ss_mod = make_statespace_mod(
+        k_endog=1,
+        k_posdef=1,
+        k_states=2,
+        filter_type="standard",
+        verbose=False,
+        data_info=data_info,
+    )
+    ss_mod._fit_coords = dict(features_a=["column_1", "column_2"])
+
+    # Omitting the data raises
+    with pytest.raises(
+        ValueError, match="This model was fit using exogenous data. Forecasting cannot be performed"
+    ):
+        ss_mod._validate_scenario_data(None)
+
+    # Giving a list, tuple, or Series when a matrix of data is expected should always raise
+    with pytest.raises(
+        ValueError,
+        match="Scenario data for variable 'a' has the wrong number of columns. "
+        "Expected 2, got 1",
+    ):
+        for data_type in [list, tuple, pd.Series]:
+            ss_mod._validate_scenario_data(data_type(np.zeros(10)))
+            ss_mod._validate_scenario_data({"a": data_type(np.zeros(10))})
+
+    # Providing irrevelant data raises
+    with pytest.raises(
+        ValueError,
+        match="Scenario data provided for variable 'jk lol', which is not an exogenous " "variable",
+    ):
+        ss_mod._validate_scenario_data({"jk lol": np.zeros(10)})
+
+    # Incorrect 2nd dimension of a non-dataframe
+    with pytest.raises(
+        ValueError,
+        match="Scenario data for variable 'a' has the wrong number of columns. Expected "
+        "2, got 1",
+    ):
+        scenario = np.zeros(10).tolist()
+        ss_mod._validate_scenario_data(scenario)
+        ss_mod._validate_scenario_data(tuple(scenario))
+
+        scenario = {"a": np.zeros(10).tolist()}
+        ss_mod._validate_scenario_data(scenario)
+        ss_mod._validate_scenario_data({"a": tuple(scenario["a"])})
+
+    # If a data frame is provided, it needs to have all columns
+    with pytest.raises(
+        ValueError, match="Scenario data for variable 'a' is missing the following column: column_2"
+    ):
+        scenario = pd.DataFrame(np.zeros((10, 1)), columns=["column_1"])
+        ss_mod._validate_scenario_data(scenario)
+
+    # Extra columns also raises
+    with pytest.raises(
+        ValueError,
+        match="Scenario data for variable 'a' contains the following extra columns "
+        "that are not used by the model: column_3, column_4",
+    ):
+        scenario = pd.DataFrame(
+            np.zeros((10, 4)), columns=["column_1", "column_2", "column_3", "column_4"]
+        )
+        ss_mod._validate_scenario_data(scenario)
+
+    # Wrong number of time steps raises
+    data_info = {
+        "a": {"shape": (None, 1), "dims": ("time", "features_a")},
+        "b": {"shape": (None, 1), "dims": ("time", "features_b")},
+    }
+    ss_mod = make_statespace_mod(
+        k_endog=1,
+        k_posdef=1,
+        k_states=2,
+        filter_type="standard",
+        verbose=False,
+        data_info=data_info,
+    )
+    ss_mod._fit_coords = dict(
+        features_a=["column_1", "column_2"], features_b=["column_1", "column_2"]
+    )
+
+    with pytest.raises(
+        ValueError, match="Scenario data must have the same number of time steps for all variables"
+    ):
+        scenario = {
+            "a": pd.DataFrame(np.zeros((10, 2)), columns=ss_mod._fit_coords["features_a"]),
+            "b": pd.DataFrame(np.zeros((11, 2)), columns=ss_mod._fit_coords["features_b"]),
+        }
+        ss_mod._validate_scenario_data(scenario)
+
+
+@pytest.mark.filterwarnings("ignore:No time index found on the supplied data.")
+@pytest.mark.parametrize("filter_output", ["predicted", "filtered", "smoothed"])
+@pytest.mark.parametrize(
+    "mod_name, idata_name, start, end, periods",
+    [
+        ("ss_mod_no_exog", "idata_no_exog", None, None, 10),
+        ("ss_mod_no_exog", "idata_no_exog", -1, None, 10),
+        ("ss_mod_no_exog", "idata_no_exog", 10, None, 10),
+        ("ss_mod_no_exog", "idata_no_exog", 10, 21, None),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", None, None, 10),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", -1, None, 10),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", 10, None, 10),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", 10, "2020-01-21", None),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", "2020-03-01", "2020-03-11", None),
+        ("ss_mod_no_exog_dt", "idata_no_exog_dt", "2020-03-01", None, 10),
+    ],
+    ids=[
+        "range_default",
+        "range_negative",
+        "range_int",
+        "range_end",
+        "datetime_default",
+        "datetime_negative",
+        "datetime_int",
+        "datetime_int_end",
+        "datetime_datetime_end",
+        "datetime_datetime",
+    ],
+)
+def test_forecast(filter_output, mod_name, idata_name, start, end, periods, rng, request):
+    mod = request.getfixturevalue(mod_name)
+    idata = request.getfixturevalue(idata_name)
+    time_idx = mod._get_fit_time_index()
+    is_datetime = isinstance(time_idx, pd.DatetimeIndex)
+
+    if isinstance(start, str):
+        t0 = pd.Timestamp(start)
+    elif isinstance(start, int):
+        t0 = time_idx[start]
+    else:
+        t0 = time_idx[-1]
+
+    delta = time_idx.freq if is_datetime else 1
+
+    forecast_idata = mod.forecast(
+        idata, start=start, end=end, periods=periods, filter_output=filter_output, random_seed=rng
+    )
+
+    forecast_idx = forecast_idata.coords["time"].values
+    forecast_idx = pd.DatetimeIndex(forecast_idx) if is_datetime else pd.Index(forecast_idx)
+
+    assert forecast_idx.shape == (10,)
     assert forecast_idata.forecast_latent.dims == ("chain", "draw", "time", "state")
     assert forecast_idata.forecast_observed.dims == ("chain", "draw", "time", "observed_state")
 
     assert not np.any(np.isnan(forecast_idata.forecast_latent.values))
     assert not np.any(np.isnan(forecast_idata.forecast_observed.values))
 
+    assert forecast_idx[0] == (t0 + delta)
+
 
 @pytest.mark.filterwarnings("ignore:No time index found on the supplied data.")
-def test_forecast_fails_if_exog_needed(exog_ss_mod, idata_exog):
-    time_idx = idata_exog.observed_data.coords["time"].values
-    with pytest.xfail("Scenario-based forcasting with exogenous variables not currently supported"):
-        forecast_idata = exog_ss_mod.forecast(
-            idata_exog, start=time_idx[-1], periods=10, random_seed=rng
-        )
+@pytest.mark.parametrize("start", [None, -1, 10])
+def test_forecast_with_exog_data(rng, exog_ss_mod, idata_exog, start):
+    scenario = pd.DataFrame(np.zeros((10, 3)), columns=["a", "b", "c"])
+    scenario.iloc[5, 0] = 1e9
+
+    forecast_idata = exog_ss_mod.forecast(
+        idata_exog, start=start, periods=10, random_seed=rng, scenario=scenario
+    )
+
+    components = exog_ss_mod.extract_components_from_idata(forecast_idata)
+    level = components.forecast_latent.sel(state="LevelTrend[level]")
+    betas = components.forecast_latent.sel(state=["exog[a]", "exog[b]", "exog[c]"])
+
+    scenario.index.name = "time"
+    scenario_xr = (
+        scenario.unstack()
+        .to_xarray()
+        .rename({"level_0": "state"})
+        .assign_coords(state=["exog[a]", "exog[b]", "exog[c]"])
+    )
+
+    regression_effect = forecast_idata.forecast_observed.isel(observed_state=0) - level
+    regression_effect_expected = (betas * scenario_xr).sum(dim=["state"])
+
+    assert_allclose(regression_effect, regression_effect_expected)
