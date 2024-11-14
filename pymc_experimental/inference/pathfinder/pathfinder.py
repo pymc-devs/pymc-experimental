@@ -347,6 +347,11 @@ def inverse_hessian_factors(alpha, S, Z, update_mask, J):
     return beta, gamma
 
 
+# # TODO: taylor_approx
+# TODO: taylor_approx_dense (if 2 * history_size >= num_params)
+# TODO: taylor_approx_sparse (else)
+
+
 def bfgs_sample(
     num_samples: int,
     x,  # position
@@ -362,8 +367,8 @@ def bfgs_sample(
     # alpha_l: (N,)         => (L, N)
     # beta_l: (N, 2J)       => (L, N, 2J)
     # gamma_l: (2J, 2J)     => (L, 2J, 2J)
-    # Q : (N, N)            => (L, N, N)
-    # R: (N, 2J)            => (L, N, 2J)
+    # Q : (N, 2J)           => (L, N, 2J)
+    # R: (2J, 2J)           => (L, 2J, 2J)
     # u: (M, N)             => (L, M, N)
     # phi: (M, N)           => (L, M, N)
     # logdensity: (M,)      => (L, M)
@@ -410,7 +415,17 @@ def bfgs_sample(
     Lchol_input = IdN + R @ gamma @ pt.matrix_transpose(R)
     Lchol = pt.linalg.cholesky(Lchol_input)
 
-    logdet = pt.log(pt.prod(alpha, axis=-1)) + 2 * pt.log(pt.linalg.det(Lchol))
+    # changed from pt.log(pt.prod(alpha, axis=-1)) to pt.sum(pt.log(alpha), axis=-1) for numerical stability
+    # logdet = pt.sum(pt.log(alpha), axis=-1) + 2 * pt.log(pt.linalg.det(Lchol))
+
+    # changed logdet calculation to match Stan:
+    # Lchol_diag, _ = pytensor.scan(
+    #     lambda Lchol_l: pt.diag(Lchol_l),
+    #     sequences=[Lchol],
+    # )
+    # logdet = 0.5 * pt.sum(pt.log(alpha), axis=-1) + pt.sum(pt.log(pt.abs(Lchol_diag)), axis=-1)
+    # TODO: check if this is faster:
+    logdet = 0.5 * pt.sum(pt.log(alpha), axis=-1) + pt.log(pt.linalg.det(Lchol))
 
     mu = (
         x
