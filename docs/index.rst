@@ -26,7 +26,7 @@ PyMC experimental is tested on Python 3.8+ and depends on PyMC V5.
 Installation
 ============
 
-To install the latest release on [PyPI](https://pypi.org/project/pymc-experimental/), you can a package manager like pip:
+To install the latest release on [PyPI](https://pypi.org/project/pymc-experimental/), you can use a package manager like pip:
 
 .. code-block:: bash
 
