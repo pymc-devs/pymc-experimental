@@ -21,7 +21,7 @@ Where we grow the next batch of cool PyMC features
 
 Dependencies
 ============
-PyMC experimental is tested on Python 3.8+ and depends on PyMC V5.
+PyMC experimental is tested on Python 3.10+ and depends on PyMC V5.
 
 Installation
 ============
