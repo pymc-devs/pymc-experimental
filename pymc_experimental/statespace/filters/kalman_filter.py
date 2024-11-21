@@ -8,8 +8,7 @@ from pytensor.compile.mode import get_mode
 from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
-from pytensor.tensor.nlinalg import matrix_dot
-from pytensor.tensor.slinalg import solve_discrete_are, solve_triangular
+from pytensor.tensor.slinalg import solve_triangular
 
 from pymc_experimental.statespace.filters.utilities import (
     quad_form_sym,
@@ -55,15 +54,6 @@ class BaseFilter(ABC):
         non_seq_names : list[str]
             A list of names representing static statespace matrices. That is, inputs that will need to be provided
             to the `non_sequences` argument of `pytensor.scan`
-
-        eye_states : TensorVariable
-            An identity matrix of shape (k_states, k_states), stored for computational efficiency
-
-        eye_posdef : TensorVariable
-            An identity matrix of shape (k_posdef, k_posdef), stored for computational efficiency
-
-        eye_endog : TensorVariable
-            An identity matrix of shape (k_endog, k_endog), stored for computational efficiency
         """
 
         self.mode: str = mode
@@ -74,43 +64,8 @@ class BaseFilter(ABC):
         self.n_posdef = None
         self.n_endog = None
 
-        self.eye_states: TensorVariable | None = None
-        self.eye_posdef: TensorVariable | None = None
-        self.eye_endog: TensorVariable | None = None
         self.missing_fill_value: float | None = None
         self.cov_jitter = None
-
-    def initialize_eyes(self, R: TensorVariable, Z: TensorVariable) -> None:
-        """
-        Initialize identity matrices for of shapes repeated used in the kalman filtering equations and store them.
-
-        It's surprisingly expensive for pytensor to create an identity matrix every time we need one
-        (see [1] for benchmarks). This function creates some identity matrices of useful sizes for the model
-        to re-use as a small optimization.
-
-        Parameters
-        ----------
-        R : TensorVariable
-            The tensor representing the selection matrix, called R in [2]
-
-        Z : TensorVariable
-            The tensor representing the design matrix, called Z in [2].
-
-        Returns
-        -------
-        None
-
-        References
-        ----------
-        .. [1] https://gist.github.com/jessegrabowski/acd3235833163943a11654d78a72f04b
-        .. [2] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
-               2nd ed, Oxford University Press, 2012.
-        """
-
-        self.n_states, self.n_posdef, self.n_endog = R.shape[-2], R.shape[-1], Z.shape[-2]
-        self.eye_states = pt.eye(self.n_states)
-        self.eye_posdef = pt.eye(self.n_posdef)
-        self.eye_endog = pt.eye(self.n_endog)
 
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
         """
@@ -141,10 +96,10 @@ class BaseFilter(ABC):
         list[TensorVariable]
             A list of tensors wrapped in an `Assert` `Op` that checks the shape of the 0th dimension on each is equal
              to the shape of the 0th dimension on the data.
-
-        # TODO: The PytensorRepresentation object puts the time dimension last, should the reshaping happen here in
-            the Kalman filter, or in the StateSpaceModel, before passing into the KF?
         """
+        # TODO: The PytensorRepresentation object puts the time dimension last, should the reshaping happen here in
+        #    the Kalman filter, or in the StateSpaceModel, before passing into the KF?
+
         params_with_assert = [
             assert_time_varying_dim_correct(param, pt.eq(param.shape[0], data.shape[0]))
             for param in sequence_params
@@ -166,7 +121,7 @@ class BaseFilter(ABC):
         args = list(args)
         n_seq = len(self.seq_names)
         if n_seq == 0:
-            return args
+            return tuple(args)
 
         # The first arg is always y
         y = args.pop(0)
@@ -202,7 +157,7 @@ class BaseFilter(ABC):
         return_updates=False,
         missing_fill_value=None,
         cov_jitter=None,
-    ) -> list[TensorVariable]:
+    ) -> list[TensorVariable] | tuple[list[TensorVariable], dict]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
 
@@ -246,8 +201,10 @@ class BaseFilter(ABC):
 
         self.mode = mode
         self.missing_fill_value = missing_fill_value
-        self.initialize_eyes(R, Z)
         self.cov_jitter = cov_jitter
+
+        self.n_states, self.n_shocks = R.shape[-2:]
+        self.n_endog = Z.shape[-2]
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
 
@@ -643,7 +600,7 @@ class StandardFilter(BaseFilter):
         F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
 
         K = pt.linalg.solve(F.T, PZT.T, assume_a="pos", check_finite=False).T
-        I_KZ = self.eye_states - K.dot(Z)
+        I_KZ = pt.eye(self.n_states) - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
@@ -662,7 +619,7 @@ class StandardFilter(BaseFilter):
         return a_filtered, P_filtered, y_hat, F, ll
 
 
-class CholeskyFilter(BaseFilter):
+class SquareRootFilter(BaseFilter):
     """
     Kalman filter with Cholesky factorization
 
@@ -686,7 +643,7 @@ class CholeskyFilter(BaseFilter):
 
         # If everything is missing, K = 0, IKZ = I
         K = solve_triangular(F_chol.T, solve_triangular(F_chol, PZT.T)).T
-        I_KZ = self.eye_states - K.dot(Z)
+        I_KZ = pt.eye(self.n_states) - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
@@ -732,7 +689,7 @@ class SingleTimeseriesFilter(BaseFilter):
         F = stabilize(Z.dot(PZT) + H, self.cov_jitter).ravel()
 
         K = PZT / F
-        I_KZ = self.eye_states - K.dot(Z)
+        I_KZ = pt.eye(self.n_states) - K.dot(Z)
 
         a_filtered = a + (K * v).ravel()
 
@@ -741,123 +698,6 @@ class SingleTimeseriesFilter(BaseFilter):
         ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
 
         return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll
-
-
-class SteadyStateFilter(BaseFilter):
-    """
-    Kalman Filter using Steady State Covariance
-
-    This filter avoids the need to invert the covariance matrix of innovations at each time step by solving the
-    Discrete Algebraic Riccati Equation associated with the filtering problem once and for all at initialization and
-    uses the resulting steady-state covariance matrix in each step.
-
-    The innovation covariance matrix will always converge to the steady state value as T -> oo, so this filter will
-    only have differences from the standard approach in the early steps (T < 10?). A process of "learning" is lost.
-    """
-
-    def build_graph(
-        self,
-        data,
-        a0,
-        P0,
-        c,
-        d,
-        T,
-        Z,
-        R,
-        H,
-        Q,
-        mode=None,
-        return_updates=False,
-        missing_fill_value=None,
-        cov_jitter=None,
-    ) -> list[TensorVariable]:
-        """
-        Need to override the base step to add an argument to self.update, passing F_inv at every step.
-        """
-        if missing_fill_value is None:
-            missing_fill_value = MISSING_FILL
-        if cov_jitter is None:
-            cov_jitter = JITTER_DEFAULT
-
-        self.mode = mode
-        self.missing_fill_value = missing_fill_value
-        self.cov_jitter = cov_jitter
-        self.initialize_eyes(R, Z)
-
-        data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
-        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
-            params, PARAM_NAMES
-        )
-        self.seq_names = seq_names
-        self.non_seq_names = non_seq_names
-        c, d, T, Z, R, H, Q = params
-
-        if len(sequences) > 0:
-            assert ValueError(
-                "All system matrices must be time-invariant to use the SteadyStateFilter"
-            )
-
-        P_steady = solve_discrete_are(T.T, Z.T, matrix_dot(R, Q, R.T), H)
-        F = matrix_dot(Z, P_steady, Z.T) + H
-        F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos", check_finite=False)
-
-        results, updates = pytensor.scan(
-            self.kalman_step,
-            sequences=[data],
-            outputs_info=[None, a0, None, None, P_steady, None, None],
-            non_sequences=[c, d, F_inv, T, Z, R, H, Q],
-            name="forward_kalman_pass",
-            mode=get_mode(self.mode),
-        )
-
-        return self._postprocess_scan_results(results, a0, P0, n=data.shape[0])
-
-    def update(self, a, P, c, d, F_inv, y, Z, H, all_nan_flag):
-        y_hat = Z.dot(a) + d
-        v = y - y_hat
-
-        PZT = P.dot(Z.T)
-
-        F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
-        K = PZT.dot(F_inv)
-
-        I_KZ = self.eye_states - K.dot(Z)
-
-        a_filtered = a + K.dot(v)
-        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
-
-        inner_term = matrix_dot(v.T, F_inv, v)
-        ll = pt.switch(
-            all_nan_flag,
-            0.0,
-            -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
-        )
-
-        return a_filtered, P_filtered, y_hat, F, ll
-
-    def kalman_step(self, y, a, P, c, d, F_inv, T, Z, R, H, Q):
-        """
-        Need to override the base step to add an argument to self.update, passing F_inv at every step.
-        """
-
-        y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
-        a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
-            y=y_masked,
-            a=a,
-            P=P,
-            c=c,
-            d=d,
-            F_inv=F_inv,
-            Z=Z_masked,
-            H=H_masked,
-            all_nan_flag=all_nan_flag,
-        )
-
-        P_filtered = stabilize(P_filtered, self.cov_jitter)
-        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
-
-        return a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll
 
 
 class UnivariateFilter(BaseFilter):

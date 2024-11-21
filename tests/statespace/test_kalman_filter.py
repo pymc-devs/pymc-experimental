@@ -6,11 +6,10 @@ import pytest
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace.filters import (
-    CholeskyFilter,
     KalmanSmoother,
     SingleTimeseriesFilter,
+    SquareRootFilter,
     StandardFilter,
-    SteadyStateFilter,
     UnivariateFilter,
 )
 from pymc_experimental.statespace.filters.kalman_filter import BaseFilter
@@ -33,25 +32,22 @@ ATOL = 1e-6 if floatX.endswith("64") else 1e-3
 RTOL = 1e-6 if floatX.endswith("64") else 1e-3
 
 standard_inout = initialize_filter(StandardFilter())
-cholesky_inout = initialize_filter(CholeskyFilter())
+cholesky_inout = initialize_filter(SquareRootFilter())
 univariate_inout = initialize_filter(UnivariateFilter())
 single_inout = initialize_filter(SingleTimeseriesFilter())
-steadystate_inout = initialize_filter(SteadyStateFilter())
 
 f_standard = pytensor.function(*standard_inout, on_unused_input="ignore")
 f_cholesky = pytensor.function(*cholesky_inout, on_unused_input="ignore")
 f_univariate = pytensor.function(*univariate_inout, on_unused_input="ignore")
 f_single_ts = pytensor.function(*single_inout, on_unused_input="ignore")
-f_steady = pytensor.function(*steadystate_inout, on_unused_input="ignore")
 
-filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts, f_steady]
+filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts]
 
 filter_names = [
     "StandardFilter",
     "CholeskyFilter",
     "UnivariateFilter",
     "SingleTimeSeriesFilter",
-    "SteadyStateFilter",
 ]
 
 output_names = [
@@ -247,8 +243,7 @@ def test_last_smoother_is_last_filtered(filter_func, output_idx, rng):
     assert_allclose(filtered[-1], smoothed[-1])
 
 
-# TODO: These tests omit the SteadyStateFilter, because it gives different results to StatsModels (reason to dump it?)
-@pytest.mark.parametrize("filter_func", filter_funcs[:-1], ids=filter_names[:-1])
+@pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
 @pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
 @pytest.mark.skipif(floatX == "float32", reason="Tests are too sensitive for float32")
 def test_filters_match_statsmodel_output(filter_func, n_missing, rng):
@@ -320,7 +315,7 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
 
 @pytest.mark.parametrize(
     "filter",
-    [StandardFilter, SingleTimeseriesFilter, CholeskyFilter],
+    [StandardFilter, SingleTimeseriesFilter, SquareRootFilter],
     ids=["standard", "single_ts", "cholesky"],
 )
 def test_kalman_filter_jax(filter):
