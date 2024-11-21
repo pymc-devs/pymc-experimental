@@ -259,6 +259,7 @@ def inverse_hessian_factors(alpha, s, z, update_mask, J):
 
         chi_mat = pt.matrix_transpose(chi_mat)
 
+        # (L, N, J)
         return chi_mat
 
     def get_chi_matrix_2(diff, update_mask, J):
@@ -276,6 +277,7 @@ def inverse_hessian_factors(alpha, s, z, update_mask, J):
 
         chi_mat = pt.matrix_transpose(diff_padded[index])
 
+        # (L, N, J)
         return chi_mat
 
     L, N = alpha.shape
@@ -318,9 +320,96 @@ def inverse_hessian_factors(alpha, s, z, update_mask, J):
     return beta, gamma
 
 
-# # TODO: taylor_approx
-# TODO: taylor_approx_dense (if 2 * history_size >= num_params)
-# TODO: taylor_approx_sparse (else)
+def bfgs_sample_dense(
+    x,
+    g,
+    alpha,
+    beta,
+    gamma,
+    alpha_diag,
+    inv_sqrt_alpha_diag,
+    sqrt_alpha_diag,
+    u,
+):
+    N = x.shape[-1]
+    IdN = pt.eye(N)[None, ...]
+
+    # inverse Hessian
+    H_inv = (
+        sqrt_alpha_diag
+        @ (
+            IdN
+            + inv_sqrt_alpha_diag @ beta @ gamma @ pt.matrix_transpose(beta) @ inv_sqrt_alpha_diag
+        )
+        @ sqrt_alpha_diag
+    )
+
+    Lchol = pt.matrix_transpose(pt.linalg.cholesky(H_inv))
+
+    logdet, _ = pytensor.scan(fn=lambda x: 2.0 * pt.log(pt.linalg.det(x)), sequences=[Lchol])
+
+    mu = x - pt.batched_dot(H_inv, g)
+
+    phi = pt.matrix_transpose(
+        # (L, N, 1)
+        mu[..., None]
+        # (L, N, M)
+        + Lchol @ pt.matrix_transpose(u)
+    )  # fmt: off
+
+    return phi, logdet
+
+
+def bfgs_sample_sparse(
+    x,
+    g,
+    alpha,
+    beta,
+    gamma,
+    alpha_diag,
+    inv_sqrt_alpha_diag,
+    sqrt_alpha_diag,
+    u,
+):
+    # qr_input: (L, N, 2J)
+    qr_input = inv_sqrt_alpha_diag @ beta
+    (Q, R), _ = pytensor.scan(fn=pt.nlinalg.qr, sequences=[qr_input])
+    IdN = pt.eye(R.shape[1])[None, ...]
+    Lchol_input = IdN + R @ gamma @ pt.matrix_transpose(R)
+    Lchol = pt.matrix_transpose(pt.linalg.cholesky(Lchol_input))
+
+    # added pytensor.scan to avoid error after updating pytensor to 2.26.1 or greater
+    logdet, _ = pytensor.scan(fn=lambda x: 2.0 * pt.log(pt.linalg.det(x)), sequences=[Lchol])
+    logdet += pt.sum(pt.log(alpha), axis=-1)
+
+    # NOTE: changed the sign from "x + " to "x -" of the expression to match Stan which differs from Zhang et al., (2022)
+    mu = x - (
+        # (L, N), (L, N) -> (L, N)
+        pt.batched_dot(alpha_diag, g)
+        # beta @ gamma @ beta.T
+        # (L, N, 2J), (L, 2J, 2J), (L, 2J, N) -> (L, N, N)
+        # (L, N, N), (L, N) -> (L, N)
+        + pt.batched_dot((beta @ gamma @ pt.matrix_transpose(beta)), g)
+    )
+
+    phi = pt.matrix_transpose(
+        # (L, N, 1)
+        mu[..., None]
+        # (L, N, N), (L, N, M) -> (L, N, M)
+        + sqrt_alpha_diag
+        @ (
+            # (L, N, 2J), (L, 2J, M) -> (L, N, M)
+            # intermediate calcs below
+            # (L, N, 2J), (L, 2J, 2J) -> (L, N, 2J)
+            (Q @ (Lchol - IdN))
+            # (L, 2J, N), (L, N, M) -> (L, 2J, M)
+            @ (pt.matrix_transpose(Q) @ pt.matrix_transpose(u))
+            # (L, N, M)
+            + pt.matrix_transpose(u)
+        )
+    )  # fmt: off
+
+    return phi, logdet
 
 
 def bfgs_sample(
@@ -343,6 +432,7 @@ def bfgs_sample(
     # u: (M, N)             => (L, M, N)
     # phi: (M, N)           => (L, M, N)
     # logdensity: (M,)      => (L, M)
+    # Lchol: (2J, 2J)       => (L, 2J, 2J)
     # theta: (J, N)
 
     def batched(x, g, alpha, beta, gamma):
@@ -371,45 +461,33 @@ def bfgs_sample(
         beta = pt.atleast_3d(beta)
         gamma = pt.atleast_3d(gamma)
 
-    L, N = x.shape
+    L, N, JJ = beta.shape
 
     (alpha_diag, inv_sqrt_alpha_diag, sqrt_alpha_diag), _ = pytensor.scan(
         lambda a: [pt.diag(a), pt.diag(pt.sqrt(1.0 / a)), pt.diag(pt.sqrt(a))],
         sequences=[alpha],
     )
 
-    # qr_input: (L, N, 2J)
-    qr_input = inv_sqrt_alpha_diag @ beta
-    (Q, R), _ = pytensor.scan(fn=pt.nlinalg.qr, sequences=[qr_input])
-    IdN = pt.eye(R.shape[1])[None, ...]
-    Lchol_input = IdN + R @ gamma @ pt.matrix_transpose(R)
-    Lchol = pt.matrix_transpose(pt.linalg.cholesky(Lchol_input))
-
-    # added pytensor.scan to avoid error after updating pytensor to 2.26.1 or greater
-    logdet, _ = pytensor.scan(fn=lambda x: 2.0 * pt.log(pt.linalg.det(x)), sequences=[Lchol])
-    logdet += pt.sum(pt.log(alpha), axis=-1)
-
-    # NOTE: changed the sign from "x + " to "x -" of the expression to match Stan which differs from Zhang et al., (2022)
-    mu = x - (
-        # (L, N), (L, N) -> (L, N)
-        pt.batched_dot(alpha_diag, g)
-        # beta @ gamma @ beta.T
-        # (L, N, 2J), (L, 2J, 2J), (L, 2J, N) -> (L, N, N)
-        # (L, N, N), (L, N) -> (L, N)
-        + pt.batched_dot((beta @ gamma @ pt.matrix_transpose(beta)), g)
-    )
-
     u = pt.random.normal(size=(L, num_samples, N))
 
-    phi = pt.matrix_transpose(
-        mu[..., None]
-        + sqrt_alpha_diag
-        @ (
-            (Q @ (Lchol - IdN))
-            @ (pt.matrix_transpose(Q) @ pt.matrix_transpose(u))
-            + pt.matrix_transpose(u)
-        )
-    )  # fmt: off
+    sample_inputs = (
+        x,
+        g,
+        alpha,
+        beta,
+        gamma,
+        alpha_diag,
+        inv_sqrt_alpha_diag,
+        sqrt_alpha_diag,
+        u,
+    )
+
+    # ifelse is faster than pt.switch I think?
+    phi, logdet = pytensor.ifelse(
+        JJ >= N,
+        bfgs_sample_dense(*sample_inputs),
+        bfgs_sample_sparse(*sample_inputs),
+    )
 
     logdensity = -0.5 * (
         logdet[..., None]
@@ -527,12 +605,7 @@ def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
     g = g_full[1:]
 
     phi, logQ_phi = bfgs_sample(
-        num_samples=num_elbo_draws,
-        x=x,
-        g=g,
-        alpha=alpha,
-        beta=beta,
-        gamma=gamma,
+        num_samples=num_elbo_draws, x=x, g=g, alpha=alpha, beta=beta, gamma=gamma
     )
 
     loglike = LogLike(logp_func)
@@ -560,7 +633,7 @@ def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
 def make_single_pathfinder_fn(
     model,
     num_draws: int,
-    maxcor: int | None = None,
+    maxcor: int = 5,
     maxiter: int = 1000,
     ftol: float = 1e-10,
     gtol: float = 1e-16,
@@ -577,9 +650,7 @@ def make_single_pathfinder_fn(
     def neg_dlogp_func(x):
         return -dlogp_func(x)
 
-    N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
-    if maxcor is None:
-        maxcor = np.ceil(2 * N / 3).astype("int32")
+    DictToArrayBijection.map(model.initial_point()).data.shape[0]
 
     # initial_point_fn: (jitter_seed) -> x0
     initial_point_fn = make_initial_points_fn(model=model, jitter=jitter)
@@ -639,7 +710,7 @@ def multipath_pathfinder(
     num_paths: int,
     num_draws: int,
     num_draws_per_path: int,
-    maxcor: int | None = None,
+    maxcor: int = 5,
     maxiter: int = 1000,
     ftol: float = 1e-10,
     gtol: float = 1e-16,
@@ -703,7 +774,7 @@ def fit_pathfinder(
     num_paths: int = 1,  # I
     num_draws: int = 1000,  # R
     num_draws_per_path: int = 1000,  # M
-    maxcor: int | None = None,  # J
+    maxcor: int = 5,  # J
     maxiter: int = 1000,  # L^max
     ftol: float = 1e-10,
     gtol: float = 1e-16,
@@ -734,7 +805,7 @@ def fit_pathfinder(
     num_draws_per_path : int, optional
         Number of samples to draw per path (default is 1000).
     maxcor : int, optional
-        Maximum number of variable metric corrections used to define the limited memory matrix.
+        Maximum number of variable metric corrections used to define the limited memory matrix (default is 5).
     maxiter : int, optional
         Maximum number of iterations for the L-BFGS optimisation (default is 1000).
     ftol : float, optional
@@ -806,8 +877,6 @@ def fit_pathfinder(
         )
         ip = Point(ipfn(jitter_seed), model=model)
         ip_map = DictToArrayBijection.map(ip)
-        if maxcor is None:
-            maxcor = np.ceil(2 * ip_map.data.shape[0] / 3).astype("int32")
         logp_func = get_jaxified_logp_of_ravel_inputs(model)
         pathfinder_state, pathfinder_info = blackjax.vi.pathfinder.approximate(
             rng_key=jax.random.key(pathfinder_seed),
