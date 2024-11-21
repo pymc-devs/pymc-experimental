@@ -22,7 +22,6 @@ from pymc_experimental.statespace.filters import (
     SingleTimeseriesFilter,
     SquareRootFilter,
     StandardFilter,
-    SteadyStateFilter,
     UnivariateFilter,
 )
 from pymc_experimental.statespace.filters.distributions import (
@@ -53,7 +52,6 @@ floatX = pytensor.config.floatX
 FILTER_FACTORY = {
     "standard": StandardFilter,
     "univariate": UnivariateFilter,
-    "steady_state": SteadyStateFilter,
     "single": SingleTimeseriesFilter,
     "cholesky": SquareRootFilter,
 }
