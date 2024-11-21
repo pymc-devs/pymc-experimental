@@ -1,4 +1,5 @@
 import logging
+import warnings
 
 import arviz as az
 import numpy as np
@@ -20,10 +21,14 @@ class PSIS(Op):
         return Apply(self, [logweights], [psislw, pareto_k])
 
     def perform(self, node: Apply, inputs, outputs) -> None:
-        logweights = inputs[0]
-        psislw, pareto_k = az.psislw(logweights)
-        outputs[0][0] = psislw
-        outputs[1][0] = pareto_k
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", category=RuntimeWarning, message="overflow encountered in exp"
+            )
+            logweights = inputs[0]
+            psislw, pareto_k = az.psislw(logweights)
+            outputs[0][0] = psislw
+            outputs[1][0] = pareto_k
 
 
 def psir(
@@ -68,20 +73,27 @@ def psir(
 
     Zhang, L., Carpenter, B., Gelman, A., & Vehtari, A. (2022). Pathfinder: Parallel quasi-Newton variational inference. Journal of Machine Learning Research, 23(306), 1-49.
     """
-    # logiw = np.reshape(logP - logQ, (-1,), order="F")
-    # logiw = (logP - logQ).ravel()
+
     psislw, pareto_k = PSIS()(logiw)
     pareto_k = pareto_k.eval()
-    # FIXME: pareto_k is mostly bad, find out why!
-    if pareto_k <= 0.70:
+    if pareto_k < 0.5:
         pass
-    elif 0.70 < pareto_k <= 1:
-        logger.warning("pareto_k is bad: %f", pareto_k)
-        logger.info("consider increasing ftol, gtol or maxcor parameters")
+    elif 0.5 <= pareto_k < 0.70:
+        logger.warning(
+            f"Pareto k value ({pareto_k:.2f}) is between 0.5 and 0.7 which indicates an imperfect approximation however still useful."
+        )
+        logger.info("Consider increasing ftol, gtol or maxcor.")
+    elif pareto_k >= 0.7:
+        logger.warning(
+            f"Pareto k value ({pareto_k:.2f}) exceeds 0.7 which indicates a bad approximation."
+        )
+        logger.info("Consider increasing ftol, gtol, maxcor or reparametrising the model.")
     else:
-        logger.warning("pareto_k is very bad: %f", pareto_k)
+        logger.warning(
+            f"Received an invalid Pareto k value of {pareto_k:.2f} which indicates the model is seriously flawed."
+        )
         logger.info(
-            "consider reparametrising the model, increasing ftol, gtol or maxcor parameters"
+            "Consider reparametrising the model all together or ensure the input data are correct."
         )
 
     p = pt.exp(psislw - pt.logsumexp(psislw)).eval()

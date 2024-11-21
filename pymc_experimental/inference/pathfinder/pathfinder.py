@@ -118,12 +118,16 @@ def get_logp_dlogp_of_ravel_inputs(
 ):  # -> tuple[Callable[..., Any], Callable[..., Any]]:
     initial_points = model.initial_point()
     ip_map = DictToArrayBijection.map(initial_points)
-    compiled_logp_func = DictToArrayBijection.mapf(model.compile_logp(), initial_points)
+    compiled_logp_func = DictToArrayBijection.mapf(
+        model.compile_logp(jacobian=False), initial_points
+    )
 
     def logp_func(x):
         return compiled_logp_func(RaveledVars(x, ip_map.point_map_info))
 
-    compiled_dlogp_func = DictToArrayBijection.mapf(model.compile_dlogp(), initial_points)
+    compiled_dlogp_func = DictToArrayBijection.mapf(
+        model.compile_dlogp(jacobian=False), initial_points
+    )
 
     def dlogp_func(x):
         return compiled_dlogp_func(RaveledVars(x, ip_map.point_map_info))
@@ -206,49 +210,28 @@ def alpha_recover(x, g, epsilon: float = 1e-11):
         )
 
     Lp1, N = x.shape
-    S = pt.diff(x, axis=0)
-    Z = pt.diff(g, axis=0)
+    s = pt.diff(x, axis=0)
+    z = pt.diff(g, axis=0)
     alpha_l_init = pt.ones(N)
-    SZ = (S * Z).sum(axis=-1)
-
-    # Q: Line 5 of Algorithm 3 in Zhang et al., (2022) sets SZ < 1e-11 * L2(Z) as opposed to the ">" sign
-    update_mask = SZ > epsilon * pt.linalg.norm(Z, axis=-1)
+    sz = (s * z).sum(axis=-1)
+    update_mask = sz > epsilon * pt.linalg.norm(z, axis=-1)
 
     alpha, _ = pytensor.scan(
         fn=scan_body,
         outputs_info=alpha_l_init,
-        sequences=[update_mask, S, Z],
+        sequences=[update_mask, s, z],
         n_steps=Lp1 - 1,
         strict=True,
     )
 
-    # alpha: (L, N), update_mask: (L, N)
-    # alpha = pt.concatenate([pt.ones(N)[None, :], alpha], axis=0)
     # assert np.all(alpha.eval() > 0), "alpha cannot be negative"
-    return alpha, S, Z, update_mask
+    # alpha: (L, N), update_mask: (L, N)
+    return alpha, s, z, update_mask
 
 
-def get_chi_matrix(diff, update_mask, J):
-    L, N = diff.shape
-
-    diff_masked = update_mask[:, None] * diff
-
-    # diff_padded: (L-1+J, N)
-    diff_padded = pt.pad(diff_masked, ((J, 0), (0, 0)), mode="constant")
-
-    index = pt.arange(L)[:, None] + pt.arange(J)[None, :]
-    index = index.reshape((L, J))
-
-    # diff_xi (L, N, J) # The J-th column needs to have the last update
-    diff_xi = diff_padded[index].dimshuffle(0, 2, 1)
-
-    return diff_xi
-
-
-def inverse_hessian_factors(alpha, S, Z, update_mask, J):
+def inverse_hessian_factors(alpha, s, z, update_mask, J):
     # NOTE: get_chi_matrix_1 is a modified version of get_chi_matrix_2 to closely follow Zhang et al., (2022)
-    # NOTE: get_chi_matrix_2 is from blackjax which may have been incorrectly implemented
-    # NOTE: need to check which of the two is correct
+    # NOTE: get_chi_matrix_2 is from blackjax which MAYBE incorrectly implemented
 
     def get_chi_matrix_1(diff, update_mask, J):
         L, N = diff.shape
@@ -256,8 +239,6 @@ def inverse_hessian_factors(alpha, S, Z, update_mask, J):
 
         def chi_update(chi_lm1, diff_l):
             chi_l = pt.roll(chi_lm1, -1, axis=0)
-            # z_xi_l = pt.set_subtensor(z_xi_l[j_last], z_l)
-            # z_xi_l[j_last] = z_l
             return pt.set_subtensor(chi_l[j_last], diff_l)
 
         def no_op(chi_lm1, diff_l):
@@ -265,10 +246,6 @@ def inverse_hessian_factors(alpha, S, Z, update_mask, J):
 
         def scan_body(update_mask_l, diff_l, chi_lm1):
             return pt.switch(update_mask_l, chi_update(chi_lm1, diff_l), no_op(chi_lm1, diff_l))
-
-        # NOTE: removing first index so that L starts at 1
-        # update_mask = pt.concatenate([pt.as_tensor([False], dtype="bool"), update_mask], axis=-1)
-        # diff = pt.concatenate([pt.zeros((1, N), dtype="float64"), diff], axis=0)
 
         chi_init = pt.zeros((J, N))
         chi_mat, _ = pytensor.scan(
@@ -280,7 +257,7 @@ def inverse_hessian_factors(alpha, S, Z, update_mask, J):
             ],
         )
 
-        chi_mat = chi_mat.dimshuffle(0, 2, 1)
+        chi_mat = pt.matrix_transpose(chi_mat)
 
         return chi_mat
 
@@ -297,42 +274,36 @@ def inverse_hessian_factors(alpha, S, Z, update_mask, J):
         index = pt.arange(L)[:, None] + pt.arange(J)[None, :]
         index = index.reshape((L, J))
 
-        # chi_mat (L, N, J) # The J-th column needs to have the last update
-        chi_mat = diff_padded[index].dimshuffle(0, 2, 1)
+        chi_mat = pt.matrix_transpose(diff_padded[index])
 
         return chi_mat
 
     L, N = alpha.shape
-    s_xi = get_chi_matrix_1(S, update_mask, J)
-    z_xi = get_chi_matrix_1(Z, update_mask, J)
-
-    # (L, J, J)
-    sz_xi = pt.matrix_transpose(s_xi) @ z_xi
+    S = get_chi_matrix_1(s, update_mask, J)
+    Z = get_chi_matrix_1(z, update_mask, J)
 
     # E: (L, J, J)
-    # Ij: (L, J, J)
-    Ij = pt.repeat(pt.eye(J)[None, ...], L, axis=0)
-    E = pt.triu(sz_xi) + Ij * REGULARISATION_TERM
+    Ij = pt.eye(J)[None, ...]
+    E = pt.triu(pt.matrix_transpose(S) @ Z)
+    E += Ij * REGULARISATION_TERM
 
     # eta: (L, J)
-    eta, _ = pytensor.scan(lambda e: pt.diag(e), sequences=[E])
+    eta = pt.diagonal(E, axis1=-2, axis2=-1)
 
     # beta: (L, N, 2J)
     alpha_diag, _ = pytensor.scan(lambda a: pt.diag(a), sequences=[alpha])
-    beta = pt.concatenate([alpha_diag @ z_xi, s_xi], axis=-1)
+    beta = pt.concatenate([alpha_diag @ Z, S], axis=-1)
 
     # more performant and numerically precise to use solve than inverse: https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.linalg.inv.html
 
     # E_inv: (L, J, J)
     # TODO: handle compute errors for .linalg.solve. See comments in the _single_pathfinder function.
-    E_inv, _ = pytensor.scan(pt.linalg.solve, sequences=[E, Ij])
+    E_inv = pt.slinalg.solve_triangular(E, Ij)
     eta_diag, _ = pytensor.scan(pt.diag, sequences=[eta])
 
     # block_dd: (L, J, J)
     block_dd = (
-        pt.matrix_transpose(E_inv)
-        @ (eta_diag + pt.matrix_transpose(z_xi) @ alpha_diag @ z_xi)
-        @ E_inv
+        pt.matrix_transpose(E_inv) @ (eta_diag + pt.matrix_transpose(Z) @ alpha_diag @ Z) @ E_inv
     )
 
     # (L, J, 2J)
@@ -374,8 +345,6 @@ def bfgs_sample(
     # logdensity: (M,)      => (L, M)
     # theta: (J, N)
 
-    # rng = pytensor.shared(np.random.default_rng(seed=random_seed))
-
     def batched(x, g, alpha, beta, gamma):
         var_list = [x, g, alpha, beta, gamma]
         ndims = np.array([2, 2, 2, 3, 3])
@@ -409,40 +378,43 @@ def bfgs_sample(
         sequences=[alpha],
     )
 
+    # qr_input: (L, N, 2J)
     qr_input = inv_sqrt_alpha_diag @ beta
     (Q, R), _ = pytensor.scan(fn=pt.nlinalg.qr, sequences=[qr_input])
-    IdN = pt.repeat(pt.eye(R.shape[1])[None, ...], L, axis=0)
+    IdN = pt.eye(R.shape[1])[None, ...]
     Lchol_input = IdN + R @ gamma @ pt.matrix_transpose(R)
-    Lchol = pt.linalg.cholesky(Lchol_input)
+    Lchol = pt.matrix_transpose(pt.linalg.cholesky(Lchol_input))
 
-    # changed from pt.log(pt.prod(alpha, axis=-1)) to pt.sum(pt.log(alpha), axis=-1) for numerical stability
-    # logdet = pt.sum(pt.log(alpha), axis=-1) + 2 * pt.log(pt.linalg.det(Lchol))
+    # added pytensor.scan to avoid error after updating pytensor to 2.26.1 or greater
+    logdet, _ = pytensor.scan(fn=lambda x: 2.0 * pt.log(pt.linalg.det(x)), sequences=[Lchol])
+    logdet += pt.sum(pt.log(alpha), axis=-1)
 
-    # changed logdet calculation to match Stan:
-    # Lchol_diag, _ = pytensor.scan(
-    #     lambda Lchol_l: pt.diag(Lchol_l),
-    #     sequences=[Lchol],
-    # )
-    # logdet = 0.5 * pt.sum(pt.log(alpha), axis=-1) + pt.sum(pt.log(pt.abs(Lchol_diag)), axis=-1)
-    # TODO: check if this is faster:
-    logdet = 0.5 * pt.sum(pt.log(alpha), axis=-1) + pt.log(pt.linalg.det(Lchol))
-
-    mu = (
-        x
-        + pt.batched_dot(alpha_diag, g)
+    # NOTE: changed the sign from "x + " to "x -" of the expression to match Stan which differs from Zhang et al., (2022)
+    mu = x - (
+        # (L, N), (L, N) -> (L, N)
+        pt.batched_dot(alpha_diag, g)
+        # beta @ gamma @ beta.T
+        # (L, N, 2J), (L, 2J, 2J), (L, 2J, N) -> (L, N, N)
+        # (L, N, N), (L, N) -> (L, N)
         + pt.batched_dot((beta @ gamma @ pt.matrix_transpose(beta)), g)
-    )  # fmt: off
+    )
 
     u = pt.random.normal(size=(L, num_samples, N))
 
-    phi = (
+    phi = pt.matrix_transpose(
         mu[..., None]
-        + sqrt_alpha_diag @ (Q @ (Lchol - IdN)) @ (pt.matrix_transpose(Q) @ pt.matrix_transpose(u))
-        + pt.matrix_transpose(u)
-    ).dimshuffle([0, 2, 1])
+        + sqrt_alpha_diag
+        @ (
+            (Q @ (Lchol - IdN))
+            @ (pt.matrix_transpose(Q) @ pt.matrix_transpose(u))
+            + pt.matrix_transpose(u)
+        )
+    )  # fmt: off
 
     logdensity = -0.5 * (
-        logdet[..., None] + pt.sum(u * u, axis=-1) + N * pt.log(2.0 * pt.pi)
+        logdet[..., None]
+        + pt.sum(u * u, axis=-1)
+        + N * pt.log(2.0 * pt.pi)
     )  # fmt: off
 
     # phi: (L, M, N)
@@ -547,8 +519,8 @@ def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
     epsilon = pt.constant(epsilon, "epsilon", dtype="float64")
     maxcor = pt.constant(maxcor, "maxcor", dtype="int32")
 
-    alpha, S, Z, update_mask = alpha_recover(x_full, g_full, epsilon=epsilon)
-    beta, gamma = inverse_hessian_factors(alpha, S, Z, update_mask, J=maxcor)
+    alpha, s, z, update_mask = alpha_recover(x_full, g_full, epsilon=epsilon)
+    beta, gamma = inverse_hessian_factors(alpha, s, z, update_mask, J=maxcor)
 
     # ignore initial point - x, g: (L, N)
     x = x_full[1:]
@@ -698,6 +670,7 @@ def multipath_pathfinder(
         epsilon,
     )
 
+    # FIXME: fixing seed does not return the same results
     results = [single_pathfinder_fn(seed) for seed in path_seeds]
 
     # FIXME: large jitter leads to shape mismatch in beta in the inverse_hessian_factors function
@@ -720,7 +693,6 @@ def multipath_pathfinder(
     logQ -= log_I
     logiw = logP - logQ
     if psis_resample:
-        # return psir(samples, logP=logP, logQ=logQ, num_draws=num_draws, random_seed=choice_seed)
         return psir(samples, logiw=logiw, num_draws=num_draws, random_seed=choice_seed)
     else:
         return samples
