@@ -34,18 +34,18 @@ def load_nile_test_data():
     return nile
 
 
-def initialize_filter(kfilter, mode=None):
+def initialize_filter(kfilter, mode=None, p=None, m=None, r=None, n=None):
     ksmoother = KalmanSmoother()
-    data = pt.matrix(name="data", dtype=floatX)
-    a0 = pt.vector(name="a0", dtype=floatX)
-    P0 = pt.matrix(name="P0", dtype=floatX)
-    c = pt.vector(name="c", dtype=floatX)
-    d = pt.vector(name="d", dtype=floatX)
-    Q = pt.matrix(name="Q", dtype=floatX)
-    H = pt.matrix(name="H", dtype=floatX)
-    T = pt.matrix(name="T", dtype=floatX)
-    R = pt.matrix(name="R", dtype=floatX)
-    Z = pt.matrix(name="Z", dtype=floatX)
+    data = pt.tensor(name="data", dtype=floatX, shape=(n, p))
+    a0 = pt.tensor(name="x0", dtype=floatX, shape=(m,))
+    P0 = pt.tensor(name="P0", dtype=floatX, shape=(m, m))
+    c = pt.tensor(name="c", dtype=floatX, shape=(m,))
+    d = pt.tensor(name="d", dtype=floatX, shape=(p,))
+    Q = pt.tensor(name="Q", dtype=floatX, shape=(r, r))
+    H = pt.tensor(name="H", dtype=floatX, shape=(p, p))
+    T = pt.tensor(name="T", dtype=floatX, shape=(m, m))
+    R = pt.tensor(name="R", dtype=floatX, shape=(m, r))
+    Z = pt.tensor(name="Z", dtype=floatX, shape=(p, m))
 
     inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
 

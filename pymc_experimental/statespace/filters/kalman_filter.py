@@ -4,6 +4,7 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 
+from pymc.pytensorf import constant_fold
 from pytensor.compile.mode import get_mode
 from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
@@ -203,8 +204,11 @@ class BaseFilter(ABC):
         self.missing_fill_value = missing_fill_value
         self.cov_jitter = cov_jitter
 
-        self.n_states, self.n_shocks = R.shape[-2:]
-        self.n_endog = Z.shape[-2]
+        [R_shape] = constant_fold([R.shape], raise_not_constant=False)
+        [Z_shape] = constant_fold([Z.shape], raise_not_constant=False)
+
+        self.n_states, self.n_shocks = R_shape[-2:]
+        self.n_endog = Z_shape[-2]
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
 
@@ -408,7 +412,7 @@ class BaseFilter(ABC):
 
     @staticmethod
     def update(
-        a, P, y, c, d, Z, H, all_nan_flag
+        a, P, y, d, Z, H, all_nan_flag
     ) -> tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
         """
         Perform the update step of the Kalman filter.
@@ -419,7 +423,7 @@ class BaseFilter(ABC):
         .. math::
 
             \begin{align}
-            \\hat{y}_t &= Z_t a_{t | t-1} \\
+            \\hat{y}_t &= Z_t a_{t | t-1} + d_t \\
             v_t &= y_t - \\hat{y}_t \\
             F_t &= Z_t P_{t | t-1} Z_t^T + H_t \\
             a_{t|t} &= a_{t | t-1} + P_{t | t-1} Z_t^T F_t^{-1} v_t \\
@@ -435,8 +439,6 @@ class BaseFilter(ABC):
             The current covariance matrix estimate, conditioned on information up to time t-1.
         y : TensorVariable
             The observation data at time t.
-        c : TensorVariable
-            The matrix c.
         d : TensorVariable
             The matrix d.
         Z : TensorVariable
@@ -529,7 +531,7 @@ class BaseFilter(ABC):
         y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
 
         a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
-            y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
+            y=y_masked, a=a, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
         )
 
         P_filtered = stabilize(P_filtered, self.cov_jitter)
@@ -545,7 +547,7 @@ class StandardFilter(BaseFilter):
     Basic Kalman Filter
     """
 
-    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
+    def update(self, a, P, y, d, Z, H, all_nan_flag):
         """
         Compute one-step forecasts for observed states conditioned on information up to, but not including, the current
         timestep, `y_hat`, along with the forcast covariance matrix, `F`. Marginalize over observed states to obtain
@@ -565,9 +567,6 @@ class StandardFilter(BaseFilter):
 
         y : TensorVariable
             Observations at time t.
-
-        c : TensorVariable
-            Latent state bias term.
 
         d : TensorVariable
             Observed state bias term.
@@ -628,38 +627,128 @@ class SquareRootFilter(BaseFilter):
 
     """
 
-    # TODO: Can the entire Kalman filter process be re-written, starting from P0_chol, so it's not necessary to compute
-    #     cholesky(F) at every iteration?
+    def predict(self, a, P, c, T, R, Q):
+        """
+        Compute one-step forecasts for the hidden states conditioned on information up to, but not including, the current
+        timestep, `a_hat`, along with the forcast covariance matrix, `P_hat`.
 
-    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
+        .. warning::
+            Very important -- In this function, $P$ is the **cholesky factor** of the covariance matrix, not the
+            covariance matrix itself. The name `P` is kept for consistency with the superclass.
+        """
+        # Rename P to P_chol for clarity
+        P_chol = P
+
+        a_hat = T.dot(a) + c
+        Q_chol = pt.linalg.cholesky(Q, lower=True)
+
+        M = pt.horizontal_stack(T @ P_chol, R @ Q_chol).T
+        R_decomp = pt.linalg.qr(M, mode="r")
+        P_chol_hat = R_decomp[: self.n_states, : self.n_states].T
+
+        return a_hat, P_chol_hat
+
+    def update(self, a, P, y, d, Z, H, all_nan_flag):
+        """
+        Compute posterior estimates of the hidden state distributions conditioned on the observed data, up to and
+        including the present timestep. Also compute the log-likelihood of the data given the one-step forecasts.
+
+        .. warning::
+            Very important -- In this function, $P$ is the **cholesky factor** of the covariance matrix, not the
+            covariance matrix itself. The name `P` is kept for consistency with the superclass.
+        """
+
+        # Rename P to P_chol for clarity
+        P_chol = P
+
         y_hat = Z.dot(a) + d
         v = y - y_hat
 
-        PZT = P.dot(Z.T)
+        H_chol = pytensor.ifelse(pt.all(pt.eq(H, 0.0)), H, pt.linalg.cholesky(H, lower=True))
 
-        # If everything is missing, F will be [[0]] and F_chol will raise an error, so add identity to avoid the error
-        F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
-        F_chol = pt.linalg.cholesky(F)
+        # The following notation comes from https://ipnpr.jpl.nasa.gov/progress_report/42-233/42-233A.pdf
+        # Construct upper-triangular block matrix A = [[chol(H), Z @ L_pred],
+        #                                              [0,           L_pred]]
+        # The Schur decomposition of this matrix will be B (upper triangular). We are
+        # more insterested in B^T:
+        # Structure of B^T = [[chol(F),     0              ],
+        #                    [K @ chol(F), chol(P_filtered)]
+        zeros = pt.zeros((self.n_states, self.n_endog))
+        upper = pt.horizontal_stack(H_chol, Z @ P_chol)
+        lower = pt.horizontal_stack(zeros, P_chol)
+        A_T = pt.vertical_stack(upper, lower)
+        B = pt.linalg.qr(A_T.T, mode="r").T
 
-        # If everything is missing, K = 0, IKZ = I
-        K = solve_triangular(F_chol.T, solve_triangular(F_chol, PZT.T)).T
-        I_KZ = pt.eye(self.n_states) - K.dot(Z)
+        F_chol = B[: self.n_endog, : self.n_endog]
+        K_F_chol = B[self.n_endog :, : self.n_endog]
+        P_chol_filtered = B[self.n_endog :, self.n_endog :]
 
-        a_filtered = a + K.dot(v)
-        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
+        def compute_non_degenerate(P_chol_filtered, F_chol, K_F_chol, v):
+            a_filtered = a + K_F_chol @ solve_triangular(F_chol, v, lower=True)
 
-        inner_term = solve_triangular(F_chol.T, solve_triangular(F_chol, v))
-        n = y.shape[0]
+            inner_term = solve_triangular(
+                F_chol, solve_triangular(F_chol, v, lower=True), lower=True
+            )
+            loss = (v.T @ inner_term).ravel()
 
-        ll = pt.switch(
-            all_nan_flag,
-            0.0,
-            (
-                -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum()
-            ).ravel()[0],
+            # abs necessary because we're not guaranteed a positive diagonal from the schur decomposition
+            logdet = 2 * pt.log(pt.abs(pt.diag(F_chol))).sum()
+
+            ll = -0.5 * (self.n_endog * (MVN_CONST + logdet) + loss)[0]
+
+            return [a_filtered, P_chol_filtered, ll]
+
+        def compute_degenerate(P_chol_filtered, F_chol, K_F_chol, v):
+            """
+            If F is zero (usually because there were no observations this period), then we want:
+            K = 0, a = a, P = P, ll = 0
+            """
+            return [a, P_chol, pt.zeros(())]
+
+        [a_filtered, P_chol_filtered, ll] = pytensor.ifelse(
+            pt.eq(all_nan_flag, 1.0),
+            compute_degenerate(P_chol_filtered, F_chol, K_F_chol, v),
+            compute_non_degenerate(P_chol_filtered, F_chol, K_F_chol, v),
         )
 
-        return a_filtered, P_filtered, y_hat, F, ll
+        a_filtered = pt.specify_shape(a_filtered, (self.n_states,))
+        P_chol_filtered = pt.specify_shape(P_chol_filtered, (self.n_states, self.n_states))
+
+        return a_filtered, P_chol_filtered, y_hat, F_chol, ll
+
+    def _postprocess_scan_results(self, results, a0, P0, n) -> list[TensorVariable]:
+        """
+        Convert the Cholesky factor of the covariance matrix back to the covariance matrix itself.
+        """
+        results = super()._postprocess_scan_results(results, a0, P0, n)
+        (
+            filtered_states,
+            predicted_states,
+            observed_states,
+            filtered_covariances_cholesky,
+            predicted_covariances_cholesky,
+            observed_covariances_cholesky,
+            loglike_obs,
+        ) = results
+
+        def square_sequnece(L):
+            X = pt.einsum("...ij,...kj->...ik", L, L.copy())
+            X = pt.specify_shape(X, (n, self.n_states, self.n_states))
+            return X
+
+        filtered_covariances = square_sequnece(filtered_covariances_cholesky)
+        predicted_covariances = square_sequnece(predicted_covariances_cholesky)
+        observed_covariances = square_sequnece(observed_covariances_cholesky)
+
+        return [
+            filtered_states,
+            predicted_states,
+            observed_states,
+            filtered_covariances,
+            predicted_covariances,
+            observed_covariances,
+            loglike_obs,
+        ]
 
 
 class SingleTimeseriesFilter(BaseFilter):
@@ -679,7 +768,7 @@ class SingleTimeseriesFilter(BaseFilter):
 
         return data, a0, P0, c, d, T, Z, R, H, Q
 
-    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
+    def update(self, a, P, y, d, Z, H, all_nan_flag):
         y_hat = d + Z.dot(a)
         v = y - y_hat.ravel()
 
