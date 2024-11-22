@@ -19,7 +19,6 @@ from pytensor.compile import get_mode
 from pymc_experimental.statespace.core.representation import PytensorRepresentation
 from pymc_experimental.statespace.filters import (
     KalmanSmoother,
-    SingleTimeseriesFilter,
     SquareRootFilter,
     StandardFilter,
     UnivariateFilter,
@@ -52,7 +51,6 @@ floatX = pytensor.config.floatX
 FILTER_FACTORY = {
     "standard": StandardFilter,
     "univariate": UnivariateFilter,
-    "single": SingleTimeseriesFilter,
     "cholesky": SquareRootFilter,
 }
 

@@ -7,7 +7,6 @@ from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace.filters import (
     KalmanSmoother,
-    SingleTimeseriesFilter,
     SquareRootFilter,
     StandardFilter,
     UnivariateFilter,
@@ -34,20 +33,17 @@ RTOL = 1e-6 if floatX.endswith("64") else 1e-3
 standard_inout = initialize_filter(StandardFilter())
 cholesky_inout = initialize_filter(SquareRootFilter())
 univariate_inout = initialize_filter(UnivariateFilter())
-single_inout = initialize_filter(SingleTimeseriesFilter())
 
 f_standard = pytensor.function(*standard_inout, on_unused_input="ignore")
 f_cholesky = pytensor.function(*cholesky_inout, on_unused_input="ignore")
 f_univariate = pytensor.function(*univariate_inout, on_unused_input="ignore")
-f_single_ts = pytensor.function(*single_inout, on_unused_input="ignore")
 
-filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts]
+filter_funcs = [f_standard, f_cholesky, f_univariate]
 
 filter_names = [
     "StandardFilter",
     "CholeskyFilter",
     "UnivariateFilter",
-    "SingleTimeSeriesFilter",
 ]
 
 output_names = [
@@ -191,20 +187,12 @@ def test_output_with_multiple_observed(filter_func, filter_name, rng):
     p, m, r, n = 5, 5, 1, 10
     inputs = make_test_inputs(p, m, r, n, rng)
 
-    if filter_name == "SingleTimeSeriesFilter":
-        with pytest.raises(
-            AssertionError,
-            match="UnivariateTimeSeries filter requires data be at most 1-dimensional",
-        ):
-            filter_func(*inputs)
-
-    else:
-        outputs = filter_func(*inputs)
-        for output_idx, name in enumerate(output_names):
-            expected_output = get_expected_shape(name, p, m, r, n)
-            assert (
-                outputs[output_idx].shape == expected_output
-            ), f"Shape of {name} does not match expected"
+    outputs = filter_func(*inputs)
+    for output_idx, name in enumerate(output_names):
+        expected_output = get_expected_shape(name, p, m, r, n)
+        assert (
+            outputs[output_idx].shape == expected_output
+        ), f"Shape of {name} does not match expected"
 
 
 @pytest.mark.parametrize(
@@ -215,20 +203,12 @@ def test_missing_data(filter_func, filter_name, p, rng):
     m, r, n = 5, 1, 10
     inputs = make_test_inputs(p, m, r, n, rng, missing_data=1)
 
-    if p > 1 and filter_name == "SingleTimeSeriesFilter":
-        with pytest.raises(
-            AssertionError,
-            match="UnivariateTimeSeries filter requires data be at most 1-dimensional",
-        ):
-            filter_func(*inputs)
-
-    else:
-        outputs = filter_func(*inputs)
-        for output_idx, name in enumerate(output_names):
-            expected_output = get_expected_shape(name, p, m, r, n)
-            assert (
-                outputs[output_idx].shape == expected_output
-            ), f"Shape of {name} does not match expected"
+    outputs = filter_func(*inputs)
+    for output_idx, name in enumerate(output_names):
+        expected_output = get_expected_shape(name, p, m, r, n)
+        assert (
+            outputs[output_idx].shape == expected_output
+        ), f"Shape of {name} does not match expected"
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
@@ -323,8 +303,8 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
 
 @pytest.mark.parametrize(
     "filter",
-    [StandardFilter, SingleTimeseriesFilter, SquareRootFilter],
-    ids=["standard", "single_ts", "cholesky"],
+    [StandardFilter, SquareRootFilter],
+    ids=["standard", "cholesky"],
 )
 def test_kalman_filter_jax(filter):
     pytest.importorskip("jax")

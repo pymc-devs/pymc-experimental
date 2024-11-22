@@ -21,7 +21,6 @@ from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT, MISSING
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
 PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
 
-assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")
 assert_time_varying_dim_correct = Assert(
     "The first dimension of a time varying matrix (the time dimension) must be "
     "equal to the first dimension of the data (the time dimension)."
@@ -751,50 +750,12 @@ class SquareRootFilter(BaseFilter):
         ]
 
 
-class SingleTimeseriesFilter(BaseFilter):
-    """
-    Kalman filter optimized for univariate timeseries
-
-    If there is only a single observed timeseries, regardless of the number of hidden states, there is no need to
-    perform a matrix inversion anywhere in the filter.
-    """
-
-    # TODO: This class should eventually be made irrelevant by pytensor re-writes.
-    def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
-        """
-        Wrap the data in an `Assert` `Op` to ensure there is only one observed state.
-        """
-        data = assert_data_is_1d(data, pt.eq(data.shape[1], 1))
-
-        return data, a0, P0, c, d, T, Z, R, H, Q
-
-    def update(self, a, P, y, d, Z, H, all_nan_flag):
-        y_hat = d + Z.dot(a)
-        v = y - y_hat.ravel()
-
-        PZT = P.dot(Z.T)
-
-        # F is scalar, K is a column vector
-        F = stabilize(Z.dot(PZT) + H, self.cov_jitter).ravel()
-
-        K = PZT / F
-        I_KZ = pt.eye(self.n_states) - K.dot(Z)
-
-        a_filtered = a + (K * v).ravel()
-
-        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
-
-        ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
-
-        return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll
-
-
 class UnivariateFilter(BaseFilter):
     """
     The univariate kalman filter, described in [1], section 6.4.2, avoids inversion of the F matrix, as well as two
     matrix multiplications, at the cost of an additional loop. Note that the name doesn't mean there's only one
-    observed time series, that's the SingleTimeSeries filter. This is called univariate because it updates the state
-    mean and covariance matrices one variable at a time, using an inner-inner loop.
+    observed time series. This is called univariate because it updates the state mean and covariance matrices one
+    variable at a time, using an inner-inner loop.
 
     This is useful when states are perfectly observed, because the F matrix can easily become degenerate in these cases.
 
