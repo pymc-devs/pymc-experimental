@@ -234,12 +234,6 @@ def test_invalid_filter_name_raises():
         mod = make_statespace_mod(k_endog=1, k_states=5, k_posdef=1, filter_type="invalid_filter")
 
 
-def test_singleseriesfilter_raises_if_k_endog_gt_one():
-    msg = 'Cannot use filter_type = "single" with multiple observed time series'
-    with pytest.raises(ValueError, match=msg):
-        mod = make_statespace_mod(k_endog=10, k_states=5, k_posdef=1, filter_type="single")
-
-
 def test_unpack_before_insert_raises(rng):
     p, m, r, n = 2, 5, 1, 10
     data, *inputs = make_test_inputs(p, m, r, n, rng, missing_data=0)

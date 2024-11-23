@@ -38,8 +38,6 @@ filter_names = [
     "standard",
     "cholesky",
     "univariate",
-    "single",
-    "steady_state",
 ]
 
 

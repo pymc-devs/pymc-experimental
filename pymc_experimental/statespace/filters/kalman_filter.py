@@ -730,14 +730,14 @@ class SquareRootFilter(BaseFilter):
             loglike_obs,
         ) = results
 
-        def square_sequnece(L):
+        def square_sequnece(L, k):
             X = pt.einsum("...ij,...kj->...ik", L, L.copy())
-            X = pt.specify_shape(X, (n, self.n_states, self.n_states))
+            X = pt.specify_shape(X, (n, k, k))
             return X
 
-        filtered_covariances = square_sequnece(filtered_covariances_cholesky)
-        predicted_covariances = square_sequnece(predicted_covariances_cholesky)
-        observed_covariances = square_sequnece(observed_covariances_cholesky)
+        filtered_covariances = square_sequnece(filtered_covariances_cholesky, k=self.n_states)
+        predicted_covariances = square_sequnece(predicted_covariances_cholesky, k=self.n_states)
+        observed_covariances = square_sequnece(observed_covariances_cholesky, k=self.n_endog)
 
         return [
             filtered_states,
