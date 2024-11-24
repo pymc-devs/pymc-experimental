@@ -1,92 +1,55 @@
 from collections.abc import Callable
-from typing import NamedTuple
+from dataclasses import dataclass, field
 
 import numpy as np
 import pytensor.tensor as pt
 
+from numpy.typing import NDArray
 from pytensor.graph import Apply, Op
 from scipy.optimize import minimize
 
 
-class LBFGSHistory(NamedTuple):
-    x: np.ndarray
-    g: np.ndarray
+@dataclass(slots=True)
+class LBFGSHistory:
+    x: NDArray[np.float64]
+    g: NDArray[np.float64]
+
+    def __post_init__(self):
+        self.x = np.ascontiguousarray(self.x, dtype=np.float64)
+        self.g = np.ascontiguousarray(self.g, dtype=np.float64)
 
 
+@dataclass(slots=True)
 class LBFGSHistoryManager:
-    def __init__(self, grad_fn: Callable, x0: np.ndarray, maxiter: int):
-        dim = x0.shape[0]
-        maxiter_add_one = maxiter + 1
-        # Pre-allocate arrays to save memory and improve speed
-        self.x_history = np.empty((maxiter_add_one, dim), dtype=np.float64)
-        self.g_history = np.empty((maxiter_add_one, dim), dtype=np.float64)
-        self.count = 0
-        self.grad_fn = grad_fn
-        self.add_entry(x0, grad_fn(x0))
+    grad_fn: Callable[[NDArray[np.float64]], NDArray[np.float64]]
+    x0: NDArray[np.float64]
+    maxiter: int
+    x_history: NDArray[np.float64] = field(init=False)
+    g_history: NDArray[np.float64] = field(init=False)
+    count: int = field(init=False, default=0)
 
-    def add_entry(self, x, g):
+    def __post_init__(self) -> None:
+        self.x_history = np.empty((self.maxiter + 1, self.x0.shape[0]), dtype=np.float64)
+        self.g_history = np.empty((self.maxiter + 1, self.x0.shape[0]), dtype=np.float64)
+
+        grad = self.grad_fn(self.x0)
+        if not np.all(np.isfinite(grad)):
+            self.x_history[0] = self.x0
+            self.g_history[0] = grad
+            self.count = 1
+
+    def add_entry(self, x: NDArray[np.float64], g: NDArray[np.float64]) -> None:
         self.x_history[self.count] = x
         self.g_history[self.count] = g
         self.count += 1
 
-    def get_history(self):
-        # Return trimmed arrays up to L << L^max
-        x = self.x_history[: self.count]
-        g = self.g_history[: self.count]
-        return LBFGSHistory(
-            x=x,
-            g=g,
-        )
+    def get_history(self) -> LBFGSHistory:
+        return LBFGSHistory(x=self.x_history[: self.count], g=self.g_history[: self.count])
 
-    def __call__(self, x):
+    def __call__(self, x: NDArray[np.float64]) -> None:
         grad = self.grad_fn(x)
-        if np.all(np.isfinite(grad)):
+        if np.all(np.isfinite(grad)) and self.count < self.maxiter + 1:
             self.add_entry(x, grad)
-
-
-def lbfgs(
-    fn,
-    grad_fn,
-    x0: np.ndarray,
-    maxcor: int | None = None,
-    maxiter=1000,
-    ftol=1e-5,
-    gtol=1e-8,
-    maxls=1000,
-    **lbfgs_kwargs,
-) -> LBFGSHistory:
-    def callback(xk):
-        lbfgs_history_manager(xk)
-
-    lbfgs_history_manager = LBFGSHistoryManager(
-        grad_fn=grad_fn,
-        x0=x0,
-        maxiter=maxiter,
-    )
-
-    default_lbfgs_options = dict(
-        maxcor=maxcor,
-        maxiter=maxiter,
-        ftol=ftol,
-        gtol=gtol,
-        maxls=maxls,
-    )
-    options = lbfgs_kwargs.pop("options", {})
-    options = default_lbfgs_options | options
-
-    # TODO: return the status of the lbfgs optimisation to handle the case where the optimisation fails. More details in the _single_pathfinder function.
-
-    minimize(
-        fn,
-        x0,
-        method="L-BFGS-B",
-        jac=grad_fn,
-        options=options,
-        callback=callback,
-        **lbfgs_kwargs,
-    )
-    lbfgs_history = lbfgs_history_manager.get_history()
-    return lbfgs_history.x, lbfgs_history.g
 
 
 class LBFGSOp(Op):
@@ -126,17 +89,7 @@ class LBFGSOp(Op):
             },
         )
 
-        # fmin_l_bfgs_b(
-        #     func=self.fn,
-        #     fprime=self.grad_fn,
-        #     x0=x0,
-        #     pgtol=self.gtol,
-        #     factr=self.ftol / np.finfo(float).eps,
-        #     maxls=self.maxls,
-        #     maxiter=self.maxiter,
-        #     m=self.maxcor,
-        #     callback=history_manager,
-        # )
+        # TODO: return the status of the lbfgs optimisation to handle the case where the optimisation fails. More details in the _single_pathfinder function.
 
         outputs[0][0] = history_manager.get_history().x
         outputs[1][0] = history_manager.get_history().g

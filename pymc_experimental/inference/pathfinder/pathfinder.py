@@ -19,6 +19,7 @@ import multiprocessing
 import platform
 
 from collections.abc import Callable
+from importlib.util import find_spec
 from typing import Literal
 
 import arviz as az
@@ -39,7 +40,7 @@ from pymc.model.core import Point
 from pymc.pytensorf import compile_pymc, find_rng_nodes, replace_rng_nodes, reseed_rngs
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import RandomSeed, _get_seeds_per_chain, get_default_varnames
-from pytensor.graph import Apply, Op
+from pytensor.graph import Apply, Op, vectorize_graph
 from pytensor.tensor.variable import TensorVariable
 
 from pymc_experimental.inference.pathfinder.importance_sampling import psir
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 REGULARISATION_TERM = 1e-8
 
 
+# TODO: check if necessary if using RandomStreams
 def make_seeded_function(
     func: Callable | None = None,
     inputs: list[TensorVariable] | None = [],
@@ -64,6 +66,7 @@ def make_seeded_function(
     if not isinstance(outputs, list | tuple):
         outputs = [outputs]
 
+    # Q: do I need replace_rng_nodes? It still works without it.
     outputs = replace_rng_nodes(outputs)
     default_compile_kwargs = {"mode": pytensor.compile.mode.FAST_RUN}
     compile_kwargs = default_compile_kwargs | compile_kwargs
@@ -113,24 +116,18 @@ def get_jaxified_logp_of_ravel_inputs(
     return logp_func
 
 
-def get_logp_dlogp_of_ravel_inputs(
-    model: Model,
-):  # -> tuple[Callable[..., Any], Callable[..., Any]]:
-    initial_points = model.initial_point()
-    ip_map = DictToArrayBijection.map(initial_points)
-    compiled_logp_func = DictToArrayBijection.mapf(
-        model.compile_logp(jacobian=False), initial_points
+def get_logp_dlogp_of_ravel_inputs(model: Model, jacobian: bool = False):
+    outputs, inputs = pm.pytensorf.join_nonshared_inputs(
+        model.initial_point(),
+        [model.logp(jacobian=jacobian), model.dlogp(jacobian=jacobian)],
+        model.value_vars,
     )
 
-    def logp_func(x):
-        return compiled_logp_func(RaveledVars(x, ip_map.point_map_info))
+    logp_func = compile_pymc([inputs], outputs[0])
+    logp_func.trust_input = True
 
-    compiled_dlogp_func = DictToArrayBijection.mapf(
-        model.compile_dlogp(jacobian=False), initial_points
-    )
-
-    def dlogp_func(x):
-        return compiled_dlogp_func(RaveledVars(x, ip_map.point_map_info))
+    dlogp_func = compile_pymc([inputs], outputs[1])
+    dlogp_func.trust_input = True
 
     return logp_func, dlogp_func
 
@@ -150,6 +147,7 @@ def convert_flat_trace_to_idata(
         raveld_vars = RaveledVars(sample, ip_point_map_info)
         point = DictToArrayBijection.rmap(raveld_vars, ip)
         for p, v in point.items():
+            # instead of .tolist(), use np.asarray(v) since array sizes are known
             trace[p].append(v.tolist())
 
     trace = {k: np.asarray(v)[None, ...] for k, v in trace.items()}
@@ -159,11 +157,22 @@ def convert_flat_trace_to_idata(
     logger.info("Transforming variables...")
 
     if inference_backend == "pymc":
-        # TODO: we need to remove JAX dependency as win32 users can now use Pathfinder with inference_backend="pymc".
-        jax_fn = get_jaxified_graph(inputs=model.value_vars, outputs=vars_to_sample)
-        result = jax.vmap(jax.vmap(jax_fn))(
-            *jax.device_put(list(trace.values()), jax.devices(postprocessing_backend)[0])
+        new_shapes = [v.ndim * (None,) for v in trace.values()]
+        replace = {
+            var: pt.tensor(dtype="float64", shape=new_shapes[i])
+            for i, var in enumerate(model.value_vars)
+        }
+
+        outputs = vectorize_graph(vars_to_sample, replace=replace)
+
+        fn = pytensor.function(
+            inputs=[*list(replace.values())],
+            outputs=outputs,
+            mode="FAST_COMPILE",
+            on_unused_input="ignore",
         )
+        fn.trust_input = True
+        result = fn(*list(trace.values()))
     elif inference_backend == "blackjax":
         jax_fn = get_jaxified_graph(inputs=model.value_vars, outputs=vars_to_sample)
         result = jax.vmap(jax.vmap(jax_fn))(
@@ -179,7 +188,7 @@ def convert_flat_trace_to_idata(
     return idata
 
 
-def alpha_recover(x, g, epsilon: float = 1e-11):
+def alpha_recover(x, g, epsilon):
     """
     epsilon: float
         value used to filter out large changes in the direction of the update gradient at each iteration l in L. iteration l are only accepted if delta_theta[l] * delta_grad[l] > epsilon * L2_norm(delta_grad[l]) for each l in L.
@@ -650,16 +659,16 @@ def make_single_pathfinder_fn(
     def neg_dlogp_func(x):
         return -dlogp_func(x)
 
-    DictToArrayBijection.map(model.initial_point()).data.shape[0]
-
     # initial_point_fn: (jitter_seed) -> x0
     initial_point_fn = make_initial_points_fn(model=model, jitter=jitter)
 
     # lbfgs_fn: (x0) -> (x, g)
     lbfgs_fn = make_lbfgs_fn(neg_logp_func, neg_dlogp_func, maxcor, maxiter, ftol, gtol, maxls)
+    lbfgs_fn.trust_input = True
 
     # pathfinder_body_fn: (tuple[elbo_draw_seed, num_draws_seed], x, g) -> (psi, logP_psi, logQ_psi)
     pathfinder_body_fn = make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon)
+    pathfinder_body_fn.trust_input = True
 
     """
     The following excerpt is from Zhang et al., (2022):
@@ -705,6 +714,14 @@ def _get_mp_context(mp_ctx=None):
     return mp_ctx
 
 
+def calculate_processes():
+    total_cpus = multiprocessing.cpu_count() or 1
+    processes = max(2, int(total_cpus * 0.3))
+    if processes % 2 != 0:
+        processes += 1
+    return processes
+
+
 def multipath_pathfinder(
     model: Model,
     num_paths: int,
@@ -741,7 +758,6 @@ def multipath_pathfinder(
         epsilon,
     )
 
-    # FIXME: fixing seed does not return the same results
     results = [single_pathfinder_fn(seed) for seed in path_seeds]
 
     # FIXME: large jitter leads to shape mismatch in beta in the inverse_hessian_factors function
@@ -770,18 +786,18 @@ def multipath_pathfinder(
 
 
 def fit_pathfinder(
-    model,
-    num_paths: int = 1,  # I
+    model=None,
+    num_paths: int = 4,  # I
     num_draws: int = 1000,  # R
     num_draws_per_path: int = 1000,  # M
     maxcor: int = 5,  # J
     maxiter: int = 1000,  # L^max
-    ftol: float = 1e-10,
-    gtol: float = 1e-16,
+    ftol: float = 1e-5,
+    gtol: float = 1e-8,
     maxls=1000,
     num_elbo_draws: int = 10,  # K
-    jitter: float = 2.0,
-    epsilon: float = 1e-11,
+    jitter: float = 1.0,
+    epsilon: float = 1e-8,
     psis_resample: bool = True,
     random_seed: RandomSeed | None = None,
     postprocessing_backend: Literal["cpu", "gpu"] = "cpu",
@@ -799,7 +815,7 @@ def fit_pathfinder(
     model : pymc.Model
         The PyMC model to fit the Pathfinder algorithm to.
     num_paths : int
-        Number of independent paths to run in the Pathfinder algorithm.
+        Number of independent paths to run in the Pathfinder algorithm. (default is 4)
     num_draws : int, optional
         Total number of samples to draw from the fitted approximation (default is 1000).
     num_draws_per_path : int, optional
@@ -840,9 +856,6 @@ def fit_pathfinder(
     ----------
     Zhang, L., Carpenter, B., Gelman, A., & Vehtari, A. (2022). Pathfinder: Parallel quasi-Newton variational inference. Journal of Machine Learning Research, 23(306), 1-49.
     """
-    # Temporarily helper
-    if version.parse(blackjax.__version__).major < 1:
-        raise ImportError("fit_pathfinder requires blackjax 1.0 or above")
 
     model = modelcontext(model)
 
@@ -868,6 +881,11 @@ def fit_pathfinder(
             **pathfinder_kwargs,
         )
     elif inference_backend == "blackjax":
+        if find_spec("blackjax") is None:
+            raise RuntimeError("Need BlackJAX to use `pathfinder`")
+        if version.parse(blackjax.__version__).major < 1:
+            raise ImportError("fit_pathfinder requires blackjax 1.0 or above")
+
         jitter_seed, pathfinder_seed, sample_seed = _get_seeds_per_chain(random_seed, 3)
         # TODO: extend initial points initialisation to blackjax
         # TODO: extend blackjax pathfinder to multiple paths
