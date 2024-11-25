@@ -1,3 +1,5 @@
+import logging
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -7,6 +9,8 @@ import pytensor.tensor as pt
 from numpy.typing import NDArray
 from pytensor.graph import Apply, Op
 from scipy.optimize import minimize
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -21,6 +25,7 @@ class LBFGSHistory:
 
 @dataclass(slots=True)
 class LBFGSHistoryManager:
+    fn: Callable[[NDArray[np.float64]], np.float64]
     grad_fn: Callable[[NDArray[np.float64]], NDArray[np.float64]]
     x0: NDArray[np.float64]
     maxiter: int
@@ -32,8 +37,9 @@ class LBFGSHistoryManager:
         self.x_history = np.empty((self.maxiter + 1, self.x0.shape[0]), dtype=np.float64)
         self.g_history = np.empty((self.maxiter + 1, self.x0.shape[0]), dtype=np.float64)
 
+        value = self.fn(self.x0)
         grad = self.grad_fn(self.x0)
-        if not np.all(np.isfinite(grad)):
+        if np.all(np.isfinite(grad)) and np.isfinite(value):
             self.x_history[0] = self.x0
             self.g_history[0] = grad
             self.count = 1
@@ -47,9 +53,14 @@ class LBFGSHistoryManager:
         return LBFGSHistory(x=self.x_history[: self.count], g=self.g_history[: self.count])
 
     def __call__(self, x: NDArray[np.float64]) -> None:
+        value = self.fn(x)
         grad = self.grad_fn(x)
-        if np.all(np.isfinite(grad)) and self.count < self.maxiter + 1:
+        if np.all(np.isfinite(grad)) and np.isfinite(value) and self.count < self.maxiter + 1:
             self.add_entry(x, grad)
+
+
+class LBFGSInitFailed(Exception):
+    pass
 
 
 class LBFGSOp(Op):
@@ -66,15 +77,18 @@ class LBFGSOp(Op):
         x0 = pt.as_tensor_variable(x0)
         x_history = pt.dmatrix()
         g_history = pt.dmatrix()
-        return Apply(self, [x0], [x_history, g_history])
+        status = pt.iscalar()
+        return Apply(self, [x0], [x_history, g_history, status])
 
     def perform(self, node, inputs, outputs):
         x0 = inputs[0]
         x0 = np.array(x0, dtype=np.float64)
 
-        history_manager = LBFGSHistoryManager(grad_fn=self.grad_fn, x0=x0, maxiter=self.maxiter)
+        history_manager = LBFGSHistoryManager(
+            fn=self.fn, grad_fn=self.grad_fn, x0=x0, maxiter=self.maxiter
+        )
 
-        minimize(
+        result = minimize(
             self.fn,
             x0,
             method="L-BFGS-B",
@@ -91,5 +105,19 @@ class LBFGSOp(Op):
 
         # TODO: return the status of the lbfgs optimisation to handle the case where the optimisation fails. More details in the _single_pathfinder function.
 
+        if result.status == 1:
+            logger.info("LBFGS maximum number of iterations reached. Consider increasing maxiter.")
+        elif result.status == 2:
+            if (result.nit <= 1) or (history_manager.count <= 1):
+                logger.info(
+                    "LBFGS failed to initialise. The model might be degenerate or the jitter might be too large."
+                )
+                raise LBFGSInitFailed("LBFGS failed to initialise")
+            elif result.fun == np.inf:
+                logger.info(
+                    "LBFGS diverged to infinity. The model might be degenerate or requires reparameterisation."
+                )
+
         outputs[0][0] = history_manager.get_history().x
         outputs[1][0] = history_manager.get_history().g
+        outputs[2][0] = result.status

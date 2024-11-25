@@ -82,12 +82,14 @@ def psir(
         logger.warning(
             f"Pareto k value ({pareto_k:.2f}) is between 0.5 and 0.7 which indicates an imperfect approximation however still useful."
         )
-        logger.info("Consider increasing ftol, gtol or maxcor.")
+        logger.info("Consider increasing ftol, gtol, maxcor or num_paths.")
     elif pareto_k >= 0.7:
         logger.warning(
             f"Pareto k value ({pareto_k:.2f}) exceeds 0.7 which indicates a bad approximation."
         )
-        logger.info("Consider increasing ftol, gtol, maxcor or reparametrising the model.")
+        logger.info(
+            "Consider increasing ftol, gtol, maxcor, num_paths or reparametrising the model."
+        )
     else:
         logger.warning(
             f"Received an invalid Pareto k value of {pareto_k:.2f} which indicates the model is seriously flawed."

@@ -40,18 +40,18 @@ from pymc.model.core import Point
 from pymc.pytensorf import compile_pymc, find_rng_nodes, replace_rng_nodes, reseed_rngs
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import RandomSeed, _get_seeds_per_chain, get_default_varnames
+from pytensor.compile.mode import FAST_COMPILE, FAST_RUN
 from pytensor.graph import Apply, Op, vectorize_graph
 from pytensor.tensor.variable import TensorVariable
 
 from pymc_experimental.inference.pathfinder.importance_sampling import psir
-from pymc_experimental.inference.pathfinder.lbfgs import LBFGSOp
+from pymc_experimental.inference.pathfinder.lbfgs import LBFGSInitFailed, LBFGSOp
 
 logger = logging.getLogger(__name__)
 
 REGULARISATION_TERM = 1e-8
 
 
-# TODO: check if necessary if using RandomStreams
 def make_seeded_function(
     func: Callable | None = None,
     inputs: list[TensorVariable] | None = [],
@@ -68,7 +68,7 @@ def make_seeded_function(
 
     # Q: do I need replace_rng_nodes? It still works without it.
     outputs = replace_rng_nodes(outputs)
-    default_compile_kwargs = {"mode": pytensor.compile.mode.FAST_RUN}
+    default_compile_kwargs = {"mode": FAST_RUN}
     compile_kwargs = default_compile_kwargs | compile_kwargs
     func_compiled = compile_pymc(
         inputs=inputs,
@@ -123,10 +123,10 @@ def get_logp_dlogp_of_ravel_inputs(model: Model, jacobian: bool = False):
         model.value_vars,
     )
 
-    logp_func = compile_pymc([inputs], outputs[0])
+    logp_func = compile_pymc([inputs], outputs[0], mode=FAST_RUN)
     logp_func.trust_input = True
 
-    dlogp_func = compile_pymc([inputs], outputs[1])
+    dlogp_func = compile_pymc([inputs], outputs[1], mode=FAST_RUN)
     dlogp_func.trust_input = True
 
     return logp_func, dlogp_func
@@ -168,7 +168,7 @@ def convert_flat_trace_to_idata(
         fn = pytensor.function(
             inputs=[*list(replace.values())],
             outputs=outputs,
-            mode="FAST_COMPILE",
+            mode=FAST_COMPILE,
             on_unused_input="ignore",
         )
         fn.trust_input = True
@@ -230,7 +230,7 @@ def alpha_recover(x, g, epsilon):
         outputs_info=alpha_l_init,
         sequences=[update_mask, s, z],
         n_steps=Lp1 - 1,
-        strict=True,
+        allow_gc=False,
     )
 
     # assert np.all(alpha.eval() > 0), "alpha cannot be negative"
@@ -264,6 +264,7 @@ def inverse_hessian_factors(alpha, s, z, update_mask, J):
                 update_mask,
                 diff,
             ],
+            allow_gc=False,
         )
 
         chi_mat = pt.matrix_transpose(chi_mat)
@@ -308,8 +309,7 @@ def inverse_hessian_factors(alpha, s, z, update_mask, J):
     # more performant and numerically precise to use solve than inverse: https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.linalg.inv.html
 
     # E_inv: (L, J, J)
-    # TODO: handle compute errors for .linalg.solve. See comments in the _single_pathfinder function.
-    E_inv = pt.slinalg.solve_triangular(E, Ij)
+    E_inv = pt.slinalg.solve_triangular(E, Ij, check_finite=False)
     eta_diag, _ = pytensor.scan(pt.diag, sequences=[eta])
 
     # block_dd: (L, J, J)
@@ -353,9 +353,9 @@ def bfgs_sample_dense(
         @ sqrt_alpha_diag
     )
 
-    Lchol = pt.matrix_transpose(pt.linalg.cholesky(H_inv))
+    Lchol = pt.linalg.cholesky(H_inv, lower=False, check_finite=False, on_error="nan")
 
-    logdet, _ = pytensor.scan(fn=lambda x: 2.0 * pt.log(pt.linalg.det(x)), sequences=[Lchol])
+    logdet = 2.0 * pt.sum(pt.log(pt.abs(pt.diagonal(Lchol, axis1=-2, axis2=-1))), axis=-1)
 
     mu = x - pt.batched_dot(H_inv, g)
 
@@ -382,16 +382,16 @@ def bfgs_sample_sparse(
 ):
     # qr_input: (L, N, 2J)
     qr_input = inv_sqrt_alpha_diag @ beta
-    (Q, R), _ = pytensor.scan(fn=pt.nlinalg.qr, sequences=[qr_input])
+    (Q, R), _ = pytensor.scan(fn=pt.nlinalg.qr, sequences=[qr_input], allow_gc=False)
     IdN = pt.eye(R.shape[1])[None, ...]
     Lchol_input = IdN + R @ gamma @ pt.matrix_transpose(R)
-    Lchol = pt.matrix_transpose(pt.linalg.cholesky(Lchol_input))
 
-    # added pytensor.scan to avoid error after updating pytensor to 2.26.1 or greater
-    logdet, _ = pytensor.scan(fn=lambda x: 2.0 * pt.log(pt.linalg.det(x)), sequences=[Lchol])
+    Lchol = pt.linalg.cholesky(Lchol_input, lower=False, check_finite=False, on_error="nan")
+
+    logdet = 2.0 * pt.sum(pt.log(pt.abs(pt.diagonal(Lchol, axis1=-2, axis2=-1))), axis=-1)
     logdet += pt.sum(pt.log(alpha), axis=-1)
 
-    # NOTE: changed the sign from "x + " to "x -" of the expression to match Stan which differs from Zhang et al., (2022)
+    # NOTE: changed the sign from "x + " to "x -" of the expression to match Stan which differs from Zhang et al., (2022). same for dense version.
     mu = x - (
         # (L, N), (L, N) -> (L, N)
         pt.batched_dot(alpha_diag, g)
@@ -440,41 +440,23 @@ def bfgs_sample(
     # R: (2J, 2J)           => (L, 2J, 2J)
     # u: (M, N)             => (L, M, N)
     # phi: (M, N)           => (L, M, N)
-    # logdensity: (M,)      => (L, M)
+    # logQ_phi: (M,)        => (L, M)
     # Lchol: (2J, 2J)       => (L, 2J, 2J)
     # theta: (J, N)
 
-    def batched(x, g, alpha, beta, gamma):
-        var_list = [x, g, alpha, beta, gamma]
-        ndims = np.array([2, 2, 2, 3, 3])
-        var_ndims = np.array([var.ndim for var in var_list])
-
-        if np.all(var_ndims == ndims):
-            return True
-        elif np.all(var_ndims == ndims - 1):
-            return False
-        else:
-            raise ValueError("Incorrect number of dimensions.")
-
     if index is not None:
-        x = x[index]
-        g = g[index]
-        alpha = alpha[index]
-        beta = beta[index]
-        gamma = gamma[index]
-
-    if not batched(x, g, alpha, beta, gamma):
-        x = pt.atleast_2d(x)
-        g = pt.atleast_2d(g)
-        alpha = pt.atleast_2d(alpha)
-        beta = pt.atleast_3d(beta)
-        gamma = pt.atleast_3d(gamma)
+        x = x[index][None, ...]
+        g = g[index][None, ...]
+        alpha = alpha[index][None, ...]
+        beta = beta[index][None, ...]
+        gamma = gamma[index][None, ...]
 
     L, N, JJ = beta.shape
 
     (alpha_diag, inv_sqrt_alpha_diag, sqrt_alpha_diag), _ = pytensor.scan(
         lambda a: [pt.diag(a), pt.diag(pt.sqrt(1.0 / a)), pt.diag(pt.sqrt(a))],
         sequences=[alpha],
+        allow_gc=False,
     )
 
     u = pt.random.normal(size=(L, num_samples, N))
@@ -498,17 +480,23 @@ def bfgs_sample(
         bfgs_sample_sparse(*sample_inputs),
     )
 
-    logdensity = -0.5 * (
+    logQ_phi = -0.5 * (
         logdet[..., None]
         + pt.sum(u * u, axis=-1)
         + N * pt.log(2.0 * pt.pi)
     )  # fmt: off
 
+    nan_mask = pt.isnan(logQ_phi)
+
+    # TODO: let users know if there are NaNs in logQ_phi
+    # nan values would occur from cholesky (where check_finite=False, raise="nan") and solve_triangular
+    logQ_phi = pt.set_subtensor(logQ_phi[nan_mask], pt.inf)
     # phi: (L, M, N)
-    # logdensity: (L, M)
-    return phi, logdensity
+    # logQ_phi: (L, M)
+    return phi, logQ_phi
 
 
+# TODO: remove make_initial_points function when feature request is implemented: https://github.com/pymc-devs/pymc/issues/7555
 def make_initial_points(
     random_seed: RandomSeed | None = None,
     model=None,
@@ -532,9 +520,6 @@ def make_initial_points(
         jittered initial point
     """
 
-    # TODO: replace rng.uniform (pseudo random sequence) with scipy.stats.qmc.Sobol (quasi-random sequence)
-    # Sobol is a better low discrepancy sequence than uniform.
-
     ipfn = make_initial_point_fn(
         model=model,
     )
@@ -552,7 +537,7 @@ def compute_logp(logp_func, arr):
     logP = np.apply_along_axis(logp_func, axis=-1, arr=arr)
     # replace nan with -inf since np.argmax will return the first index at nan
     nan_mask = np.isnan(logP)
-    logger.info(f"Number of NaNs in logP: {np.sum(nan_mask)}")
+    logger.info(f"Number of NaNs in logP in a path: {np.sum(nan_mask)}")
     return np.where(nan_mask, -np.inf, logP)
 
 
@@ -582,7 +567,7 @@ def make_initial_points_fn(model, jitter):
 def make_lbfgs_fn(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls):
     x0 = pt.dvector("x0")
     lbfgs_op = LBFGSOp(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls)
-    return pytensor.function([x0], lbfgs_op(x0))
+    return pytensor.function([x0], lbfgs_op(x0), mode=FAST_RUN)
 
 
 def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
@@ -671,12 +656,6 @@ def make_single_pathfinder_fn(
     pathfinder_body_fn.trust_input = True
 
     """
-    The following excerpt is from Zhang et al., (2022):
-    "In some cases, the optimization path terminates at the initialization point and in others it can fail to generate a positive deﬁnite inverse Hessian estimate. In both of these settings, Pathﬁnder essentially fails. Rather than worry about coding exceptions or failure return codes, Pathﬁnder returns the last iteration of the optimization path as a single approximating draw with infinity for the approximate normal log density of the draw. This ensures that failed ﬁts get zero importance weights in the multi-path Pathﬁnder algorithm, which we describe in the next section."
-    # TODO: apply the above excerpt to the Pathfinder algorithm.
-    """
-
-    """
     BUG: elbo may all be -inf for all l in L. So np.argmax(elbo) will return 0 which is wrong. Still, this won't affect the posterior samples in the multipath Pathfinder scenario because of PSIS/PSIR step. However, the user is left unaware of a failed Pathfinder run.
     # TODO: handle this case, e.g. by warning of a failed Pathfinder run and skip the following bfgs_sample step to save time.
     """
@@ -685,7 +664,7 @@ def make_single_pathfinder_fn(
         # pathfinder_body_fn has 2 shared variable RNGs in the graph as bfgs_sample gets called twice.
         jitter_seed, *pathfinder_seed = _get_seeds_per_chain(random_seed, 3)
         x0 = initial_point_fn(jitter_seed)
-        x, g = lbfgs_fn(x0)
+        x, g, status = lbfgs_fn(x0)
         psi, logP_psi, logQ_psi = pathfinder_body_fn(pathfinder_seed, x, g)
         # psi: (1, M, N)
         # logP_psi: (1, M)
@@ -743,8 +722,6 @@ def multipath_pathfinder(
     path_seeds = seeds[:-1]
     choice_seed = seeds[-1]
 
-    num_dims = DictToArrayBijection.map(model.initial_point()).data.shape[0]
-
     single_pathfinder_fn = make_single_pathfinder_fn(
         model,
         num_draws_per_path,
@@ -758,24 +735,35 @@ def multipath_pathfinder(
         epsilon,
     )
 
-    results = [single_pathfinder_fn(seed) for seed in path_seeds]
+    results = []
+    num_failed = 0
+    num_success = num_paths
+    for seed in path_seeds:
+        try:
+            results.append(single_pathfinder_fn(seed))
+        except LBFGSInitFailed:
+            num_failed += 1
+            continue
 
-    # FIXME: large jitter leads to shape mismatch in beta in the inverse_hessian_factors function
-    # ValueError: Shape mismatch: summation axis sizes unequal. x.shape is (0, 0, 0), y.shape is (0, N, 2J).
-    # beta = pt.concatenate([alpha_diag @ z_xi, s_xi], axis=-1)
-    # TODO: handle ValueError in inverse_hessian_factors
+    if num_failed > 0:
+        logger.warning(f"Number of failed paths: {num_failed} out of {num_paths}")
+        num_success -= num_failed
+    if num_success == 0:
+        raise ValueError(
+            "All paths failed. Consider decreasing the jitter or reparameterising the model."
+        )
 
     samples, logP, logQ = zip(*results)
     samples = np.concatenate(samples)
     logP = np.concatenate(logP)
     logQ = np.concatenate(logQ)
 
-    samples = samples.reshape(num_paths * num_draws_per_path, num_dims, order="C")
-    logP = logP.reshape(num_paths * num_draws_per_path, order="C")
-    logQ = logQ.reshape(num_paths * num_draws_per_path, order="C")
+    samples = samples.reshape(num_success * num_draws_per_path, -1, order="C")
+    logP = logP.reshape(num_success * num_draws_per_path, order="C")
+    logQ = logQ.reshape(num_success * num_draws_per_path, order="C")
 
     # adjust log densities
-    log_I = np.log(num_paths)
+    log_I = np.log(num_success)
     logP -= log_I
     logQ -= log_I
     logiw = logP - logQ
@@ -787,7 +775,7 @@ def multipath_pathfinder(
 
 def fit_pathfinder(
     model=None,
-    num_paths: int = 4,  # I
+    num_paths: int = 6,  # I
     num_draws: int = 1000,  # R
     num_draws_per_path: int = 1000,  # M
     maxcor: int = 5,  # J
@@ -796,7 +784,7 @@ def fit_pathfinder(
     gtol: float = 1e-8,
     maxls=1000,
     num_elbo_draws: int = 10,  # K
-    jitter: float = 1.0,
+    jitter: float = 2.0,
     epsilon: float = 1e-8,
     psis_resample: bool = True,
     random_seed: RandomSeed | None = None,
