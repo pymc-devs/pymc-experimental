@@ -4,12 +4,12 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 
+from pymc.pytensorf import constant_fold
 from pytensor.compile.mode import get_mode
 from pytensor.graph.basic import Variable
 from pytensor.raise_op import Assert
 from pytensor.tensor import TensorVariable
-from pytensor.tensor.nlinalg import matrix_dot
-from pytensor.tensor.slinalg import solve_discrete_are, solve_triangular
+from pytensor.tensor.slinalg import solve_triangular
 
 from pymc_experimental.statespace.filters.utilities import (
     quad_form_sym,
@@ -21,7 +21,6 @@ from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT, MISSING
 MVN_CONST = pt.log(2 * pt.constant(np.pi, dtype="float64"))
 PARAM_NAMES = ["c", "d", "T", "Z", "R", "H", "Q"]
 
-assert_data_is_1d = Assert("UnivariateTimeSeries filter requires data be at most 1-dimensional")
 assert_time_varying_dim_correct = Assert(
     "The first dimension of a time varying matrix (the time dimension) must be "
     "equal to the first dimension of the data (the time dimension)."
@@ -55,15 +54,6 @@ class BaseFilter(ABC):
         non_seq_names : list[str]
             A list of names representing static statespace matrices. That is, inputs that will need to be provided
             to the `non_sequences` argument of `pytensor.scan`
-
-        eye_states : TensorVariable
-            An identity matrix of shape (k_states, k_states), stored for computational efficiency
-
-        eye_posdef : TensorVariable
-            An identity matrix of shape (k_posdef, k_posdef), stored for computational efficiency
-
-        eye_endog : TensorVariable
-            An identity matrix of shape (k_endog, k_endog), stored for computational efficiency
         """
 
         self.mode: str = mode
@@ -74,43 +64,8 @@ class BaseFilter(ABC):
         self.n_posdef = None
         self.n_endog = None
 
-        self.eye_states: TensorVariable | None = None
-        self.eye_posdef: TensorVariable | None = None
-        self.eye_endog: TensorVariable | None = None
         self.missing_fill_value: float | None = None
         self.cov_jitter = None
-
-    def initialize_eyes(self, R: TensorVariable, Z: TensorVariable) -> None:
-        """
-        Initialize identity matrices for of shapes repeated used in the kalman filtering equations and store them.
-
-        It's surprisingly expensive for pytensor to create an identity matrix every time we need one
-        (see [1] for benchmarks). This function creates some identity matrices of useful sizes for the model
-        to re-use as a small optimization.
-
-        Parameters
-        ----------
-        R : TensorVariable
-            The tensor representing the selection matrix, called R in [2]
-
-        Z : TensorVariable
-            The tensor representing the design matrix, called Z in [2].
-
-        Returns
-        -------
-        None
-
-        References
-        ----------
-        .. [1] https://gist.github.com/jessegrabowski/acd3235833163943a11654d78a72f04b
-        .. [2] Durbin, J., and S. J. Koopman. Time Series Analysis by State Space Methods.
-               2nd ed, Oxford University Press, 2012.
-        """
-
-        self.n_states, self.n_posdef, self.n_endog = R.shape[-2], R.shape[-1], Z.shape[-2]
-        self.eye_states = pt.eye(self.n_states)
-        self.eye_posdef = pt.eye(self.n_posdef)
-        self.eye_endog = pt.eye(self.n_endog)
 
     def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
         """
@@ -141,10 +96,10 @@ class BaseFilter(ABC):
         list[TensorVariable]
             A list of tensors wrapped in an `Assert` `Op` that checks the shape of the 0th dimension on each is equal
              to the shape of the 0th dimension on the data.
-
-        # TODO: The PytensorRepresentation object puts the time dimension last, should the reshaping happen here in
-            the Kalman filter, or in the StateSpaceModel, before passing into the KF?
         """
+        # TODO: The PytensorRepresentation object puts the time dimension last, should the reshaping happen here in
+        #    the Kalman filter, or in the StateSpaceModel, before passing into the KF?
+
         params_with_assert = [
             assert_time_varying_dim_correct(param, pt.eq(param.shape[0], data.shape[0]))
             for param in sequence_params
@@ -166,7 +121,7 @@ class BaseFilter(ABC):
         args = list(args)
         n_seq = len(self.seq_names)
         if n_seq == 0:
-            return args
+            return tuple(args)
 
         # The first arg is always y
         y = args.pop(0)
@@ -202,7 +157,7 @@ class BaseFilter(ABC):
         return_updates=False,
         missing_fill_value=None,
         cov_jitter=None,
-    ) -> list[TensorVariable]:
+    ) -> list[TensorVariable] | tuple[list[TensorVariable], dict]:
         """
         Construct the computation graph for the Kalman filter. See [1] for details.
 
@@ -246,8 +201,13 @@ class BaseFilter(ABC):
 
         self.mode = mode
         self.missing_fill_value = missing_fill_value
-        self.initialize_eyes(R, Z)
         self.cov_jitter = cov_jitter
+
+        [R_shape] = constant_fold([R.shape], raise_not_constant=False)
+        [Z_shape] = constant_fold([Z.shape], raise_not_constant=False)
+
+        self.n_states, self.n_shocks = R_shape[-2:]
+        self.n_endog = Z_shape[-2]
 
         data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
 
@@ -451,7 +411,7 @@ class BaseFilter(ABC):
 
     @staticmethod
     def update(
-        a, P, y, c, d, Z, H, all_nan_flag
+        a, P, y, d, Z, H, all_nan_flag
     ) -> tuple[TensorVariable, TensorVariable, TensorVariable, TensorVariable, TensorVariable]:
         """
         Perform the update step of the Kalman filter.
@@ -462,7 +422,7 @@ class BaseFilter(ABC):
         .. math::
 
             \begin{align}
-            \\hat{y}_t &= Z_t a_{t | t-1} \\
+            \\hat{y}_t &= Z_t a_{t | t-1} + d_t \\
             v_t &= y_t - \\hat{y}_t \\
             F_t &= Z_t P_{t | t-1} Z_t^T + H_t \\
             a_{t|t} &= a_{t | t-1} + P_{t | t-1} Z_t^T F_t^{-1} v_t \\
@@ -478,8 +438,6 @@ class BaseFilter(ABC):
             The current covariance matrix estimate, conditioned on information up to time t-1.
         y : TensorVariable
             The observation data at time t.
-        c : TensorVariable
-            The matrix c.
         d : TensorVariable
             The matrix d.
         Z : TensorVariable
@@ -572,7 +530,7 @@ class BaseFilter(ABC):
         y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
 
         a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
-            y=y_masked, a=a, c=c, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
+            y=y_masked, a=a, d=d, P=P, Z=Z_masked, H=H_masked, all_nan_flag=all_nan_flag
         )
 
         P_filtered = stabilize(P_filtered, self.cov_jitter)
@@ -588,7 +546,7 @@ class StandardFilter(BaseFilter):
     Basic Kalman Filter
     """
 
-    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
+    def update(self, a, P, y, d, Z, H, all_nan_flag):
         """
         Compute one-step forecasts for observed states conditioned on information up to, but not including, the current
         timestep, `y_hat`, along with the forcast covariance matrix, `F`. Marginalize over observed states to obtain
@@ -608,9 +566,6 @@ class StandardFilter(BaseFilter):
 
         y : TensorVariable
             Observations at time t.
-
-        c : TensorVariable
-            Latent state bias term.
 
         d : TensorVariable
             Observed state bias term.
@@ -643,7 +598,7 @@ class StandardFilter(BaseFilter):
         F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
 
         K = pt.linalg.solve(F.T, PZT.T, assume_a="pos", check_finite=False).T
-        I_KZ = self.eye_states - K.dot(Z)
+        I_KZ = pt.eye(self.n_states) - K.dot(Z)
 
         a_filtered = a + K.dot(v)
         P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
@@ -662,7 +617,7 @@ class StandardFilter(BaseFilter):
         return a_filtered, P_filtered, y_hat, F, ll
 
 
-class CholeskyFilter(BaseFilter):
+class SquareRootFilter(BaseFilter):
     """
     Kalman filter with Cholesky factorization
 
@@ -671,201 +626,136 @@ class CholeskyFilter(BaseFilter):
 
     """
 
-    # TODO: Can the entire Kalman filter process be re-written, starting from P0_chol, so it's not necessary to compute
-    #     cholesky(F) at every iteration?
+    def predict(self, a, P, c, T, R, Q):
+        """
+        Compute one-step forecasts for the hidden states conditioned on information up to, but not including, the current
+        timestep, `a_hat`, along with the forcast covariance matrix, `P_hat`.
 
-    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
+        .. warning::
+            Very important -- In this function, $P$ is the **cholesky factor** of the covariance matrix, not the
+            covariance matrix itself. The name `P` is kept for consistency with the superclass.
+        """
+        # Rename P to P_chol for clarity
+        P_chol = P
+
+        a_hat = T.dot(a) + c
+        Q_chol = pt.linalg.cholesky(Q, lower=True)
+
+        M = pt.horizontal_stack(T @ P_chol, R @ Q_chol).T
+        R_decomp = pt.linalg.qr(M, mode="r")
+        P_chol_hat = R_decomp[: self.n_states, : self.n_states].T
+
+        return a_hat, P_chol_hat
+
+    def update(self, a, P, y, d, Z, H, all_nan_flag):
+        """
+        Compute posterior estimates of the hidden state distributions conditioned on the observed data, up to and
+        including the present timestep. Also compute the log-likelihood of the data given the one-step forecasts.
+
+        .. warning::
+            Very important -- In this function, $P$ is the **cholesky factor** of the covariance matrix, not the
+            covariance matrix itself. The name `P` is kept for consistency with the superclass.
+        """
+
+        # Rename P to P_chol for clarity
+        P_chol = P
+
         y_hat = Z.dot(a) + d
         v = y - y_hat
 
-        PZT = P.dot(Z.T)
+        H_chol = pytensor.ifelse(pt.all(pt.eq(H, 0.0)), H, pt.linalg.cholesky(H, lower=True))
 
-        # If everything is missing, F will be [[0]] and F_chol will raise an error, so add identity to avoid the error
-        F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
-        F_chol = pt.linalg.cholesky(F)
+        # The following notation comes from https://ipnpr.jpl.nasa.gov/progress_report/42-233/42-233A.pdf
+        # Construct upper-triangular block matrix A = [[chol(H), Z @ L_pred],
+        #                                              [0,           L_pred]]
+        # The Schur decomposition of this matrix will be B (upper triangular). We are
+        # more insterested in B^T:
+        # Structure of B^T = [[chol(F),     0              ],
+        #                    [K @ chol(F), chol(P_filtered)]
+        zeros = pt.zeros((self.n_states, self.n_endog))
+        upper = pt.horizontal_stack(H_chol, Z @ P_chol)
+        lower = pt.horizontal_stack(zeros, P_chol)
+        A_T = pt.vertical_stack(upper, lower)
+        B = pt.linalg.qr(A_T.T, mode="r").T
 
-        # If everything is missing, K = 0, IKZ = I
-        K = solve_triangular(F_chol.T, solve_triangular(F_chol, PZT.T)).T
-        I_KZ = self.eye_states - K.dot(Z)
+        F_chol = B[: self.n_endog, : self.n_endog]
+        K_F_chol = B[self.n_endog :, : self.n_endog]
+        P_chol_filtered = B[self.n_endog :, self.n_endog :]
 
-        a_filtered = a + K.dot(v)
-        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
+        def compute_non_degenerate(P_chol_filtered, F_chol, K_F_chol, v):
+            a_filtered = a + K_F_chol @ solve_triangular(F_chol, v, lower=True)
 
-        inner_term = solve_triangular(F_chol.T, solve_triangular(F_chol, v))
-        n = y.shape[0]
-
-        ll = pt.switch(
-            all_nan_flag,
-            0.0,
-            (
-                -0.5 * (n * MVN_CONST + (v.T @ inner_term).ravel()) - pt.log(pt.diag(F_chol)).sum()
-            ).ravel()[0],
-        )
-
-        return a_filtered, P_filtered, y_hat, F, ll
-
-
-class SingleTimeseriesFilter(BaseFilter):
-    """
-    Kalman filter optimized for univariate timeseries
-
-    If there is only a single observed timeseries, regardless of the number of hidden states, there is no need to
-    perform a matrix inversion anywhere in the filter.
-    """
-
-    # TODO: This class should eventually be made irrelevant by pytensor re-writes.
-    def check_params(self, data, a0, P0, c, d, T, Z, R, H, Q):
-        """
-        Wrap the data in an `Assert` `Op` to ensure there is only one observed state.
-        """
-        data = assert_data_is_1d(data, pt.eq(data.shape[1], 1))
-
-        return data, a0, P0, c, d, T, Z, R, H, Q
-
-    def update(self, a, P, y, c, d, Z, H, all_nan_flag):
-        y_hat = d + Z.dot(a)
-        v = y - y_hat.ravel()
-
-        PZT = P.dot(Z.T)
-
-        # F is scalar, K is a column vector
-        F = stabilize(Z.dot(PZT) + H, self.cov_jitter).ravel()
-
-        K = PZT / F
-        I_KZ = self.eye_states - K.dot(Z)
-
-        a_filtered = a + (K * v).ravel()
-
-        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
-
-        ll = pt.switch(all_nan_flag, 0.0, -0.5 * (MVN_CONST + pt.log(F) + v**2 / F)).ravel()[0]
-
-        return a_filtered, P_filtered, pt.atleast_1d(y_hat), pt.atleast_2d(F), ll
-
-
-class SteadyStateFilter(BaseFilter):
-    """
-    Kalman Filter using Steady State Covariance
-
-    This filter avoids the need to invert the covariance matrix of innovations at each time step by solving the
-    Discrete Algebraic Riccati Equation associated with the filtering problem once and for all at initialization and
-    uses the resulting steady-state covariance matrix in each step.
-
-    The innovation covariance matrix will always converge to the steady state value as T -> oo, so this filter will
-    only have differences from the standard approach in the early steps (T < 10?). A process of "learning" is lost.
-    """
-
-    def build_graph(
-        self,
-        data,
-        a0,
-        P0,
-        c,
-        d,
-        T,
-        Z,
-        R,
-        H,
-        Q,
-        mode=None,
-        return_updates=False,
-        missing_fill_value=None,
-        cov_jitter=None,
-    ) -> list[TensorVariable]:
-        """
-        Need to override the base step to add an argument to self.update, passing F_inv at every step.
-        """
-        if missing_fill_value is None:
-            missing_fill_value = MISSING_FILL
-        if cov_jitter is None:
-            cov_jitter = JITTER_DEFAULT
-
-        self.mode = mode
-        self.missing_fill_value = missing_fill_value
-        self.cov_jitter = cov_jitter
-        self.initialize_eyes(R, Z)
-
-        data, a0, P0, *params = self.check_params(data, a0, P0, c, d, T, Z, R, H, Q)
-        sequences, non_sequences, seq_names, non_seq_names = split_vars_into_seq_and_nonseq(
-            params, PARAM_NAMES
-        )
-        self.seq_names = seq_names
-        self.non_seq_names = non_seq_names
-        c, d, T, Z, R, H, Q = params
-
-        if len(sequences) > 0:
-            assert ValueError(
-                "All system matrices must be time-invariant to use the SteadyStateFilter"
+            inner_term = solve_triangular(
+                F_chol, solve_triangular(F_chol, v, lower=True), lower=True
             )
+            loss = (v.T @ inner_term).ravel()
 
-        P_steady = solve_discrete_are(T.T, Z.T, matrix_dot(R, Q, R.T), H)
-        F = matrix_dot(Z, P_steady, Z.T) + H
-        F_inv = pt.linalg.solve(F, pt.eye(F.shape[0]), assume_a="pos", check_finite=False)
+            # abs necessary because we're not guaranteed a positive diagonal from the schur decomposition
+            logdet = 2 * pt.log(pt.abs(pt.diag(F_chol))).sum()
 
-        results, updates = pytensor.scan(
-            self.kalman_step,
-            sequences=[data],
-            outputs_info=[None, a0, None, None, P_steady, None, None],
-            non_sequences=[c, d, F_inv, T, Z, R, H, Q],
-            name="forward_kalman_pass",
-            mode=get_mode(self.mode),
+            ll = -0.5 * (self.n_endog * (MVN_CONST + logdet) + loss)[0]
+
+            return [a_filtered, P_chol_filtered, ll]
+
+        def compute_degenerate(P_chol_filtered, F_chol, K_F_chol, v):
+            """
+            If F is zero (usually because there were no observations this period), then we want:
+            K = 0, a = a, P = P, ll = 0
+            """
+            return [a, P_chol, pt.zeros(())]
+
+        [a_filtered, P_chol_filtered, ll] = pytensor.ifelse(
+            pt.eq(all_nan_flag, 1.0),
+            compute_degenerate(P_chol_filtered, F_chol, K_F_chol, v),
+            compute_non_degenerate(P_chol_filtered, F_chol, K_F_chol, v),
         )
 
-        return self._postprocess_scan_results(results, a0, P0, n=data.shape[0])
+        a_filtered = pt.specify_shape(a_filtered, (self.n_states,))
+        P_chol_filtered = pt.specify_shape(P_chol_filtered, (self.n_states, self.n_states))
 
-    def update(self, a, P, c, d, F_inv, y, Z, H, all_nan_flag):
-        y_hat = Z.dot(a) + d
-        v = y - y_hat
+        return a_filtered, P_chol_filtered, y_hat, F_chol, ll
 
-        PZT = P.dot(Z.T)
-
-        F = Z.dot(PZT) + stabilize(H, self.cov_jitter)
-        K = PZT.dot(F_inv)
-
-        I_KZ = self.eye_states - K.dot(Z)
-
-        a_filtered = a + K.dot(v)
-        P_filtered = quad_form_sym(I_KZ, P) + quad_form_sym(K, H)
-
-        inner_term = matrix_dot(v.T, F_inv, v)
-        ll = pt.switch(
-            all_nan_flag,
-            0.0,
-            -0.5 * (MVN_CONST + pt.log(pt.linalg.det(F)) + inner_term).ravel()[0],
-        )
-
-        return a_filtered, P_filtered, y_hat, F, ll
-
-    def kalman_step(self, y, a, P, c, d, F_inv, T, Z, R, H, Q):
+    def _postprocess_scan_results(self, results, a0, P0, n) -> list[TensorVariable]:
         """
-        Need to override the base step to add an argument to self.update, passing F_inv at every step.
+        Convert the Cholesky factor of the covariance matrix back to the covariance matrix itself.
         """
+        results = super()._postprocess_scan_results(results, a0, P0, n)
+        (
+            filtered_states,
+            predicted_states,
+            observed_states,
+            filtered_covariances_cholesky,
+            predicted_covariances_cholesky,
+            observed_covariances_cholesky,
+            loglike_obs,
+        ) = results
 
-        y_masked, Z_masked, H_masked, all_nan_flag = self.handle_missing_values(y, Z, H)
-        a_filtered, P_filtered, obs_mu, obs_cov, ll = self.update(
-            y=y_masked,
-            a=a,
-            P=P,
-            c=c,
-            d=d,
-            F_inv=F_inv,
-            Z=Z_masked,
-            H=H_masked,
-            all_nan_flag=all_nan_flag,
-        )
+        def square_sequnece(L, k):
+            X = pt.einsum("...ij,...kj->...ik", L, L.copy())
+            X = pt.specify_shape(X, (n, k, k))
+            return X
 
-        P_filtered = stabilize(P_filtered, self.cov_jitter)
-        a_hat, P_hat = self.predict(a=a_filtered, P=P_filtered, c=c, T=T, R=R, Q=Q)
+        filtered_covariances = square_sequnece(filtered_covariances_cholesky, k=self.n_states)
+        predicted_covariances = square_sequnece(predicted_covariances_cholesky, k=self.n_states)
+        observed_covariances = square_sequnece(observed_covariances_cholesky, k=self.n_endog)
 
-        return a_filtered, a_hat, obs_mu, P_filtered, P_hat, obs_cov, ll
+        return [
+            filtered_states,
+            predicted_states,
+            observed_states,
+            filtered_covariances,
+            predicted_covariances,
+            observed_covariances,
+            loglike_obs,
+        ]
 
 
 class UnivariateFilter(BaseFilter):
     """
     The univariate kalman filter, described in [1], section 6.4.2, avoids inversion of the F matrix, as well as two
     matrix multiplications, at the cost of an additional loop. Note that the name doesn't mean there's only one
-    observed time series, that's the SingleTimeSeries filter. This is called univariate because it updates the state
-    mean and covariance matrices one variable at a time, using an inner-inner loop.
+    observed time series. This is called univariate because it updates the state mean and covariance matrices one
+    variable at a time, using an inner-inner loop.
 
     This is useful when states are perfectly observed, because the F matrix can easily become degenerate in these cases.
 
