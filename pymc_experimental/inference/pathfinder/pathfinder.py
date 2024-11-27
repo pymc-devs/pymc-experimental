@@ -780,7 +780,7 @@ def multipath_pathfinder(
 
 def fit_pathfinder(
     model=None,
-    num_paths: int = 6,  # I
+    num_paths: int = 8,  # I
     num_draws: int = 1000,  # R
     num_draws_per_path: int = 1000,  # M
     maxcor: int | None = None,  # J
@@ -809,13 +809,13 @@ def fit_pathfinder(
     model : pymc.Model
         The PyMC model to fit the Pathfinder algorithm to.
     num_paths : int
-        Number of independent paths to run in the Pathfinder algorithm. (default is 6)
+        Number of independent paths to run in the Pathfinder algorithm. (default is 8)
     num_draws : int, optional
         Total number of samples to draw from the fitted approximation (default is 1000).
     num_draws_per_path : int, optional
         Number of samples to draw per path (default is 1000).
     maxcor : int, optional
-        Maximum number of variable metric corrections used to define the limited memory matrix (default is None). If None, maxcor is set to int(floor(N / 1.9)).
+        Maximum number of variable metric corrections used to define the limited memory matrix (default is None). If None, maxcor is set to int(floor(N / 1.9)) or 5 whichever is greater.
     maxiter : int, optional
         Maximum number of iterations for the L-BFGS optimisation (default is 1000).
     ftol : float, optional
@@ -857,6 +857,7 @@ def fit_pathfinder(
     N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
     if maxcor is None:
         maxcor = np.floor(N / 1.9).astype(np.int32)
+        maxcor = max(maxcor, 5)
 
     if inference_backend == "pymc":
         pathfinder_samples = multipath_pathfinder(
