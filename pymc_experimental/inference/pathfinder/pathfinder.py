@@ -37,12 +37,18 @@ from pymc.blocking import DictToArrayBijection, RaveledVars
 from pymc.initial_point import make_initial_point_fn
 from pymc.model import modelcontext
 from pymc.model.core import Point
-from pymc.pytensorf import compile_pymc, find_rng_nodes, replace_rng_nodes, reseed_rngs
+from pymc.pytensorf import compile_pymc, find_rng_nodes, reseed_rngs
 from pymc.sampling.jax import get_jaxified_graph
-from pymc.util import RandomSeed, _get_seeds_per_chain, get_default_varnames
+from pymc.util import (
+    CustomProgress,
+    RandomSeed,
+    _get_seeds_per_chain,
+    default_progress_theme,
+    get_default_varnames,
+)
 from pytensor.compile.mode import FAST_COMPILE, FAST_RUN
 from pytensor.graph import Apply, Op, vectorize_graph
-from pytensor.tensor.variable import TensorVariable
+from rich.console import Console
 
 from pymc_experimental.inference.pathfinder.importance_sampling import psir
 from pymc_experimental.inference.pathfinder.lbfgs import LBFGSInitFailed, LBFGSOp
@@ -50,41 +56,6 @@ from pymc_experimental.inference.pathfinder.lbfgs import LBFGSInitFailed, LBFGSO
 logger = logging.getLogger(__name__)
 
 REGULARISATION_TERM = 1e-8
-
-
-def make_seeded_function(
-    func: Callable | None = None,
-    inputs: list[TensorVariable] | None = [],
-    outputs: list[TensorVariable] | None = None,
-    compile_kwargs: dict = {},
-) -> Callable:
-    if (outputs is None) and (func is not None):
-        outputs = func(*inputs)
-    elif (outputs is None) and (func is None):
-        raise ValueError("func must be provided if outputs are not provided")
-
-    if not isinstance(outputs, list | tuple):
-        outputs = [outputs]
-
-    # Q: do I need replace_rng_nodes? It still works without it.
-    outputs = replace_rng_nodes(outputs)
-    default_compile_kwargs = {"mode": FAST_RUN}
-    compile_kwargs = default_compile_kwargs | compile_kwargs
-    func_compiled = compile_pymc(
-        inputs=inputs,
-        outputs=outputs,
-        on_unused_input="ignore",
-        **compile_kwargs,
-    )
-    rngs = find_rng_nodes(func_compiled.maker.fgraph.outputs)
-
-    @functools.wraps(func_compiled)
-    def inner(random_seed=None, *args, **kwargs):
-        if random_seed is not None:
-            reseed_rngs(rngs, random_seed)
-        return func_compiled(*args, **kwargs)
-
-    return inner
 
 
 def get_jaxified_logp_of_ravel_inputs(
@@ -147,7 +118,6 @@ def convert_flat_trace_to_idata(
         raveld_vars = RaveledVars(sample, ip_point_map_info)
         point = DictToArrayBijection.rmap(raveld_vars, ip)
         for p, v in point.items():
-            # instead of .tolist(), use np.asarray(v) since array sizes are known
             trace[p].append(v.tolist())
 
     trace = {k: np.asarray(v)[None, ...] for k, v in trace.items()}
@@ -473,7 +443,6 @@ def bfgs_sample(
         u,
     )
 
-    # ifelse is faster than pt.switch I think?
     phi, logdet = pytensor.ifelse(
         JJ >= N,
         bfgs_sample_dense(*sample_inputs),
@@ -486,11 +455,8 @@ def bfgs_sample(
         + N * pt.log(2.0 * pt.pi)
     )  # fmt: off
 
-    nan_mask = pt.isnan(logQ_phi)
-
-    # TODO: let users know if there are NaNs in logQ_phi
-    # nan values would occur from cholesky (where check_finite=False, raise="nan") and solve_triangular
-    logQ_phi = pt.set_subtensor(logQ_phi[nan_mask], pt.inf)
+    mask = pt.isnan(logQ_phi) | pt.isinf(logQ_phi)
+    logQ_phi = pt.set_subtensor(logQ_phi[mask], pt.inf)
     # phi: (L, M, N)
     # logQ_phi: (L, M)
     return phi, logQ_phi
@@ -536,9 +502,10 @@ def compute_logp(logp_func, arr):
     # .vectorize is slower than apply_along_axis
     logP = np.apply_along_axis(logp_func, axis=-1, arr=arr)
     # replace nan with -inf since np.argmax will return the first index at nan
-    nan_mask = np.isnan(logP)
-    logger.info(f"Number of NaNs in logP in a path: {np.sum(nan_mask)}")
-    return np.where(nan_mask, -np.inf, logP)
+    mask = np.isnan(logP) | np.isinf(logP)
+    if np.all(mask):
+        raise PathFailure
+    return np.where(mask, -np.inf, logP)
 
 
 class LogLike(Op):
@@ -568,6 +535,15 @@ def make_lbfgs_fn(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls):
     x0 = pt.dvector("x0")
     lbfgs_op = LBFGSOp(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls)
     return pytensor.function([x0], lbfgs_op(x0), mode=FAST_RUN)
+
+
+class PathFailure(Exception):
+    DEFAULT_MESSAGE = "A failed path occurred because all the logP or logQ values in a path are not finite. The failed path is not included in the psis resampling draws."
+
+    def __init__(self, message=None):
+        if message is None:
+            message = self.DEFAULT_MESSAGE
+        super().__init__(message)
 
 
 def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
@@ -618,23 +594,35 @@ def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
     )
     logP_psi = loglike(psi)
 
-    return make_seeded_function(
+    unseeded_fn = pytensor.function(
         inputs=[x_full, g_full],
         outputs=[psi, logP_psi, logQ_psi],
+        on_unused_input="ignore",
+        mode=FAST_RUN,
     )
+
+    rngs = find_rng_nodes(unseeded_fn.maker.fgraph.outputs)
+
+    @functools.wraps(unseeded_fn)
+    def seeded_fn(random_seed=None, *args, **kwargs):
+        if random_seed is not None:
+            reseed_rngs(rngs, random_seed)
+        return unseeded_fn(*args, **kwargs)
+
+    return seeded_fn
 
 
 def make_single_pathfinder_fn(
     model,
     num_draws: int,
-    maxcor: int = 5,
-    maxiter: int = 1000,
-    ftol: float = 1e-10,
-    gtol: float = 1e-16,
-    maxls: int = 1000,
-    num_elbo_draws: int = 10,
-    jitter: float = 2.0,
-    epsilon: float = 1e-11,
+    maxcor: int | None,
+    maxiter: int,
+    ftol: float,
+    gtol: float,
+    maxls: int,
+    num_elbo_draws: int,
+    jitter: float,
+    epsilon: float,
 ):
     logp_func, dlogp_func = get_logp_dlogp_of_ravel_inputs(model)
 
@@ -655,16 +643,11 @@ def make_single_pathfinder_fn(
     pathfinder_body_fn = make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon)
     pathfinder_body_fn.trust_input = True
 
-    """
-    BUG: elbo may all be -inf for all l in L. So np.argmax(elbo) will return 0 which is wrong. Still, this won't affect the posterior samples in the multipath Pathfinder scenario because of PSIS/PSIR step. However, the user is left unaware of a failed Pathfinder run.
-    # TODO: handle this case, e.g. by warning of a failed Pathfinder run and skip the following bfgs_sample step to save time.
-    """
-
     def single_pathfinder_fn(random_seed):
         # pathfinder_body_fn has 2 shared variable RNGs in the graph as bfgs_sample gets called twice.
         jitter_seed, *pathfinder_seed = _get_seeds_per_chain(random_seed, 3)
         x0 = initial_point_fn(jitter_seed)
-        x, g, status = lbfgs_fn(x0)
+        x, g = lbfgs_fn(x0)
         psi, logP_psi, logQ_psi = pathfinder_body_fn(pathfinder_seed, x, g)
         # psi: (1, M, N)
         # logP_psi: (1, M)
@@ -706,21 +689,23 @@ def multipath_pathfinder(
     num_paths: int,
     num_draws: int,
     num_draws_per_path: int,
-    maxcor: int = 5,
-    maxiter: int = 1000,
-    ftol: float = 1e-10,
-    gtol: float = 1e-16,
-    maxls: int = 1000,
-    num_elbo_draws: int = 10,
-    jitter: float = 2.0,
-    epsilon: float = 1e-11,
-    psis_resample: bool = True,
-    random_seed: RandomSeed = None,
+    maxcor: int,
+    maxiter: int,
+    ftol: float,
+    gtol: float,
+    maxls: int,
+    num_elbo_draws: int,
+    jitter: float,
+    epsilon: float,
+    psis_resample: bool,
+    progressbar: bool,
+    random_seed: RandomSeed,
     **pathfinder_kwargs,
 ):
     seeds = _get_seeds_per_chain(random_seed, num_paths + 1)
     path_seeds = seeds[:-1]
     choice_seed = seeds[-1]
+    N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
 
     single_pathfinder_fn = make_single_pathfinder_fn(
         model,
@@ -736,19 +721,36 @@ def multipath_pathfinder(
     )
 
     results = []
-    num_failed = 0
-    num_success = num_paths
-    for seed in path_seeds:
-        try:
-            results.append(single_pathfinder_fn(seed))
-        except LBFGSInitFailed:
-            num_failed += 1
-            continue
+    num_init_failed = 0
+    num_path_failed = 0
 
-    if num_failed > 0:
-        logger.warning(f"Number of failed paths: {num_failed} out of {num_paths}")
-        num_success -= num_failed
-    if num_success == 0:
+    try:
+        with CustomProgress(
+            console=Console(theme=default_progress_theme),
+            disable=not progressbar,
+        ) as progress:
+            task = progress.add_task("Fitting", total=num_paths)
+            for seed in path_seeds:
+                try:
+                    results.append(single_pathfinder_fn(seed))
+                except LBFGSInitFailed:
+                    num_init_failed += 1
+                    continue
+                except PathFailure:
+                    num_path_failed += 1
+                    continue
+                progress.update(task, advance=1)
+    except (KeyboardInterrupt, StopIteration) as e:
+        if isinstance(e, StopIteration):
+            logger.info(str(e))
+
+    if num_init_failed > 0:
+        logger.warning(
+            f"Number of paths failed to initialise: {num_init_failed} out of {num_paths}"
+        )
+    if num_path_failed > 0:
+        logger.warning(f"Number of paths failed to sample: {num_path_failed} out of {num_paths}")
+    if (num_init_failed + num_path_failed) == num_paths:
         raise ValueError(
             "All paths failed. Consider decreasing the jitter or reparameterising the model."
         )
@@ -758,18 +760,21 @@ def multipath_pathfinder(
     logP = np.concatenate(logP)
     logQ = np.concatenate(logQ)
 
-    samples = samples.reshape(num_success * num_draws_per_path, -1, order="C")
-    logP = logP.reshape(num_success * num_draws_per_path, order="C")
-    logQ = logQ.reshape(num_success * num_draws_per_path, order="C")
+    samples = samples.reshape(-1, N)
+    logP = logP.ravel()
+    logQ = logQ.ravel()
 
     # adjust log densities
-    log_I = np.log(num_success)
+    log_I = np.log(num_paths)
     logP -= log_I
     logQ -= log_I
     logiw = logP - logQ
     if psis_resample:
         return psir(samples, logiw=logiw, num_draws=num_draws, random_seed=choice_seed)
     else:
+        logger.warning(
+            "PSIS resampling is disabled. The samples are returned as is which may include samples from failed paths with non-finite logP or logQ values."
+        )
         return samples
 
 
@@ -778,15 +783,16 @@ def fit_pathfinder(
     num_paths: int = 6,  # I
     num_draws: int = 1000,  # R
     num_draws_per_path: int = 1000,  # M
-    maxcor: int = 5,  # J
+    maxcor: int | None = None,  # J
     maxiter: int = 1000,  # L^max
     ftol: float = 1e-5,
     gtol: float = 1e-8,
     maxls=1000,
     num_elbo_draws: int = 10,  # K
-    jitter: float = 2.0,
+    jitter: float = 1.0,
     epsilon: float = 1e-8,
     psis_resample: bool = True,
+    progressbar: bool = False,
     random_seed: RandomSeed | None = None,
     postprocessing_backend: Literal["cpu", "gpu"] = "cpu",
     inference_backend: Literal["pymc", "blackjax"] = "pymc",
@@ -803,13 +809,13 @@ def fit_pathfinder(
     model : pymc.Model
         The PyMC model to fit the Pathfinder algorithm to.
     num_paths : int
-        Number of independent paths to run in the Pathfinder algorithm. (default is 4)
+        Number of independent paths to run in the Pathfinder algorithm. (default is 6)
     num_draws : int, optional
         Total number of samples to draw from the fitted approximation (default is 1000).
     num_draws_per_path : int, optional
         Number of samples to draw per path (default is 1000).
     maxcor : int, optional
-        Maximum number of variable metric corrections used to define the limited memory matrix (default is 5).
+        Maximum number of variable metric corrections used to define the limited memory matrix (default is None). If None, maxcor is set to int(floor(N / 1.9)).
     maxiter : int, optional
         Maximum number of iterations for the L-BFGS optimisation (default is 1000).
     ftol : float, optional
@@ -821,15 +827,17 @@ def fit_pathfinder(
     num_elbo_draws : int, optional
         Number of draws for the Evidence Lower Bound (ELBO) estimation (default is 10).
     jitter : float, optional
-        Amount of jitter to apply to initial points (default is 2.0).
+        Amount of jitter to apply to initial points (default is 1.0). Note that Pathfinder may be highly sensitive to the jitter value.
     epsilon: float
         value used to filter out large changes in the direction of the update gradient at each iteration l in L. iteration l are only accepted if delta_theta[l] * delta_grad[l] > epsilon * L2_norm(delta_grad[l]) for each l in L. (default is 1e-11).
     psis_resample : bool, optional
         Whether to apply Pareto Smoothed Importance Sampling Resampling (default is True). If false, the samples are returned as is (i.e. no resampling is applied) of the size num_draws_per_path * num_paths.
+    progressbar : bool, optional
+        Whether to display a progress bar (default is False). Setting this to True will likely increase the computation time.
     random_seed : RandomSeed, optional
         Random seed for reproducibility.
     postprocessing_backend : str, optional
-        Backend for postprocessing transformations, either "cpu" or "gpu" (default is "cpu").
+        Backend for postprocessing transformations, either "cpu" or "gpu" (default is "cpu"). This is only relevant if inference_backend is "blackjax".
     inference_backend : str, optional
         Backend for inference, either "pymc" or "blackjax" (default is "pymc").
     **pathfinder_kwargs
@@ -846,9 +854,9 @@ def fit_pathfinder(
     """
 
     model = modelcontext(model)
-
-    # TODO: move the initial point jittering outside
-    # TODO: Set initial points. PF requires jittering of initial points. See https://github.com/pymc-devs/pymc/issues/7555
+    N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
+    if maxcor is None:
+        maxcor = np.floor(N / 1.9).astype(np.int32)
 
     if inference_backend == "pymc":
         pathfinder_samples = multipath_pathfinder(
@@ -865,6 +873,7 @@ def fit_pathfinder(
             jitter=jitter,
             epsilon=epsilon,
             psis_resample=psis_resample,
+            progressbar=progressbar,
             random_seed=random_seed,
             **pathfinder_kwargs,
         )
@@ -877,17 +886,12 @@ def fit_pathfinder(
         jitter_seed, pathfinder_seed, sample_seed = _get_seeds_per_chain(random_seed, 3)
         # TODO: extend initial points initialisation to blackjax
         # TODO: extend blackjax pathfinder to multiple paths
-        ipfn = make_initial_point_fn(
-            model=model,
-            jitter_rvs=set(model.free_RVs),
-        )
-        ip = Point(ipfn(jitter_seed), model=model)
-        ip_map = DictToArrayBijection.map(ip)
+        x0 = make_initial_points(jitter_seed, model, jitter=jitter)
         logp_func = get_jaxified_logp_of_ravel_inputs(model)
         pathfinder_state, pathfinder_info = blackjax.vi.pathfinder.approximate(
             rng_key=jax.random.key(pathfinder_seed),
             logdensity_fn=logp_func,
-            initial_position=ip_map.data,
+            initial_position=x0,
             num_samples=num_elbo_draws,
             maxiter=maxiter,
             maxcor=maxcor,

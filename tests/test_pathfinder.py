@@ -18,7 +18,7 @@ import numpy as np
 import pymc as pm
 import pytest
 
-from pymc_experimental.inference.pathfinder import fit_pathfinder
+import pymc_experimental as pmx
 
 
 def eight_schools_model():
@@ -42,7 +42,13 @@ def test_pathfinder(inference_backend):
         pytest.skip("JAX not supported on windows")
 
     model = eight_schools_model()
-    idata = fit_pathfinder(model=model, random_seed=41, inference_backend=inference_backend)
+    with model:
+        idata = pmx.fit(
+            method="pathfinder",
+            num_paths=20,
+            random_seed=41,
+            inference_backend=inference_backend,
+        )
 
     assert idata.posterior["mu"].shape == (1, 1000)
     assert idata.posterior["tau"].shape == (1, 1000)
@@ -75,9 +81,11 @@ def test_bfgs_sample():
     # get factors
     x_full = pt.as_tensor(x_data, dtype="float64")
     g_full = pt.as_tensor(g_data, dtype="float64")
+    epsilon = 1e-11
+
     x = x_full[1:]
     g = g_full[1:]
-    alpha, S, Z, update_mask = alpha_recover(x_full, g_full)
+    alpha, S, Z, update_mask = alpha_recover(x_full, g_full, epsilon)
     beta, gamma = inverse_hessian_factors(alpha, S, Z, update_mask, J)
 
     # sample

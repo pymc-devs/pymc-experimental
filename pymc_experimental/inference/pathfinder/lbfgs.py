@@ -60,7 +60,12 @@ class LBFGSHistoryManager:
 
 
 class LBFGSInitFailed(Exception):
-    pass
+    DEFAULT_MESSAGE = "LBFGS failed to initialise."
+
+    def __init__(self, message=None):
+        if message is None:
+            message = self.DEFAULT_MESSAGE
+        super().__init__(message)
 
 
 class LBFGSOp(Op):
@@ -77,8 +82,7 @@ class LBFGSOp(Op):
         x0 = pt.as_tensor_variable(x0)
         x_history = pt.dmatrix()
         g_history = pt.dmatrix()
-        status = pt.iscalar()
-        return Apply(self, [x0], [x_history, g_history, status])
+        return Apply(self, [x0], [x_history, g_history])
 
     def perform(self, node, inputs, outputs):
         x0 = inputs[0]
@@ -103,16 +107,14 @@ class LBFGSOp(Op):
             },
         )
 
-        # TODO: return the status of the lbfgs optimisation to handle the case where the optimisation fails. More details in the _single_pathfinder function.
-
         if result.status == 1:
             logger.info("LBFGS maximum number of iterations reached. Consider increasing maxiter.")
-        elif result.status == 2:
-            if (result.nit <= 1) or (history_manager.count <= 1):
+        elif (result.status == 2) or (history_manager.count <= 1):
+            if result.nit <= 1:
                 logger.info(
                     "LBFGS failed to initialise. The model might be degenerate or the jitter might be too large."
                 )
-                raise LBFGSInitFailed("LBFGS failed to initialise")
+                raise LBFGSInitFailed
             elif result.fun == np.inf:
                 logger.info(
                     "LBFGS diverged to infinity. The model might be degenerate or requires reparameterisation."
@@ -120,4 +122,3 @@ class LBFGSOp(Op):
 
         outputs[0][0] = history_manager.get_history().x
         outputs[1][0] = history_manager.get_history().g
-        outputs[2][0] = result.status
