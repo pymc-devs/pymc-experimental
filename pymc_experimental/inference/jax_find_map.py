@@ -23,6 +23,7 @@ from pymc.blocking import DictToArrayBijection, RaveledVars
 from pymc.initial_point import make_initial_point_fn
 from pymc.model.transform.conditioning import remove_value_transforms
 from pymc.model.transform.optimization import freeze_dims_and_data
+from pymc.pytensorf import join_nonshared_inputs
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import get_default_varnames
 from pytensor.tensor import TensorVariable
@@ -32,13 +33,12 @@ from scipy.optimize import OptimizeResult
 _log = logging.getLogger(__name__)
 
 
-def get_near_psd(A: np.ndarray) -> np.ndarray:
+def get_nearest_psd(A: np.ndarray) -> np.ndarray:
     """
     Compute the nearest positive semi-definite matrix to a given matrix.
 
-    This function takes a square matrix and returns the nearest positive
-    semi-definite matrix using eigenvalue decomposition. It ensures all
-    eigenvalues are non-negative. The "nearest" matrix is defined in terms
+    This function takes a square matrix and returns the nearest positive semi-definite matrix using
+    eigenvalue decomposition. It ensures all eigenvalues are non-negative. The "nearest" matrix is defined in terms
     of the Frobenius norm.
 
     Parameters
@@ -58,23 +58,13 @@ def get_near_psd(A: np.ndarray) -> np.ndarray:
     return eigvec @ np.diag(eigval) @ eigvec.T
 
 
-def _get_unravel_rv_info(optimized_point, variables, model):
-    cursor = 0
-    slices = {}
-    out_shapes = {}
+def _unconstrained_vector_to_constrained_rvs(model):
+    constrained_rvs, unconstrained_vector = join_nonshared_inputs(
+        model.initial_point(), inputs=model.value_vars, outputs=model.unobserved_value_vars
+    )
 
-    for i, var in enumerate(variables):
-        raveled_shape = np.prod(optimized_point[var.name].shape).astype(int)
-        rv = model.values_to_rvs.get(var, var)
-
-        idx = slice(cursor, cursor + raveled_shape)
-        slices[rv] = idx
-        out_shapes[rv] = tuple(
-            [len(model.coords[dim]) for dim in model.named_vars_to_dims.get(rv.name, [])]
-        )
-        cursor += raveled_shape
-
-    return slices, out_shapes
+    unconstrained_vector.name = "unconstrained_vector"
+    return constrained_rvs, unconstrained_vector
 
 
 def _create_transformed_draws(H_inv, slices, out_shapes, posterior_draws, model, chains, draws):
@@ -94,37 +84,24 @@ def _create_transformed_draws(H_inv, slices, out_shapes, posterior_draws, model,
     return f_untransform(posterior_draws)
 
 
-def fit_laplace(
+def jax_fit_mvn_to_MAP(
     optimized_point: dict[str, np.ndarray],
     model: pm.Model,
-    chains: int = 2,
-    draws: int = 500,
     on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
     transform_samples: bool = True,
     zero_tol: float = 1e-8,
     diag_jitter: float | None = 1e-8,
-    progressbar: bool = True,
-    mode: str = "JAX",
-) -> az.InferenceData:
+) -> tuple[RaveledVars, np.ndarray]:
     """
-    Compute the Laplace approximation of the posterior distribution.
-
-    The posterior distribution will be approximated as a Gaussian
-    distribution centered at the posterior mode.
-    The covariance is the inverse of the negative Hessian matrix of
-    the log-posterior evaluated at the mode.
+    Create a multivariate normal distribution using the inverse of the negative Hessian matrix of the log-posterior
+    evaluated at the MAP estimate. This is the basis of the Laplace approximation.
 
     Parameters
     ----------
     optimized_point : dict[str, np.ndarray]
-        Local maximum a posteriori (MAP) point returned from pymc.find_MAP
-        or jax_tools.fit_map
+        Local maximum a posteriori (MAP) point returned from pymc.find_MAP or jax_tools.fit_map
     model : Model
         A PyMC model
-    chains : int
-        The number of sampling chains running in parallel. Default is 2.
-    draws : int
-        The number of samples to draw from the approximated posterior. Default is 500.
     on_bad_cov : str, one of 'ignore', 'warn', or 'error', default: 'ignore'
         What to do when ``H_inv`` (inverse Hessian) is not positive semi-definite.
         If 'ignore' or 'warn', the closest positive-semi-definite matrix to ``H_inv`` (in L1 norm) will be returned.
@@ -137,18 +114,17 @@ def fit_laplace(
     diag_jitter: float | None
         A small value added to the diagonal of the inverse Hessian matrix to ensure it is positive semi-definite.
         If None, no jitter is added. Default is 1e-8.
-    progressbar : bool
-        Whether or not to display progress bar. Default is True.
-    mode : str
-        Computation backend mode. Default is "JAX".
 
     Returns
     -------
-    InferenceData
-        arviz.InferenceData object storing posterior, observed_data, and constant_data groups.
+    map_estimate: RaveledVars
+        The MAP estimate of the model parameters, raveled into a 1D array.
 
+    inverse_hessian: np.ndarray
+        The inverse Hessian matrix of the log-posterior evaluated at the MAP estimate.
     """
     frozen_model = freeze_dims_and_data(model)
+
     if not transform_samples:
         untransformed_model = remove_value_transforms(frozen_model)
         logp = untransformed_model.logp(jacobian=False)
@@ -157,19 +133,17 @@ def fit_laplace(
         logp = frozen_model.logp(jacobian=True)
         variables = frozen_model.continuous_value_vars
 
-    mu = np.concatenate(
-        [np.atleast_1d(optimized_point[var.name]).ravel() for var in variables], axis=0
+    mu = DictToArrayBijection.map(optimized_point)
+
+    [neg_logp], flat_inputs = join_nonshared_inputs(
+        point=frozen_model.initial_point(), outputs=[-logp], inputs=variables
     )
 
     f_logp, f_grad, f_hess, f_hessp = make_jax_funcs_from_graph(
-        cast(TensorVariable, logp),
-        use_grad=True,
-        use_hess=True,
-        use_hessp=False,
-        inputs=variables,
+        neg_logp, use_grad=True, use_hess=True, use_hessp=False, inputs=[flat_inputs]
     )
 
-    H = f_hess(mu)
+    H = -f_hess(mu.data)
     H_inv = np.linalg.pinv(np.where(np.abs(H) < zero_tol, 0, -H))
 
     def stabilize(x, jitter):
@@ -184,65 +158,103 @@ def fit_laplace(
             raise np.linalg.LinAlgError(
                 "Inverse Hessian not positive-semi definite at the provided point"
             )
-        H_inv = get_near_psd(H_inv)
+        H_inv = get_nearest_psd(H_inv)
         if on_bad_cov == "warn":
             _log.warning(
                 "Inverse Hessian is not positive semi-definite at the provided point, using the closest PSD "
                 "matrix in L1-norm instead"
             )
 
-    posterior_dist = stats.multivariate_normal(mean=mu, cov=H_inv, allow_singular=True)
+    return mu, H_inv
+
+
+def jax_laplace(
+    mu: RaveledVars,
+    H_inv: np.ndarray,
+    model: pm.Model,
+    chains: int = 2,
+    draws: int = 500,
+    transform_samples: bool = True,
+    progressbar: bool = True,
+) -> az.InferenceData:
+    """
+
+    Parameters
+    ----------
+    mu
+    H_inv
+    model : Model
+        A PyMC model
+    chains : int
+        The number of sampling chains running in parallel. Default is 2.
+    draws : int
+        The number of samples to draw from the approximated posterior. Default is 500.
+    transform_samples : bool
+        Whether to transform the samples back to the original parameter space. Default is True.
+
+    Returns
+    -------
+    idata: az.InferenceData
+        An InferenceData object containing the approximated posterior samples.
+    """
+    posterior_dist = stats.multivariate_normal(mean=mu.data, cov=H_inv, allow_singular=True)
     posterior_draws = posterior_dist.rvs(size=(chains, draws))
-    slices, out_shapes = _get_unravel_rv_info(optimized_point, variables, frozen_model)
 
     if transform_samples:
-        posterior_draws = _create_transformed_draws(
-            H_inv, slices, out_shapes, posterior_draws, frozen_model, chains, draws
-        )
+        constrained_rvs, unconstrained_vector = _unconstrained_vector_to_constrained_rvs(model)
+        f_constrain = get_jaxified_graph(inputs=[unconstrained_vector], outputs=constrained_rvs)
+
+        posterior_draws = jax.jit(jax.vmap(jax.vmap(f_constrain)))(posterior_draws)
+
     else:
-        posterior_draws = [
-            posterior_draws[..., idx].reshape((chains, draws, *out_shapes.get(rv, ())))
-            for rv, idx in slices.items()
+        info = mu.point_map_info
+        flat_shapes = [np.prod(shape).astype(int) for _, shape, _ in info]
+        slices = [
+            slice(sum(flat_shapes[:i]), sum(flat_shapes[: i + 1])) for i in range(len(flat_shapes))
         ]
 
-    def make_rv_coords(rv):
+        posterior_draws = [
+            posterior_draws[..., idx].reshape((chains, draws, *shape)).astype(dtype)
+            for idx, (name, shape, dtype) in zip(slices, info)
+        ]
+
+    def make_rv_coords(name):
         coords = {"chain": range(chains), "draw": range(draws)}
-        extra_dims = frozen_model.named_vars_to_dims.get(rv.name)
+        extra_dims = model.named_vars_to_dims.get(name)
         if extra_dims is None:
             return coords
-        return coords | {dim: list(frozen_model.coords[dim]) for dim in extra_dims}
+        return coords | {dim: list(model.coords[dim]) for dim in extra_dims}
 
-    def make_rv_dims(rv):
+    def make_rv_dims(name):
         dims = ["chain", "draw"]
-        extra_dims = frozen_model.named_vars_to_dims.get(rv.name)
+        extra_dims = model.named_vars_to_dims.get(name)
         if extra_dims is None:
             return dims
         return dims + list(extra_dims)
 
     idata = {
-        rv.name: xr.DataArray(
+        name: xr.DataArray(
             data=draws.squeeze(),
-            coords=make_rv_coords(rv),
-            dims=make_rv_dims(rv),
-            name=rv.name,
+            coords=make_rv_coords(name),
+            dims=make_rv_dims(name),
+            name=name,
         )
-        for rv, draws in zip(slices.keys(), posterior_draws)
+        for (name, _, _), draws in zip(mu.point_map_info, posterior_draws)
     }
 
-    coords, dims = coords_and_dims_for_inferencedata(frozen_model)
+    coords, dims = coords_and_dims_for_inferencedata(model)
     idata = az.convert_to_inference_data(idata, coords=coords, dims=dims)
 
-    if frozen_model.deterministics:
+    if model.deterministics:
         idata.posterior = pm.compute_deterministics(
             idata.posterior,
-            model=frozen_model,
+            model=model,
             merge_dataset=True,
             progressbar=progressbar,
-            compile_kwargs={"mode": mode},
         )
 
     observed_data = dict_to_dataset(
-        find_observations(frozen_model),
+        find_observations(model),
         library=pm,
         coords=coords,
         dims=dims,
@@ -250,7 +262,7 @@ def fit_laplace(
     )
 
     constant_data = dict_to_dataset(
-        find_constants(frozen_model),
+        find_constants(model),
         library=pm,
         coords=coords,
         dims=dims,
@@ -264,6 +276,29 @@ def fit_laplace(
     )
 
     return idata
+
+
+def fit_laplace(
+    optimized_point: dict[str, np.ndarray],
+    model: pm.Model,
+    chains: int = 2,
+    draws: int = 500,
+    on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
+    transform_samples: bool = True,
+    zero_tol: float = 1e-8,
+    diag_jitter: float | None = 1e-8,
+    progressbar: bool = True,
+) -> az.InferenceData:
+    mu, H_inv = jax_fit_mvn_to_MAP(
+        optimized_point,
+        model,
+        on_bad_cov,
+        transform_samples,
+        zero_tol,
+        diag_jitter,
+    )
+
+    return jax_laplace(mu, H_inv, model, chains, draws, transform_samples, progressbar)
 
 
 def make_jax_funcs_from_graph(
@@ -280,34 +315,19 @@ def make_jax_funcs_from_graph(
     if not isinstance(inputs, list):
         inputs = [inputs]
 
-    f = cast(Callable, get_jaxified_graph(inputs=inputs, outputs=[graph]))
-    input_shapes = [x.type.shape for x in inputs]
+    f_tuple = cast(Callable, get_jaxified_graph(inputs=inputs, outputs=[graph]))
 
-    def at_least_tuple(x):
-        if isinstance(x, tuple | list):
-            return x
-        return (x,)
+    def f(*args, **kwargs):
+        return f_tuple(*args, **kwargs)[0]
 
-    assert all([xi is not None for x in input_shapes for xi in at_least_tuple(x)])
-
-    def f_jax(x):
-        args = []
-        cursor = 0
-        for shape in input_shapes:
-            n_elements = int(np.prod(shape))
-            s = slice(cursor, cursor + n_elements)
-            args.append(x[s].reshape(shape))
-            cursor += n_elements
-        return f(*args)[0]
-
-    f_logp = jax.jit(f_jax)
+    f_logp = jax.jit(f)
 
     f_grad = None
     f_hess = None
     f_hessp = None
 
     if use_grad:
-        _f_grad_jax = jax.grad(f_jax)
+        _f_grad_jax = jax.grad(f)
 
         def f_grad_jax(x):
             return jax.numpy.stack(_f_grad_jax(x))
@@ -411,14 +431,12 @@ def find_MAP(
         {var_name: value for var_name, value in start_dict.items() if var_name in vars_dict}
     )
 
-    inputs = [frozen_model.values_to_rvs[vars_dict[x]] for x in start_dict.keys()]
-    inputs = [frozen_model.rvs_to_values[x] for x in inputs]
-
-    logp_factors = frozen_model.logp(sum=False, jacobian=False)
-    neg_logp = -pt.sum([pt.sum(factor) for factor in logp_factors])
+    [neg_logp], inputs = join_nonshared_inputs(
+        point=start_dict, outputs=[-frozen_model.logp()], inputs=frozen_model.continuous_value_vars
+    )
 
     f_logp, f_grad, f_hess, f_hessp = make_jax_funcs_from_graph(
-        neg_logp, use_grad, use_hess, use_hessp, inputs=inputs
+        neg_logp, use_grad, use_hess, use_hessp, inputs=[inputs]
     )
 
     args = optimizer_kwargs.pop("args", None)
@@ -435,11 +453,12 @@ def find_MAP(
         **optimizer_kwargs,
     )
 
-    initial_point = RaveledVars(optimizer_result.x, initial_params.point_map_info)
+    raveled_optimized = RaveledVars(optimizer_result.x, initial_params.point_map_info)
     unobserved_vars = get_default_varnames(model.unobserved_value_vars, include_transformed)
     unobserved_vars_values = model.compile_fn(unobserved_vars)(
-        DictToArrayBijection.rmap(initial_point, start_dict)
+        DictToArrayBijection.rmap(raveled_optimized)
     )
+
     optimized_point = {
         var.name: value for var, value in zip(unobserved_vars, unobserved_vars_values)
     }
