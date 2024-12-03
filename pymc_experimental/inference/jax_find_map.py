@@ -58,6 +58,22 @@ def get_nearest_psd(A: np.ndarray) -> np.ndarray:
     return eigvec @ np.diag(eigval) @ eigvec.T
 
 
+def unobserved_value_vars(model):
+    vars = []
+    transformed_rvs = []
+    for rv in model.free_RVs:
+        value_var = model.rvs_to_values[rv]
+        transform = model.rvs_to_transforms[rv]
+        if transform is not None:
+            transformed_rvs.append(rv)
+        vars.append(value_var)
+
+    # Remove rvs from untransformed values graph
+    untransformed_vars = model.replace_rvs_by_values(transformed_rvs)
+
+    return vars + untransformed_vars
+
+
 def _unconstrained_vector_to_constrained_rvs(model):
     constrained_rvs, unconstrained_vector = join_nonshared_inputs(
         model.initial_point(), inputs=model.value_vars, outputs=model.unobserved_value_vars
@@ -133,7 +149,9 @@ def jax_fit_mvn_to_MAP(
         logp = frozen_model.logp(jacobian=True)
         variables = frozen_model.continuous_value_vars
 
-    mu = DictToArrayBijection.map(optimized_point)
+    variable_names = {var.name for var in variables}
+    optimized_free_params = {k: v for k, v in optimized_point.items() if k in variable_names}
+    mu = DictToArrayBijection.map(optimized_free_params)
 
     [neg_logp], flat_inputs = join_nonshared_inputs(
         point=frozen_model.initial_point(), outputs=[-logp], inputs=variables
