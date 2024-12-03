@@ -12,156 +12,192 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import warnings
 
-from collections.abc import Sequence
+from functools import reduce
+from itertools import product
+from typing import Literal
 
 import arviz as az
 import numpy as np
 import pymc as pm
+import pytensor
+import pytensor.tensor as pt
 import xarray as xr
 
 from arviz import dict_to_dataset
+from better_optimize.constants import minimize_method
+from inference.find_map import (
+    _log,
+    _unconstrained_vector_to_constrained_rvs,
+    find_MAP,
+    get_nearest_psd,
+    scipy_optimize_funcs_from_loss,
+)
+from pymc import DictToArrayBijection
 from pymc.backends.arviz import (
     coords_and_dims_for_inferencedata,
     find_constants,
     find_observations,
 )
+from pymc.blocking import RaveledVars
 from pymc.model.transform.conditioning import remove_value_transforms
-from pymc.util import RandomSeed
-from pytensor import Variable
+from pymc.model.transform.optimization import freeze_dims_and_data
+from pymc.util import get_default_varnames
+from scipy import stats
 
 
-def laplace(
-    vars: Sequence[Variable],
-    draws: int | None = 1000,
-    model=None,
-    random_seed: RandomSeed | None = None,
-    progressbar=True,
-):
+def laplace_draws_to_inferencedata(
+    posterior_draws: list[np.ndarray[float | int]], model: pm.Model | None = None
+) -> az.InferenceData:
     """
-    Create a Laplace (quadratic) approximation for a posterior distribution.
+    Convert draws from a posterior estimated with the Laplace approximation to an InferenceData object.
 
-    This function generates a Laplace approximation for a given posterior distribution using a specified
-    number of draws. This is useful for obtaining a parametric approximation to the posterior distribution
-    that can be used for further analysis.
 
     Parameters
     ----------
-    vars : Sequence[Variable]
-        A sequence of variables for which the Laplace approximation of the posterior distribution
-        is to be created.
-    draws : Optional[int] with default=1_000
-        The number of draws to sample from the posterior distribution for creating the approximation.
-        For draws=None only the fit of the Laplace approximation is returned
-    model : object, optional, default=None
-        The model object that defines the posterior distribution. If None, the default model will be used.
-    random_seed : Optional[RandomSeed], optional, default=None
-        An optional random seed to ensure reproducibility of the draws. If None, the draws will be
-        generated using the current random state.
-    progressbar: bool, optional defaults to True
-        Whether to display a progress bar in the command line.
+    posterior_draws: list of np.ndarray
+        A list of arrays containing the posterior draws. Each array should have shape (chains, draws, *shape), where
+        shape is the shape of the variable in the posterior.
+    model: Model, optional
+        A PyMC model. If None, the model is taken from the current model context.
 
     Returns
     -------
-    arviz.InferenceData
-        An `InferenceData` object from the `arviz` library containing the Laplace
-        approximation of the posterior distribution. The inferenceData object also
-        contains constant and observed data as well as deterministic variables.
-        InferenceData also contains a group 'fit' with the mean and covariance
-        for the Laplace approximation.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> import pymc as pm
-    >>> import arviz as az
-    >>> from pymc_experimental.inference.laplace import laplace
-    >>> y = np.array([2642, 3503, 4358]*10)
-    >>> with pm.Model() as m:
-    >>>     logsigma = pm.Uniform("logsigma", 1, 100)
-    >>>     mu = pm.Uniform("mu", -10000, 10000)
-    >>>     yobs = pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
-    >>> idata = laplace([mu, logsigma], model=m)
-
-    Notes
-    -----
-    This method of approximation may not be suitable for all types of posterior distributions,
-    especially those with significant skewness or multimodality.
-
-    See Also
-    --------
-    fit : Calling the inference function 'fit' like pmx.fit(method="laplace", vars=[mu, logsigma], model=m)
-          will forward the call to 'laplace'.
-
+    idata: az.InferenceData
+        An InferenceData object containing the approximated posterior samples
     """
+    model = pm.modelcontext(model)
+    chains, draws, *_ = posterior_draws[0].shape
 
-    rng = np.random.default_rng(seed=random_seed)
+    def make_rv_coords(name):
+        coords = {"chain": range(chains), "draw": range(draws)}
+        extra_dims = model.named_vars_to_dims.get(name)
+        if extra_dims is None:
+            return coords
+        return coords | {dim: list(model.coords[dim]) for dim in extra_dims}
 
-    transformed_m = pm.modelcontext(model)
+    def make_rv_dims(name):
+        dims = ["chain", "draw"]
+        extra_dims = model.named_vars_to_dims.get(name)
+        if extra_dims is None:
+            return dims
+        return dims + list(extra_dims)
 
-    if len(vars) != len(transformed_m.free_RVs):
-        warnings.warn(
-            "Number of variables in vars does not eqaul the number of variables in the model.",
-            UserWarning,
+    names = [
+        x.name for x in get_default_varnames(model.unobserved_value_vars, include_transformed=False)
+    ]
+    idata = {
+        name: xr.DataArray(
+            data=draws,
+            coords=make_rv_coords(name),
+            dims=make_rv_dims(name),
+            name=name,
         )
+        for name, draws in zip(names, posterior_draws)
+    }
 
-    map = pm.find_MAP(vars=vars, progressbar=progressbar, model=transformed_m)
-
-    # See https://www.pymc.io/projects/docs/en/stable/api/model/generated/pymc.model.transform.conditioning.remove_value_transforms.html
-    untransformed_m = remove_value_transforms(transformed_m)
-    untransformed_vars = [untransformed_m[v.name] for v in vars]
-    hessian = pm.find_hessian(point=map, vars=untransformed_vars, model=untransformed_m)
-
-    if np.linalg.det(hessian) == 0:
-        raise np.linalg.LinAlgError("Hessian is singular.")
-
-    cov = np.linalg.inv(hessian)
-    mean = np.concatenate([np.atleast_1d(map[v.name]) for v in vars])
-
-    chains = 1
-
-    if draws is not None:
-        samples = rng.multivariate_normal(mean, cov, size=(chains, draws))
-
-        data_vars = {}
-        for i, var in enumerate(vars):
-            data_vars[str(var)] = xr.DataArray(samples[:, :, i], dims=("chain", "draw"))
-
-        coords = {"chain": np.arange(chains), "draw": np.arange(draws)}
-        ds = xr.Dataset(data_vars, coords=coords)
-
-        idata = az.convert_to_inference_data(ds)
-        idata = addDataToInferenceData(model, idata, progressbar)
-    else:
-        idata = az.InferenceData()
-
-    idata = addFitToInferenceData(vars, idata, mean, cov)
+    coords, dims = coords_and_dims_for_inferencedata(model)
+    idata = az.convert_to_inference_data(idata, coords=coords, dims=dims)
 
     return idata
 
 
-def addFitToInferenceData(vars, idata, mean, covariance):
-    coord_names = [v.name for v in vars]
-    # Convert to xarray DataArray
-    mean_dataarray = xr.DataArray(mean, dims=["rows"], coords={"rows": coord_names})
-    cov_dataarray = xr.DataArray(
-        covariance, dims=["rows", "columns"], coords={"rows": coord_names, "columns": coord_names}
+def add_fit_to_inferencedata(
+    idata: az.InferenceData, mu: RaveledVars, H_inv: np.ndarray, model: pm.Model | None = None
+) -> az.InferenceData:
+    """
+    Add the mean vector and covariance matrix of the Laplace approximation to an InferenceData object.
+
+
+    Parameters
+    ----------
+    idata: az.InfereceData
+        An InferenceData object containing the approximated posterior samples.
+    mu: RaveledVars
+        The MAP estimate of the model parameters.
+    H_inv: np.ndarray
+        The inverse Hessian matrix of the log-posterior evaluated at the MAP estimate.
+    model: Model, optional
+        A PyMC model. If None, the model is taken from the current model context.
+
+    Returns
+    -------
+    idata: az.InferenceData
+        The provided InferenceData, with the mean vector and covariance matrix added to the "fit" group.
+    """
+    model = pm.modelcontext(model)
+    coords = model.coords
+
+    variable_names, *_ = zip(*mu.point_map_info)
+
+    def make_unpacked_variable_names(name):
+        value_to_dim = {
+            x.name: model.named_vars_to_dims.get(model.values_to_rvs[x].name, None)
+            for x in model.value_vars
+        }
+        value_to_dim = {k: v for k, v in value_to_dim.items() if v is not None}
+
+        rv_to_dim = model.named_vars_to_dims
+        dims_dict = rv_to_dim | value_to_dim
+
+        dims = dims_dict.get(name)
+        if dims is None:
+            return [name]
+        labels = product(*(coords[dim] for dim in dims))
+        return [f"{name}[{','.join(map(str, label))}]" for label in labels]
+
+    unpacked_variable_names = reduce(
+        lambda lst, name: lst + make_unpacked_variable_names(name), variable_names, []
     )
 
-    # Create xarray dataset
-    dataset = xr.Dataset({"mean_vector": mean_dataarray, "covariance_matrix": cov_dataarray})
+    mean_dataarray = xr.DataArray(mu.data, dims=["rows"], coords={"rows": unpacked_variable_names})
+    cov_dataarray = xr.DataArray(
+        H_inv,
+        dims=["rows", "columns"],
+        coords={"rows": unpacked_variable_names, "columns": unpacked_variable_names},
+    )
 
+    dataset = xr.Dataset({"mean_vector": mean_dataarray, "covariance_matrix": cov_dataarray})
     idata.add_groups(fit=dataset)
 
     return idata
 
 
-def addDataToInferenceData(model, trace, progressbar):
-    # Add deterministic variables to inference data
-    trace.posterior = pm.compute_deterministics(
-        trace.posterior, model=model, merge_dataset=True, progressbar=progressbar
-    )
+def add_data_to_inferencedata(
+    idata: az.InferenceData,
+    progressbar: bool = True,
+    model: pm.Model | None = None,
+    compile_kwargs: dict | None = None,
+) -> az.InferenceData:
+    """
+    Add observed and constant data to an InferenceData object.
+
+    Parameters
+    ----------
+    idata: az.InferenceData
+        An InferenceData object containing the approximated posterior samples.
+    progressbar: bool
+        Whether to display a progress bar during computations. Default is True.
+    model: Model, optional
+        A PyMC model. If None, the model is taken from the current model context.
+    compile_kwargs: dict, optional
+        Additional keyword arguments to pass to pytensor.function.
+
+    Returns
+    -------
+    idata: az.InferenceData
+        The provided InferenceData, with observed and constant data added.
+    """
+    model = pm.modelcontext(model)
+
+    if model.deterministics:
+        idata.posterior = pm.compute_deterministics(
+            idata.posterior,
+            model=model,
+            merge_dataset=True,
+            progressbar=progressbar,
+            compile_kwargs=compile_kwargs,
+        )
 
     coords, dims = coords_and_dims_for_inferencedata(model)
 
@@ -181,10 +217,334 @@ def addDataToInferenceData(model, trace, progressbar):
         default_dims=[],
     )
 
-    trace.add_groups(
+    idata.add_groups(
         {"observed_data": observed_data, "constant_data": constant_data},
         coords=coords,
         dims=dims,
     )
 
-    return trace
+    return idata
+
+
+def fit_mvn_to_MAP(
+    optimized_point: dict[str, np.ndarray],
+    model: pm.Model | None = None,
+    on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
+    transform_samples: bool = False,
+    use_jax_gradients: bool = False,
+    zero_tol: float = 1e-8,
+    diag_jitter: float | None = 1e-8,
+    compile_kwargs: dict | None = None,
+) -> tuple[RaveledVars, np.ndarray]:
+    """
+    Create a multivariate normal distribution using the inverse of the negative Hessian matrix of the log-posterior
+    evaluated at the MAP estimate. This is the basis of the Laplace approximation.
+
+    Parameters
+    ----------
+    optimized_point : dict[str, np.ndarray]
+        Local maximum a posteriori (MAP) point returned from pymc.find_MAP or jax_tools.fit_map
+    model : Model, optional
+        A PyMC model. If None, the model is taken from the current model context.
+    on_bad_cov : str, one of 'ignore', 'warn', or 'error', default: 'ignore'
+        What to do when ``H_inv`` (inverse Hessian) is not positive semi-definite.
+        If 'ignore' or 'warn', the closest positive-semi-definite matrix to ``H_inv`` (in L1 norm) will be returned.
+        If 'error', an error will be raised.
+    transform_samples : bool
+        Whether to transform the samples back to the original parameter space. Default is True.
+    zero_tol: float
+        Value below which an element of the Hessian matrix is counted as 0.
+        This is used to stabilize the computation of the inverse Hessian matrix. Default is 1e-8.
+    diag_jitter: float | None
+        A small value added to the diagonal of the inverse Hessian matrix to ensure it is positive semi-definite.
+        If None, no jitter is added. Default is 1e-8.
+
+    Returns
+    -------
+    map_estimate: RaveledVars
+        The MAP estimate of the model parameters, raveled into a 1D array.
+
+    inverse_hessian: np.ndarray
+        The inverse Hessian matrix of the log-posterior evaluated at the MAP estimate.
+    """
+    model = pm.modelcontext(model)
+    compile_kwargs = {} if compile_kwargs is None else compile_kwargs
+    frozen_model = freeze_dims_and_data(model)
+
+    if not transform_samples:
+        untransformed_model = remove_value_transforms(frozen_model)
+        logp = untransformed_model.logp(jacobian=False)
+        variables = untransformed_model.continuous_value_vars
+    else:
+        logp = frozen_model.logp(jacobian=True)
+        variables = frozen_model.continuous_value_vars
+
+    variable_names = {var.name for var in variables}
+    optimized_free_params = {k: v for k, v in optimized_point.items() if k in variable_names}
+    mu = DictToArrayBijection.map(optimized_free_params)
+
+    _, f_hess, _ = scipy_optimize_funcs_from_loss(
+        loss=-logp,
+        inputs=variables,
+        initial_point_dict=optimized_free_params,
+        use_grad=True,
+        use_hess=True,
+        use_hessp=False,
+        use_jax_gradients=use_jax_gradients,
+        compile_kwargs=compile_kwargs,
+    )
+
+    H = -f_hess(mu.data)
+    H_inv = np.linalg.pinv(np.where(np.abs(H) < zero_tol, 0, -H))
+
+    def stabilize(x, jitter):
+        return x + np.eye(x.shape[0]) * jitter
+
+    H_inv = H_inv if diag_jitter is None else stabilize(H_inv, diag_jitter)
+
+    try:
+        np.linalg.cholesky(H_inv)
+    except np.linalg.LinAlgError:
+        if on_bad_cov == "error":
+            raise np.linalg.LinAlgError(
+                "Inverse Hessian not positive-semi definite at the provided point"
+            )
+        H_inv = get_nearest_psd(H_inv)
+        if on_bad_cov == "warn":
+            _log.warning(
+                "Inverse Hessian is not positive semi-definite at the provided point, using the closest PSD "
+                "matrix in L1-norm instead"
+            )
+
+    return mu, H_inv
+
+
+def laplace(
+    mu: RaveledVars,
+    H_inv: np.ndarray,
+    model: pm.Model | None = None,
+    chains: int = 2,
+    draws: int = 500,
+    transform_samples: bool = False,
+    progressbar: bool = True,
+    random_seed: int | np.random.Generator | None = None,
+    compile_kwargs: dict | None = None,
+) -> az.InferenceData:
+    """
+    Generate samples from a multivariate normal distribution with mean `mu` and inverse covariance matrix `H_inv`.
+
+    Parameters
+    ----------
+    mu
+    H_inv
+    model : Model
+        A PyMC model
+    chains : int
+        The number of sampling chains running in parallel. Default is 2.
+    draws : int
+        The number of samples to draw from the approximated posterior. Default is 500.
+    transform_samples : bool
+        Whether to transform the samples back to the original parameter space. Default is True.
+    progressbar : bool
+        Whether to display a progress bar during computations. Default is True.
+    random_seed: int | np.random.Generator | None
+        Seed for the random number generator or a numpy Generator for reproducibility
+
+    Returns
+    -------
+    idata: az.InferenceData
+        An InferenceData object containing the approximated posterior samples.
+    """
+    model = pm.modelcontext(model)
+    compile_kwargs = {} if compile_kwargs is None else compile_kwargs
+    rng = np.random.default_rng(random_seed)
+
+    posterior_dist = stats.multivariate_normal(
+        mean=mu.data, cov=H_inv, allow_singular=True, seed=rng
+    )
+    posterior_draws = posterior_dist.rvs(size=(chains, draws))
+
+    if transform_samples:
+        constrained_rvs, unconstrained_vector = _unconstrained_vector_to_constrained_rvs(model)
+        batched_values = pt.tensor(
+            "batched_values",
+            shape=(chains, draws, *unconstrained_vector.type.shape),
+            dtype=unconstrained_vector.type.dtype,
+        )
+        batched_rvs = pytensor.graph.vectorize_graph(
+            constrained_rvs, replace={unconstrained_vector: batched_values}
+        )
+
+        f_constrain = pm.compile_pymc(
+            inputs=[batched_values], outputs=batched_rvs, **compile_kwargs
+        )
+        posterior_draws = f_constrain(posterior_draws)
+
+    else:
+        info = mu.point_map_info
+        flat_shapes = [np.prod(shape).astype(int) for _, shape, _ in info]
+        slices = [
+            slice(sum(flat_shapes[:i]), sum(flat_shapes[: i + 1])) for i in range(len(flat_shapes))
+        ]
+
+        posterior_draws = [
+            posterior_draws[..., idx].reshape((chains, draws, *shape)).astype(dtype)
+            for idx, (name, shape, dtype) in zip(slices, info)
+        ]
+
+    idata = laplace_draws_to_inferencedata(posterior_draws, model)
+    idata = add_fit_to_inferencedata(idata, mu, H_inv)
+    idata = add_data_to_inferencedata(idata, progressbar, model, compile_kwargs)
+
+    return idata
+
+
+def fit_laplace(
+    optimize_method: minimize_method = "BFGS",
+    *,
+    model: pm.Model | None = None,
+    use_grad: bool | None = None,
+    use_hessp: bool | None = None,
+    use_hess: bool | None = None,
+    initvals: dict | None = None,
+    random_seed: int | np.random.Generator | None = None,
+    return_raw: bool = False,
+    jitter_rvs: list[pt.TensorVariable] | None = None,
+    progressbar: bool = True,
+    include_transformed: bool = True,
+    use_jax_gradients: bool = False,
+    chains: int = 2,
+    draws: int = 500,
+    on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
+    transform_samples: bool = False,
+    zero_tol: float = 1e-8,
+    diag_jitter: float | None = 1e-8,
+    optimizer_kwargs: dict | None = None,
+    compile_kwargs: dict | None = None,
+) -> az.InferenceData:
+    """
+    Create a Laplace (quadratic) approximation for a posterior distribution.
+
+    This function generates a Laplace approximation for a given posterior distribution using a specified
+    number of draws. This is useful for obtaining a parametric approximation to the posterior distribution
+    that can be used for further analysis.
+
+    Parameters
+    ----------
+    model : pm.Model
+        The PyMC model to be fit. If None, the current model context is used.
+    optimize_method : str
+        The optimization method to use. See scipy.optimize.minimize documentation for details.
+    use_grad : bool | None, optional
+        Whether to use gradients in the optimization. Defaults to None, which determines this automatically based on
+        the ``method``.
+    use_hessp : bool | None, optional
+        Whether to use Hessian-vector products in the optimization. Defaults to None, which determines this automatically based on
+        the ``method``.
+    use_hess : bool | None, optional
+        Whether to use the Hessian matrix in the optimization. Defaults to None, which determines this automatically based on
+        the ``method``.
+    initvals : None | dict, optional
+        Initial values for the model parameters, as str:ndarray key-value pairs. Paritial initialization is permitted.
+         If None, the model's default initial values are used.
+    random_seed : None | int | np.random.Generator, optional
+        Seed for the random number generator or a numpy Generator for reproducibility
+    return_raw: bool | False, optinal
+        Whether to also return the full output of `scipy.optimize.minimize`
+    jitter_rvs : list of TensorVariables, optional
+        Variables whose initial values should be jittered. If None, all variables are jittered.
+    progressbar : bool, optional
+        Whether to display a progress bar during optimization. Defaults to True.
+    include_transformed: bool, optional
+        Whether to include transformed variable values in the returned dictionary. Defaults to True.
+    use_jax_gradients: bool, optional
+        Whether to use JAX for gradient calculations. Defaults to False.
+    chains: int, default: 2
+        The number of sampling chains running in parallel.
+    draws: int, default: 500
+        The number of samples to draw from the approximated posterior.
+    on_bad_cov : str, one of 'ignore', 'warn', or 'error', default: 'ignore'
+        What to do when ``H_inv`` (inverse Hessian) is not positive semi-definite.
+        If 'ignore' or 'warn', the closest positive-semi-definite matrix to ``H_inv`` (in L1 norm) will be returned.
+        If 'error', an error will be raised.
+    transform_samples : bool
+        Whether to transform the samples back to the original parameter space. Default is True.
+    zero_tol: float
+        Value below which an element of the Hessian matrix is counted as 0.
+        This is used to stabilize the computation of the inverse Hessian matrix. Default is 1e-8.
+    diag_jitter: float | None
+        A small value added to the diagonal of the inverse Hessian matrix to ensure it is positive semi-definite.
+        If None, no jitter is added. Default is 1e-8.
+    compile_kwargs: optional
+        Additional keyword arguments to pass to pytensor.function.
+
+    Returns
+    -------
+    idata: az.InferenceData
+        An InferenceData object containing the approximated posterior samples.
+
+    Examples
+    --------
+    >>> from inference.laplace import fit_laplace
+    >>> import numpy as np
+    >>> import pymc as pm
+    >>> import arviz as az
+    >>> y = np.array([2642, 3503, 4358]*10)
+    >>> with pm.Model() as m:
+    >>>     logsigma = pm.Uniform("logsigma", 1, 100)
+    >>>     mu = pm.Uniform("mu", -10000, 10000)
+    >>>     yobs = pm.Normal("y", mu=mu, sigma=pm.math.exp(logsigma), observed=y)
+    >>>     idata = fit_laplace()
+
+    Notes
+    -----
+    This method of approximation may not be suitable for all types of posterior distributions,
+    especially those with significant skewness or multimodality.
+
+    See Also
+    --------
+    fit : Calling the inference function 'fit' like pmx.fit(method="laplace", model=m)
+          will forward the call to 'fit_laplace'.
+
+    """
+    compile_kwargs = {} if compile_kwargs is None else compile_kwargs
+    optimizer_kwargs = {} if optimizer_kwargs is None else optimizer_kwargs
+
+    optimized_point = find_MAP(
+        method=optimize_method,
+        model=model,
+        use_grad=use_grad,
+        use_hessp=use_hessp,
+        use_hess=use_hess,
+        initvals=initvals,
+        random_seed=random_seed,
+        return_raw=return_raw,
+        jitter_rvs=jitter_rvs,
+        progressbar=progressbar,
+        include_transformed=include_transformed,
+        use_jax_gradients=use_jax_gradients,
+        compile_kwargs=compile_kwargs,
+        **optimizer_kwargs,
+    )
+
+    mu, H_inv = fit_mvn_to_MAP(
+        optimized_point=optimized_point,
+        model=model,
+        on_bad_cov=on_bad_cov,
+        transform_samples=transform_samples,
+        zero_tol=zero_tol,
+        diag_jitter=diag_jitter,
+        compile_kwargs=compile_kwargs,
+    )
+
+    return laplace(
+        mu=mu,
+        H_inv=H_inv,
+        model=model,
+        chains=chains,
+        draws=draws,
+        transform_samples=transform_samples,
+        progressbar=progressbar,
+        random_seed=random_seed,
+        compile_kwargs=compile_kwargs,
+    )
