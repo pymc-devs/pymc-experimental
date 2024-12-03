@@ -24,8 +24,8 @@ from pymc.initial_point import make_initial_point_fn
 from pymc.model.transform.conditioning import remove_value_transforms
 from pymc.model.transform.optimization import freeze_dims_and_data
 from pymc.pytensorf import join_nonshared_inputs
-from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import get_default_varnames
+from pytensor.compile import Function
 from pytensor.tensor import TensorVariable
 from scipy import stats
 from scipy.optimize import OptimizeResult
@@ -58,22 +58,6 @@ def get_nearest_psd(A: np.ndarray) -> np.ndarray:
     return eigvec @ np.diag(eigval) @ eigvec.T
 
 
-def unobserved_value_vars(model):
-    vars = []
-    transformed_rvs = []
-    for rv in model.free_RVs:
-        value_var = model.rvs_to_values[rv]
-        transform = model.rvs_to_transforms[rv]
-        if transform is not None:
-            transformed_rvs.append(rv)
-        vars.append(value_var)
-
-    # Remove rvs from untransformed values graph
-    untransformed_vars = model.replace_rvs_by_values(transformed_rvs)
-
-    return vars + untransformed_vars
-
-
 def _unconstrained_vector_to_constrained_rvs(model):
     constrained_rvs, unconstrained_vector = join_nonshared_inputs(
         model.initial_point(), inputs=model.value_vars, outputs=model.unobserved_value_vars
@@ -100,13 +84,220 @@ def _create_transformed_draws(H_inv, slices, out_shapes, posterior_draws, model,
     return f_untransform(posterior_draws)
 
 
-def jax_fit_mvn_to_MAP(
+def _compile_jax_gradients(
+    f_loss: Function, use_hess: bool, use_hessp: bool
+) -> tuple[Callable | None, Callable | None]:
+    """
+    Compile loss function gradients using JAX.
+
+    Parameters
+    ----------
+    f_loss: Function
+        The loss function to compile gradients for. Expected to be a pytensor function that returns a scalar loss,
+        compiled with mode="JAX".
+    use_hess: bool
+        Whether to compile a function to compute the hessian of the loss function.
+    use_hessp: bool
+        Whether to compile a function to compute the hessian-vector product of the loss function.
+
+    Returns
+    -------
+    f_loss_and_grad: Callable
+        The compiled loss function and gradient function.
+    f_hess: Callable | None
+        The compiled hessian function, or None if use_hess is False.
+    f_hessp: Callable | None
+        The compiled hessian-vector product function, or None if use_hessp is False.
+    """
+    f_hess = None
+    f_hessp = None
+
+    orig_loss_fn = f_loss.vm.jit_fn
+
+    @jax.jit
+    def loss_fn_jax_grad(x, *shared):
+        return jax.value_and_grad(lambda x: orig_loss_fn(x)[0])(x)
+
+    f_loss_and_grad = loss_fn_jax_grad
+
+    if use_hessp:
+
+        def f_hessp_jax(x, p):
+            y, u = jax.jvp(lambda x: f_loss_and_grad(x)[1], (x,), (p,))
+            return jax.numpy.stack(u)
+
+        f_hessp = jax.jit(f_hessp_jax)
+
+    if use_hess:
+        _f_hess_jax = jax.jacfwd(lambda x: f_loss_and_grad(x)[1])
+
+        def f_hess_jax(x):
+            return jax.numpy.stack(_f_hess_jax(x))
+
+        f_hess = jax.jit(f_hess_jax)
+
+    return f_loss_and_grad, f_hess, f_hessp
+
+
+def _compile_functions(
+    loss: TensorVariable,
+    inputs: list[TensorVariable],
+    compute_grad: bool,
+    compute_hess: bool,
+    compute_hessp: bool,
+    compile_kwargs: dict | None = None,
+) -> list[Function] | list[Function, Function | None, Function | None]:
+    """
+    Compile loss functions for use with scipy.optimize.minimize.
+
+    Parameters
+    ----------
+    loss: TensorVariable
+        The loss function to compile.
+    inputs: list[TensorVariable]
+        A single flat vector input variable, collecting all inputs to the loss function. Scipy optimize routines
+        expect the function signature to be f(x, *args), where x is a 1D array of parameters.
+    compute_grad: bool
+        Whether to compile a function that computes the gradients of the loss function.
+    compute_hess: bool
+        Whether to compile a function that computes the Hessian of the loss function.
+    compute_hessp: bool
+        Whether to compile a function that computes the Hessian-vector product of the loss function.
+    compile_kwargs: dict, optional
+        Additional keyword arguments to pass to the ``pm.compile_pymc`` function.
+
+    Returns
+    -------
+    f_loss: Function
+
+    f_hess: Function | None
+    f_hessp: Function | None
+    """
+    loss = pm.pytensorf.rewrite_pregrad(loss)
+    f_hess = None
+    f_hessp = None
+
+    if compute_grad:
+        grads = pytensor.gradient.grad(loss, inputs)
+        grad = pt.concatenate([grad.ravel() for grad in grads])
+        f_loss_and_grad = pm.compile_pymc(inputs, [loss, grad], **compile_kwargs)
+    else:
+        f_loss = pm.compile_pymc(inputs, loss, **compile_kwargs)
+        return [f_loss]
+
+    if compute_hess:
+        hess = pytensor.gradient.jacobian(grad, inputs)[0]
+        f_hess = pm.compile_pymc(inputs, hess, **compile_kwargs)
+
+    if compute_hessp:
+        p = pt.tensor("p", shape=inputs[0].type.shape)
+        hessp = pytensor.gradient.hessian_vector_product(loss, inputs, p)
+        f_hessp = pm.compile_pymc([*inputs, p], hessp[0], **compile_kwargs)
+
+    return [f_loss_and_grad, f_hess, f_hessp]
+
+
+def scipy_optimize_funcs_from_loss(
+    loss: TensorVariable,
+    inputs: list[TensorVariable],
+    initial_point_dict: dict[str, np.ndarray | float | int],
+    use_grad: bool,
+    use_hess: bool,
+    use_hessp: bool,
+    use_jax_gradients: bool = False,
+    compile_kwargs: dict | None = None,
+) -> tuple[Callable, ...]:
+    """
+    Compile loss functions for use with scipy.optimize.minimize.
+
+
+    Parameters
+    ----------
+    loss: TensorVariable
+        The loss function to compile.
+    inputs: list[TensorVariable]
+        The input variables to the loss function.
+    initial_point_dict: dict[str, np.ndarray | float | int]
+        Dictionary mapping variable names to initial values. Used to determine the shapes of the input variables.
+    use_grad: bool
+        Whether to compile a function that computes the gradients of the loss function.
+    use_hess: bool
+        Whether to compile a function that computes the Hessian of the loss function.
+    use_hessp: bool
+        Whether to compile a function that computes the Hessian-vector product of the loss function.
+    use_jax_gradients: bool
+        If True, use JAX to compute gradients. This is only possible when ``compile_kwargs["mode"]`` is set to "JAX".
+    compile_kwargs:
+        Additional keyword arguments to pass to the ``pm.compile_pymc`` function.
+
+    Returns
+    -------
+    f_loss: Callable
+        The compiled loss function.
+    f_hess: Callable | None
+        The compiled hessian function, or None if use_hess is False.
+    f_hessp: Callable | None
+        The compiled hessian-vector product function, or None if use_hessp is False.
+    """
+
+    compile_kwargs = {} if compile_kwargs is None else compile_kwargs
+
+    if (use_hess or use_hessp) and not use_grad:
+        raise ValueError(
+            "Cannot compute hessian or hessian-vector product without also computing the gradient"
+        )
+
+    use_jax_gradients = use_jax_gradients and use_grad
+
+    mode = compile_kwargs.get("mode", None)
+    if mode is None and use_jax_gradients:
+        compile_kwargs["mode"] = "JAX"
+    elif mode != "JAX" and use_jax_gradients:
+        raise ValueError(
+            'jax gradients can only be used when ``compile_kwargs["mode"]`` is set to "JAX"'
+        )
+
+    if not isinstance(inputs, list):
+        inputs = [inputs]
+
+    [loss], flat_input = join_nonshared_inputs(
+        point=initial_point_dict, outputs=[loss], inputs=inputs
+    )
+
+    compute_grad = use_grad and not use_jax_gradients
+    compute_hess = use_hess and not use_jax_gradients
+    compute_hessp = use_hessp and not use_jax_gradients
+
+    funcs = _compile_functions(
+        loss=loss,
+        inputs=[flat_input],
+        compute_grad=compute_grad,
+        compute_hess=compute_hess,
+        compute_hessp=compute_hessp,
+        compile_kwargs=compile_kwargs,
+    )
+
+    # f_loss here is f_loss_and_grad if compute_grad = True. The name is unchanged to simplify the return values
+    f_loss = funcs.pop(0)
+    f_hess = funcs.pop(0) if compute_grad else None
+    f_hessp = funcs.pop(0) if compute_grad else None
+
+    if use_jax_gradients:
+        # f_loss here is f_loss_and_grad; the name is unchanged to simplify the return values
+        f_loss, f_hess, f_hessp = _compile_jax_gradients(f_loss, use_hess, use_hessp)
+
+    return f_loss, f_hess, f_hessp
+
+
+def fit_mvn_to_MAP(
     optimized_point: dict[str, np.ndarray],
     model: pm.Model,
     on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
     transform_samples: bool = True,
+    use_jax_gradients: bool = False,
     zero_tol: float = 1e-8,
     diag_jitter: float | None = 1e-8,
+    compile_kwargs: dict | None = None,
 ) -> tuple[RaveledVars, np.ndarray]:
     """
     Create a multivariate normal distribution using the inverse of the negative Hessian matrix of the log-posterior
@@ -139,6 +330,7 @@ def jax_fit_mvn_to_MAP(
     inverse_hessian: np.ndarray
         The inverse Hessian matrix of the log-posterior evaluated at the MAP estimate.
     """
+    compile_kwargs = {} if compile_kwargs is None else compile_kwargs
     frozen_model = freeze_dims_and_data(model)
 
     if not transform_samples:
@@ -153,12 +345,15 @@ def jax_fit_mvn_to_MAP(
     optimized_free_params = {k: v for k, v in optimized_point.items() if k in variable_names}
     mu = DictToArrayBijection.map(optimized_free_params)
 
-    [neg_logp], flat_inputs = join_nonshared_inputs(
-        point=frozen_model.initial_point(), outputs=[-logp], inputs=variables
-    )
-
-    f_logp, f_grad, f_hess, f_hessp = make_jax_funcs_from_graph(
-        neg_logp, use_grad=True, use_hess=True, use_hessp=False, inputs=[flat_inputs]
+    _, f_hess, _ = scipy_optimize_funcs_from_loss(
+        loss=-logp,
+        inputs=variables,
+        initial_point_dict=frozen_model.initial_point(),
+        use_grad=True,
+        use_hess=True,
+        use_hessp=False,
+        use_jax_gradients=use_jax_gradients,
+        compile_kwargs=compile_kwargs,
     )
 
     H = -f_hess(mu.data)
@@ -186,7 +381,7 @@ def jax_fit_mvn_to_MAP(
     return mu, H_inv
 
 
-def jax_laplace(
+def laplace(
     mu: RaveledVars,
     H_inv: np.ndarray,
     model: pm.Model,
@@ -194,6 +389,7 @@ def jax_laplace(
     draws: int = 500,
     transform_samples: bool = True,
     progressbar: bool = True,
+    **compile_kwargs,
 ) -> az.InferenceData:
     """
 
@@ -220,9 +416,19 @@ def jax_laplace(
 
     if transform_samples:
         constrained_rvs, unconstrained_vector = _unconstrained_vector_to_constrained_rvs(model)
-        f_constrain = get_jaxified_graph(inputs=[unconstrained_vector], outputs=constrained_rvs)
+        batched_values = pt.tensor(
+            "batched_values",
+            shape=(chains, draws, *unconstrained_vector.type.shape),
+            dtype=unconstrained_vector.type.dtype,
+        )
+        batched_rvs = pytensor.graph.vectorize_graph(
+            constrained_rvs, replace={unconstrained_vector: batched_values}
+        )
 
-        posterior_draws = jax.jit(jax.vmap(jax.vmap(f_constrain)))(posterior_draws)
+        f_constrain = pm.compile_pymc(
+            inputs=[batched_values], outputs=batched_rvs, **compile_kwargs
+        )
+        posterior_draws = f_constrain(posterior_draws)
 
     else:
         info = mu.point_map_info
@@ -269,6 +475,7 @@ def jax_laplace(
             model=model,
             merge_dataset=True,
             progressbar=progressbar,
+            compile_kwargs=compile_kwargs,
         )
 
     observed_data = dict_to_dataset(
@@ -306,73 +513,21 @@ def fit_laplace(
     zero_tol: float = 1e-8,
     diag_jitter: float | None = 1e-8,
     progressbar: bool = True,
+    compile_kwargs: dict | None = None,
 ) -> az.InferenceData:
-    mu, H_inv = jax_fit_mvn_to_MAP(
-        optimized_point,
-        model,
-        on_bad_cov,
-        transform_samples,
-        zero_tol,
-        diag_jitter,
+    compile_kwargs = {} if compile_kwargs is None else compile_kwargs
+
+    mu, H_inv = fit_mvn_to_MAP(
+        optimized_point=optimized_point,
+        model=model,
+        on_bad_cov=on_bad_cov,
+        transform_samples=transform_samples,
+        zero_tol=zero_tol,
+        diag_jitter=diag_jitter,
+        compile_kwargs=compile_kwargs,
     )
 
-    return jax_laplace(mu, H_inv, model, chains, draws, transform_samples, progressbar)
-
-
-def make_jax_funcs_from_graph(
-    graph: TensorVariable,
-    use_grad: bool,
-    use_hess: bool,
-    use_hessp: bool,
-    inputs: list[TensorVariable] | None = None,
-) -> tuple[Callable, ...]:
-    if inputs is None:
-        from pymc.pytensorf import inputvars
-
-        inputs = inputvars(graph)
-    if not isinstance(inputs, list):
-        inputs = [inputs]
-
-    f_tuple = cast(Callable, get_jaxified_graph(inputs=inputs, outputs=[graph]))
-
-    def f(*args, **kwargs):
-        return f_tuple(*args, **kwargs)[0]
-
-    f_logp = jax.jit(f)
-
-    f_grad = None
-    f_hess = None
-    f_hessp = None
-
-    if use_grad:
-        _f_grad_jax = jax.grad(f)
-
-        def f_grad_jax(x):
-            return jax.numpy.stack(_f_grad_jax(x))
-
-        f_grad = jax.jit(f_grad_jax)
-
-    if use_hessp:
-        if not use_grad:
-            raise ValueError("Cannot ask for Hessian without asking for Gradients")
-
-        def f_hessp_jax(x, p):
-            y, u = jax.jvp(f_grad_jax, (x,), (p,))
-            return jax.numpy.stack(u)
-
-        f_hessp = jax.jit(f_hessp_jax)
-
-    if use_hess:
-        if not use_grad:
-            raise ValueError("Cannot ask for Hessian without asking for Gradients")
-        _f_hess_jax = jax.jacfwd(f_grad_jax)
-
-        def f_hess_jax(x):
-            return jax.numpy.stack(_f_hess_jax(x))
-
-        f_hess = jax.jit(f_hess_jax)
-
-    return f_logp, f_grad, f_hess, f_hessp
+    return laplace(mu, H_inv, model, chains, draws, transform_samples, progressbar)
 
 
 def find_MAP(
@@ -388,6 +543,8 @@ def find_MAP(
     jitter_rvs: list[TensorVariable] | None = None,
     progressbar: bool = True,
     include_transformed: bool = True,
+    use_jax_gradients: bool = False,
+    compile_kwargs: dict | None = None,
     **optimizer_kwargs,
 ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], OptimizeResult]:
     """
@@ -433,8 +590,8 @@ def find_MAP(
     model = pm.modelcontext(model)
     frozen_model = freeze_dims_and_data(model)
 
-    if jitter_rvs is None:
-        jitter_rvs = []
+    jitter_rvs = [] if jitter_rvs is None else jitter_rvs
+    compile_kwargs = {} if compile_kwargs is None else compile_kwargs
 
     ipfn = make_initial_point_fn(
         model=frozen_model,
@@ -449,21 +606,25 @@ def find_MAP(
         {var_name: value for var_name, value in start_dict.items() if var_name in vars_dict}
     )
 
-    [neg_logp], inputs = join_nonshared_inputs(
-        point=start_dict, outputs=[-frozen_model.logp()], inputs=frozen_model.continuous_value_vars
-    )
-
-    f_logp, f_grad, f_hess, f_hessp = make_jax_funcs_from_graph(
-        neg_logp, use_grad, use_hess, use_hessp, inputs=[inputs]
+    f_logp, f_hess, f_hessp = scipy_optimize_funcs_from_loss(
+        loss=-frozen_model.logp(),
+        inputs=frozen_model.continuous_value_vars + frozen_model.discrete_value_vars,
+        initial_point_dict=start_dict,
+        use_grad=use_grad,
+        use_hess=use_hess,
+        use_hessp=use_hessp,
+        use_jax_gradients=use_jax_gradients,
+        compile_kwargs=compile_kwargs,
     )
 
     args = optimizer_kwargs.pop("args", None)
 
+    # better_optimize.minimize will check if f_logp is a fused loss+grad Op, and automatically assign the jac argument
+    # if so. That is why it is not set here, regardless of user settings.
     optimizer_result = minimize(
         f=f_logp,
         x0=cast(np.ndarray[float], initial_params.data),
         args=args,
-        jac=f_grad,
         hess=f_hess,
         hessp=f_hessp,
         progressbar=progressbar,

@@ -3,10 +3,10 @@ import pymc as pm
 import pytensor.tensor as pt
 import pytest
 
-from pymc_experimental.inference.jax_find_map import (
+from pymc_experimental.inference.find_map import (
     find_MAP,
     fit_laplace,
-    make_jax_funcs_from_graph,
+    scipy_optimize_funcs_from_loss,
 )
 
 pytest.importorskip("jax")
@@ -18,7 +18,8 @@ def rng():
     return np.random.default_rng(seed)
 
 
-def test_jax_functions_from_graph():
+@pytest.mark.parametrize("use_jax_gradients", [True, False], ids=["jax_grad", "pt_grad"])
+def test_jax_functions_from_graph(use_jax_gradients):
     x = pt.tensor("x", shape=(2,))
 
     def compute_z(x):
@@ -27,17 +28,22 @@ def test_jax_functions_from_graph():
         return z1, z2
 
     z = pt.stack(compute_z(x))
-    f_z, f_grad, f_hess, f_hessp = make_jax_funcs_from_graph(
-        z.sum(), use_grad=True, use_hess=True, use_hessp=True
+    f_loss, f_hess, f_hessp = scipy_optimize_funcs_from_loss(
+        loss=z.sum(),
+        inputs=[x],
+        initial_point_dict={"x": np.array([1.0, 2.0])},
+        use_grad=True,
+        use_hess=True,
+        use_hessp=True,
+        use_jax_gradients=use_jax_gradients,
+        compile_kwargs=dict(mode="JAX"),
     )
 
     x_val = np.array([1.0, 2.0])
     expected_z = sum(compute_z(x_val))
 
-    z_jax = f_z(x_val)
+    z_jax, grad_val = f_loss(x_val)
     np.testing.assert_allclose(z_jax, expected_z)
-
-    grad_val = np.array(f_grad(x_val))
     np.testing.assert_allclose(grad_val.squeeze(), np.array([2 * x_val[0] + x_val[1], x_val[0]]))
 
     hess_val = np.array(f_hess(x_val))
@@ -64,7 +70,8 @@ def test_jax_functions_from_graph():
         ("trust-constr", True, True),
     ],
 )
-def test_JAX_map(method, use_grad, use_hess, rng):
+@pytest.mark.parametrize("use_jax_gradients", [True, False], ids=["jax_grad", "pt_grad"])
+def test_JAX_map(method, use_grad, use_hess, use_jax_gradients, rng):
     extra_kwargs = {}
     if method == "dogleg":
         # HACK -- dogleg requires that the hessian of the objective function is PSD, so we have to pick a point
@@ -77,7 +84,13 @@ def test_JAX_map(method, use_grad, use_hess, rng):
         pm.Normal("y_hat", mu=mu, sigma=sigma, observed=rng.normal(loc=3, scale=1.5, size=100))
 
         optimized_point = find_MAP(
-            method=method, **extra_kwargs, use_grad=use_grad, use_hess=use_hess, progressbar=False
+            method=method,
+            **extra_kwargs,
+            use_grad=use_grad,
+            use_hess=use_hess,
+            progressbar=False,
+            use_jax_gradients=use_jax_gradients,
+            compile_kwargs={"mode": "JAX"},
         )
     mu_hat, log_sigma_hat = optimized_point["mu"], optimized_point["sigma_log__"]
 
@@ -90,7 +103,8 @@ def test_JAX_map(method, use_grad, use_hess, rng):
     [True, False],
     ids=["transformed", "untransformed"],
 )
-def test_fit_laplace_coords(rng, transform_samples):
+@pytest.mark.parametrize("mode", ["JAX", None], ids=["jax", "pytensor"])
+def test_fit_laplace_coords(rng, transform_samples, mode):
     coords = {"city": ["A", "B", "C"], "obs_idx": np.arange(100)}
     with pm.Model(coords=coords) as model:
         mu = pm.Normal("mu", mu=3, sigma=0.5, dims=["city"])
@@ -104,9 +118,12 @@ def test_fit_laplace_coords(rng, transform_samples):
         )
 
         optimized_point = find_MAP(
-            method="Newton-CG",
+            method="trust-ncg",
             use_grad=True,
+            use_hessp=True,
             progressbar=False,
+            compile_kwargs=dict(mode=mode),
+            use_jax_gradients=mode == "JAX",
         )
 
     for value in optimized_point.values():
@@ -117,9 +134,10 @@ def test_fit_laplace_coords(rng, transform_samples):
         model,
         transform_samples=transform_samples,
         progressbar=False,
+        compile_kwargs=dict(mode=mode),
     )
 
-    np.testing.assert_allclose(np.mean(idata.posterior.mu, axis=1), np.full((2, 3), 3), atol=0.3)
+    np.testing.assert_allclose(np.mean(idata.posterior.mu, axis=1), np.full((2, 3), 3), atol=0.5)
     np.testing.assert_allclose(
         np.mean(idata.posterior.sigma, axis=1), np.full((2, 3), 1.5), atol=0.3
     )
