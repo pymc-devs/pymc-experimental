@@ -418,7 +418,7 @@ def find_MAP(
 
     raveled_optimized = RaveledVars(optimizer_result.x, initial_params.point_map_info)
     unobserved_vars = get_default_varnames(model.unobserved_value_vars, include_transformed)
-    unobserved_vars_values = model.compile_fn(unobserved_vars)(
+    unobserved_vars_values = model.compile_fn(unobserved_vars, mode="FAST_COMPILE")(
         DictToArrayBijection.rmap(raveled_optimized)
     )
 
