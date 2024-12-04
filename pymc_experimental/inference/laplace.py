@@ -41,6 +41,7 @@ from pymc.util import get_default_varnames
 from scipy import stats
 
 from pymc_experimental.inference.find_map import (
+    GradientBackend,
     _unconstrained_vector_to_constrained_rvs,
     find_MAP,
     get_nearest_psd,
@@ -235,7 +236,7 @@ def fit_mvn_to_MAP(
     model: pm.Model | None = None,
     on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
     transform_samples: bool = False,
-    use_jax_gradients: bool = False,
+    gradient_backend: GradientBackend = "pytensor",
     zero_tol: float = 1e-8,
     diag_jitter: float | None = 1e-8,
     compile_kwargs: dict | None = None,
@@ -256,12 +257,16 @@ def fit_mvn_to_MAP(
         If 'error', an error will be raised.
     transform_samples : bool
         Whether to transform the samples back to the original parameter space. Default is True.
+    gradient_backend: str, default "pytensor"
+        The backend to use for gradient computations. Must be one of "pytensor" or "jax".
     zero_tol: float
         Value below which an element of the Hessian matrix is counted as 0.
         This is used to stabilize the computation of the inverse Hessian matrix. Default is 1e-8.
     diag_jitter: float | None
         A small value added to the diagonal of the inverse Hessian matrix to ensure it is positive semi-definite.
         If None, no jitter is added. Default is 1e-8.
+    compile_kwargs: dict, optional
+        Additional keyword arguments to pass to pytensor.function when compiling loss functions
 
     Returns
     -------
@@ -294,7 +299,7 @@ def fit_mvn_to_MAP(
         use_grad=True,
         use_hess=True,
         use_hessp=False,
-        use_jax_gradients=use_jax_gradients,
+        gradient_backend=gradient_backend,
         compile_kwargs=compile_kwargs,
     )
 
@@ -323,7 +328,7 @@ def fit_mvn_to_MAP(
     return mu, H_inv
 
 
-def laplace(
+def sample_laplace_posterior(
     mu: RaveledVars,
     H_inv: np.ndarray,
     model: pm.Model | None = None,
@@ -416,7 +421,7 @@ def fit_laplace(
     jitter_rvs: list[pt.TensorVariable] | None = None,
     progressbar: bool = True,
     include_transformed: bool = True,
-    use_jax_gradients: bool = False,
+    gradient_backend: GradientBackend = "pytensor",
     chains: int = 2,
     draws: int = 500,
     on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
@@ -461,8 +466,8 @@ def fit_laplace(
         Whether to display a progress bar during optimization. Defaults to True.
     include_transformed: bool, optional
         Whether to include transformed variable values in the returned dictionary. Defaults to True.
-    use_jax_gradients: bool, optional
-        Whether to use JAX for gradient calculations. Defaults to False.
+    gradient_backend: str, default "pytensor"
+        The backend to use for gradient computations. Must be one of "pytensor" or "jax".
     chains: int, default: 2
         The number of sampling chains running in parallel.
     draws: int, default: 500
@@ -489,7 +494,7 @@ def fit_laplace(
 
     Examples
     --------
-    >>> from pymc_experimental.inference.laplace import fit_laplace
+    >>> from pymc_experimental.inference.sample_laplace_posterior import fit_laplace
     >>> import numpy as np
     >>> import pymc as pm
     >>> import arviz as az
@@ -526,7 +531,7 @@ def fit_laplace(
         jitter_rvs=jitter_rvs,
         progressbar=progressbar,
         include_transformed=include_transformed,
-        use_jax_gradients=use_jax_gradients,
+        gradient_backend=gradient_backend,
         compile_kwargs=compile_kwargs,
         **optimizer_kwargs,
     )
@@ -541,7 +546,7 @@ def fit_laplace(
         compile_kwargs=compile_kwargs,
     )
 
-    return laplace(
+    return sample_laplace_posterior(
         mu=mu,
         H_inv=H_inv,
         model=model,

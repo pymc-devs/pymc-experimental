@@ -1,7 +1,7 @@
 import logging
 
 from collections.abc import Callable
-from typing import cast
+from typing import Literal, cast, get_args
 
 import jax
 import numpy as np
@@ -17,10 +17,14 @@ from pymc.model.transform.optimization import freeze_dims_and_data
 from pymc.pytensorf import join_nonshared_inputs
 from pymc.util import get_default_varnames
 from pytensor.compile import Function
+from pytensor.compile.mode import Mode
 from pytensor.tensor import TensorVariable
 from scipy.optimize import OptimizeResult
 
 _log = logging.getLogger(__name__)
+
+GradientBackend = Literal["pytensor", "jax"]
+VALID_BACKENDS = get_args(GradientBackend)
 
 
 def set_optimizer_function_defaults(method, use_grad, use_hess, use_hessp):
@@ -85,7 +89,11 @@ def _create_transformed_draws(H_inv, slices, out_shapes, posterior_draws, model,
 
         out.append(untransformed_X)
 
-    f_untransform = pytensor.function([X], out, mode="JAX")
+    f_untransform = pytensor.function(
+        inputs=[pytensor.In(X, borrow=True)],
+        outputs=pytensor.Out(out, borrow=True),
+        mode=Mode(linker="py", optimizer=None),
+    )
     return f_untransform(posterior_draws)
 
 
@@ -209,7 +217,7 @@ def scipy_optimize_funcs_from_loss(
     use_grad: bool,
     use_hess: bool,
     use_hessp: bool,
-    use_jax_gradients: bool = False,
+    gradient_backend: GradientBackend = "pytensor",
     compile_kwargs: dict | None = None,
 ) -> tuple[Callable, ...]:
     """
@@ -230,8 +238,8 @@ def scipy_optimize_funcs_from_loss(
         Whether to compile a function that computes the Hessian of the loss function.
     use_hessp: bool
         Whether to compile a function that computes the Hessian-vector product of the loss function.
-    use_jax_gradients: bool
-        If True, use JAX to compute gradients. This is only possible when ``compile_kwargs["mode"]`` is set to "JAX".
+    gradient_backend: str, one of "jax" or "pytensor"
+        Which backend to use to compute gradients.
     compile_kwargs:
         Additional keyword arguments to pass to the ``pm.compile_pymc`` function.
 
@@ -252,7 +260,12 @@ def scipy_optimize_funcs_from_loss(
             "Cannot compute hessian or hessian-vector product without also computing the gradient"
         )
 
-    use_jax_gradients = use_jax_gradients and use_grad
+    if gradient_backend not in VALID_BACKENDS:
+        raise ValueError(
+            f"Invalid gradient backend: {gradient_backend}. Must be one of {VALID_BACKENDS}"
+        )
+
+    use_jax_gradients = (gradient_backend == "jax") and use_grad
 
     mode = compile_kwargs.get("mode", None)
     if mode is None and use_jax_gradients:
@@ -307,7 +320,7 @@ def find_MAP(
     jitter_rvs: list[TensorVariable] | None = None,
     progressbar: bool = True,
     include_transformed: bool = True,
-    use_jax_gradients: bool = False,
+    gradient_backend: GradientBackend = "pytensor",
     compile_kwargs: dict | None = None,
     **optimizer_kwargs,
 ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], OptimizeResult]:
@@ -342,6 +355,10 @@ def find_MAP(
         Whether to display a progress bar during optimization. Defaults to True.
     include_transformed: bool, optional
         Whether to include transformed variable values in the returned dictionary. Defaults to True.
+    gradient_backend: str, default "pytensor"
+        Which backend to use to compute gradients. Must be one of "pytensor" or "jax".
+    compile_kwargs: dict, optional
+        Additional options to pass to the ``pytensor.function`` function when compiling loss functions.
     **optimizer_kwargs
         Additional keyword arguments to pass to the ``scipy.optimize.minimize`` function.
 
@@ -380,7 +397,7 @@ def find_MAP(
         use_grad=use_grad,
         use_hess=use_hess,
         use_hessp=use_hessp,
-        use_jax_gradients=use_jax_gradients,
+        gradient_backend=gradient_backend,
         compile_kwargs=compile_kwargs,
     )
 

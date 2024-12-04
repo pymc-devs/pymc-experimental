@@ -4,6 +4,7 @@ import pytensor.tensor as pt
 import pytest
 
 from pymc_experimental.inference.find_map import (
+    GradientBackend,
     find_MAP,
     scipy_optimize_funcs_from_loss,
 )
@@ -17,8 +18,8 @@ def rng():
     return np.random.default_rng(seed)
 
 
-@pytest.mark.parametrize("use_jax_gradients", [True, False], ids=["jax_grad", "pt_grad"])
-def test_jax_functions_from_graph(use_jax_gradients):
+@pytest.mark.parametrize("gradient_backend", ["jax", "pytensor"], ids=str)
+def test_jax_functions_from_graph(gradient_backend: GradientBackend):
     x = pt.tensor("x", shape=(2,))
 
     def compute_z(x):
@@ -34,7 +35,7 @@ def test_jax_functions_from_graph(use_jax_gradients):
         use_grad=True,
         use_hess=True,
         use_hessp=True,
-        use_jax_gradients=use_jax_gradients,
+        gradient_backend=gradient_backend,
         compile_kwargs=dict(mode="JAX"),
     )
 
@@ -69,8 +70,8 @@ def test_jax_functions_from_graph(use_jax_gradients):
         ("trust-constr", True, True),
     ],
 )
-@pytest.mark.parametrize("use_jax_gradients", [True, False], ids=["jax_grad", "pt_grad"])
-def test_JAX_map(method, use_grad, use_hess, use_jax_gradients, rng):
+@pytest.mark.parametrize("gradient_backend", ["jax", "pytensor"], ids=str)
+def test_JAX_map(method, use_grad, use_hess, gradient_backend: GradientBackend, rng):
     extra_kwargs = {}
     if method == "dogleg":
         # HACK -- dogleg requires that the hessian of the objective function is PSD, so we have to pick a point
@@ -88,7 +89,7 @@ def test_JAX_map(method, use_grad, use_hess, use_jax_gradients, rng):
             use_grad=use_grad,
             use_hess=use_hess,
             progressbar=False,
-            use_jax_gradients=use_jax_gradients,
+            gradient_backend=gradient_backend,
             compile_kwargs={"mode": "JAX"},
         )
     mu_hat, log_sigma_hat = optimized_point["mu"], optimized_point["sigma_log__"]

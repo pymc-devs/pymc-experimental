@@ -20,7 +20,11 @@ import pytest
 import pymc_experimental as pmx
 
 from pymc_experimental.inference.find_map import find_MAP
-from pymc_experimental.inference.laplace import fit_laplace, fit_mvn_to_MAP, laplace
+from pymc_experimental.inference.laplace import (
+    fit_laplace,
+    fit_mvn_to_MAP,
+    sample_laplace_posterior,
+)
 
 
 @pytest.fixture(scope="session")
@@ -86,7 +90,7 @@ def test_laplace_only_fit():
             method="laplace",
             optimize_method="BFGS",
             progressbar=True,
-            use_jax_gradients=True,
+            gradient_backend="jax",
             compile_kwargs={"mode": "JAX"},
             optimizer_kwargs=dict(maxiter=100_000, gtol=1e-100),
             random_seed=173300,
@@ -127,7 +131,7 @@ def test_fit_laplace_coords(rng, transform_samples, mode):
             use_hessp=True,
             progressbar=False,
             compile_kwargs=dict(mode=mode),
-            use_jax_gradients=mode == "JAX",
+            gradient_backend="jax" if mode == "JAX" else "pytensor",
         )
 
         for value in optimized_point.values():
@@ -139,7 +143,9 @@ def test_fit_laplace_coords(rng, transform_samples, mode):
             transform_samples=transform_samples,
         )
 
-        idata = laplace(mu=mu, H_inv=H_inv, model=model, transform_samples=transform_samples)
+        idata = sample_laplace_posterior(
+            mu=mu, H_inv=H_inv, model=model, transform_samples=transform_samples
+        )
 
     np.testing.assert_allclose(np.mean(idata.posterior.mu, axis=1), np.full((2, 3), 3), atol=0.5)
     np.testing.assert_allclose(
@@ -182,7 +188,7 @@ def test_fit_laplace_ragged_coords(rng):
             progressbar=False,
             use_grad=True,
             use_hessp=True,
-            use_jax_gradients=True,
+            gradient_backend="jax",
             compile_kwargs={"mode": "JAX"},
         )
 
