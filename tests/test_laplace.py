@@ -202,11 +202,11 @@ def test_fit_laplace_ragged_coords(rng):
 
 
 @pytest.mark.parametrize(
-    "transform_samples",
+    "fit_in_unconstrained_space",
     [True, False],
     ids=["transformed", "untransformed"],
 )
-def test_fit_laplace(transform_samples):
+def test_fit_laplace(fit_in_unconstrained_space):
     with pm.Model() as simp_model:
         mu = pm.Normal("mu", mu=3, sigma=0.5)
         sigma = pm.Exponential("sigma", 1)
@@ -221,7 +221,7 @@ def test_fit_laplace(transform_samples):
             optimize_method="trust-ncg",
             use_grad=True,
             use_hessp=True,
-            transform_samples=transform_samples,
+            fit_in_unconstrained_space=fit_in_unconstrained_space,
             optimizer_kwargs=dict(maxiter=100_000, tol=1e-100),
         )
 
@@ -230,7 +230,7 @@ def test_fit_laplace(transform_samples):
             np.mean(idata.posterior.sigma, axis=1), np.full((2,), 1.5), atol=0.1
         )
 
-        if transform_samples:
+        if fit_in_unconstrained_space:
             assert idata.fit.rows.values.tolist() == ["mu", "sigma_log__"]
             np.testing.assert_allclose(idata.fit.mean_vector.values, np.array([3.0, 0.4]), atol=0.1)
         else:
