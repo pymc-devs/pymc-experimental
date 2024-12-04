@@ -408,4 +408,4 @@ def test_ETS_stationary_initialization():
     R, Q = outputs["selection"], outputs["state_cov"]
     P0_expected = linalg.solve_discrete_lyapunov(T_stationary, R @ Q @ R.T)
 
-    assert_allclose(outputs["initial_state_cov"], P0_expected)
+    assert_allclose(outputs["initial_state_cov"], P0_expected, rtol=1e-8, atol=1e-8)

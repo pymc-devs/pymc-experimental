@@ -39,6 +39,6 @@ def fit(method, **kwargs):
         return fit_pathfinder(**kwargs)
 
     if method == "laplace":
-        from pymc_experimental.inference.laplace import laplace
+        from pymc_experimental.inference.laplace import fit_laplace
 
-        return laplace(**kwargs)
+        return fit_laplace(**kwargs)
