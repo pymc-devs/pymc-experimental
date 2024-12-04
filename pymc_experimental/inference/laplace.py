@@ -494,7 +494,7 @@ def fit_laplace(
 
     Examples
     --------
-    >>> from pymc_experimental.inference.sample_laplace_posterior import fit_laplace
+    >>> from pymc_experimental.inference.laplace import fit_laplace
     >>> import numpy as np
     >>> import pymc as pm
     >>> import arviz as az
