@@ -92,7 +92,7 @@ def _create_transformed_draws(H_inv, slices, out_shapes, posterior_draws, model,
     f_untransform = pytensor.function(
         inputs=[pytensor.In(X, borrow=True)],
         outputs=pytensor.Out(out, borrow=True),
-        mode=Mode(linker="py", optimizer=None),
+        mode=Mode(linker="py", optimizer="FAST_COMPILE"),
     )
     return f_untransform(posterior_draws)
 
@@ -223,7 +223,6 @@ def scipy_optimize_funcs_from_loss(
     """
     Compile loss functions for use with scipy.optimize.minimize.
 
-
     Parameters
     ----------
     loss: TensorVariable
@@ -238,8 +237,8 @@ def scipy_optimize_funcs_from_loss(
         Whether to compile a function that computes the Hessian of the loss function.
     use_hessp: bool
         Whether to compile a function that computes the Hessian-vector product of the loss function.
-    gradient_backend: str, one of "jax" or "pytensor"
-        Which backend to use to compute gradients.
+    gradient_backend: str, default "pytensor"
+        Which backend to use to compute gradients. Must be one of "jax" or "pytensor"
     compile_kwargs:
         Additional keyword arguments to pass to the ``pm.compile_pymc`` function.
 
