@@ -13,6 +13,8 @@
 #   limitations under the License.
 
 
+import logging
+
 from functools import reduce
 from itertools import product
 from typing import Literal
@@ -26,13 +28,6 @@ import xarray as xr
 
 from arviz import dict_to_dataset
 from better_optimize.constants import minimize_method
-from inference.find_map import (
-    _log,
-    _unconstrained_vector_to_constrained_rvs,
-    find_MAP,
-    get_nearest_psd,
-    scipy_optimize_funcs_from_loss,
-)
 from pymc import DictToArrayBijection
 from pymc.backends.arviz import (
     coords_and_dims_for_inferencedata,
@@ -44,6 +39,15 @@ from pymc.model.transform.conditioning import remove_value_transforms
 from pymc.model.transform.optimization import freeze_dims_and_data
 from pymc.util import get_default_varnames
 from scipy import stats
+
+from pymc_experimental.inference.find_map import (
+    _unconstrained_vector_to_constrained_rvs,
+    find_MAP,
+    get_nearest_psd,
+    scipy_optimize_funcs_from_loss,
+)
+
+_log = logging.getLogger(__name__)
 
 
 def laplace_draws_to_inferencedata(
