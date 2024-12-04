@@ -425,7 +425,7 @@ def fit_laplace(
     chains: int = 2,
     draws: int = 500,
     on_bad_cov: Literal["warn", "error", "ignore"] = "ignore",
-    transform_samples: bool = False,
+    fit_in_unconstrained_space: bool = False,
     zero_tol: float = 1e-8,
     diag_jitter: float | None = 1e-8,
     optimizer_kwargs: dict | None = None,
@@ -464,8 +464,17 @@ def fit_laplace(
         Variables whose initial values should be jittered. If None, all variables are jittered.
     progressbar : bool, optional
         Whether to display a progress bar during optimization. Defaults to True.
-    include_transformed: bool, optional
-        Whether to include transformed variable values in the returned dictionary. Defaults to True.
+    fit_in_unconstrained_space: bool, default False
+        Whether to fit the Laplace approximation in the unconstrained parameter space. If True, samples will be drawn
+        from a mean and covariance matrix computed at a point in the **unconstrained** parameter space. Samples will
+        then be transformed back to the original parameter space. This will guarantee that the samples will respect
+        the domain of prior distributions (for exmaple, samples from a Beta distribution will be strictly between 0
+        and 1).
+
+        .. warning::
+            This argumnet should be considered highly experimental. It has not been verified if this method produces
+            valid draws from the posterior. **Use at your own risk**.
+
     gradient_backend: str, default "pytensor"
         The backend to use for gradient computations. Must be one of "pytensor" or "jax".
     chains: int, default: 2
@@ -476,15 +485,17 @@ def fit_laplace(
         What to do when ``H_inv`` (inverse Hessian) is not positive semi-definite.
         If 'ignore' or 'warn', the closest positive-semi-definite matrix to ``H_inv`` (in L1 norm) will be returned.
         If 'error', an error will be raised.
-    transform_samples : bool
-        Whether to transform the samples back to the original parameter space. Default is True.
     zero_tol: float
         Value below which an element of the Hessian matrix is counted as 0.
         This is used to stabilize the computation of the inverse Hessian matrix. Default is 1e-8.
     diag_jitter: float | None
         A small value added to the diagonal of the inverse Hessian matrix to ensure it is positive semi-definite.
         If None, no jitter is added. Default is 1e-8.
-    compile_kwargs: optional
+    optimizer_kwargs: dict, optional
+        Additional keyword arguments to pass to scipy.minimize. See the documentation for scipy.optimize.minimize for
+        details. Arguments that are typically passed via ``options`` will be automatically extracted without the need
+        to use a nested dictionary.
+    compile_kwargs: dict, optional
         Additional keyword arguments to pass to pytensor.function.
 
     Returns
@@ -540,7 +551,7 @@ def fit_laplace(
         optimized_point=optimized_point,
         model=model,
         on_bad_cov=on_bad_cov,
-        transform_samples=transform_samples,
+        transform_samples=fit_in_unconstrained_space,
         zero_tol=zero_tol,
         diag_jitter=diag_jitter,
         compile_kwargs=compile_kwargs,
@@ -552,7 +563,7 @@ def fit_laplace(
         model=model,
         chains=chains,
         draws=draws,
-        transform_samples=transform_samples,
+        transform_samples=fit_in_unconstrained_space,
         progressbar=progressbar,
         random_seed=random_seed,
         compile_kwargs=compile_kwargs,
