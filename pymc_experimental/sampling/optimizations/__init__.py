@@ -1,5 +1,6 @@
 # ruff: noqa: F401
 # Add rewrites to the optimization DBs
+import pymc_experimental.sampling.optimizations.conjugacy
 import pymc_experimental.sampling.optimizations.summary_stats
 
 from pymc_experimental.sampling.optimizations.optimize import (

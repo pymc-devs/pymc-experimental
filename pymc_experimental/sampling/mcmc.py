@@ -52,6 +52,44 @@ def opt_sample(
             y = pm.Binomial("y", n=100, p=p, observed=[1, 50, 99, 50]*250)
 
             idata = pmx.opt_sample(verbose=True)
+
+        # Applied optimization: beta_binomial_conjugacy 1x
+        # ConjugateRVSampler: [p]
+
+
+    You can control which optimizations are applied using the `include` and `exclude` arguments:
+
+    .. code:: python
+        import pymc as pm
+        import pymc_experimental as pmx
+
+        with pm.Model() as m:
+            p = pm.Beta("p", 1, 1, shape=(1000,))
+            y = pm.Binomial("y", n=100, p=p, observed=[1, 50, 99, 50]*250)
+
+            idata = pmx.opt_sample(exclude="conjugacy", verbose=True)
+
+        # No optimizations applied
+        # NUTS: [p]
+
+    .. code:: python
+        import pymc as pm
+        import pymc_experimental as pmx
+
+        with pm.Model() as m:
+            a = pm.InverseGamma("a", 1, 1)
+            b = pm.InverseGamma("b", 1, 1)
+            p = pm.Beta("p", a, b, shape=(1000,))
+            y = pm.Binomial("y", n=100, p=p, observed=[1, 50, 99, 50]*250)
+
+            # By default, the conjugacy of p will not be applied because it depends on other free variables
+            idata = pmx.opt_sample(include="conjugacy-eager", verbose=True)
+
+        # Applied optimization: beta_binomial_conjugacy_eager 1x
+        # CompoundStep
+        # >NUTS: [a, b]
+        # >ConjugateRVSampler: [p]
+
     """
     if kwargs.get("step", None) is not None:
         raise ValueError(
