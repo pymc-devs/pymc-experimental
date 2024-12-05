@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytest
 
@@ -52,3 +54,55 @@ def test_sample_opt_summary_stats(capsys):
         idata.posterior["sigma"].mean(), opt_idata.posterior["sigma"].mean(), rtol=1e-2
     )
     assert idata.sample_stats.sampling_time > opt_idata.sample_stats.sampling_time
+
+
+def test_sample_opt_conjugate(caplog, capsys):
+    caplog.set_level(logging.INFO, logger="pymc")
+
+    sample_kwargs = dict(
+        tune=0,
+        draws=250,
+        chains=4,
+        progressbar=False,
+        compute_convergence_checks=False,
+    )
+
+    with Model() as m:
+        p = Beta("p", 1, 1)
+        y = Binomial("y", n=100, p=p, observed=99)
+
+        idata = opt_sample(
+            **sample_kwargs,
+            random_seed=0,
+            verbose=True,
+        )
+
+    assert "Applied optimization: beta_binomial_conjugacy 1x" in capsys.readouterr().out
+
+    # Test it used ConjugateRVSampler
+    assert "ConjugateRVSampler: [p]" in caplog.text
+
+    np.testing.assert_allclose(idata.posterior["p"].mean(), 100 / 102, atol=1e-3)
+    np.testing.assert_allclose(
+        idata.posterior["p"].std(), np.sqrt(100 * 2 / (102**2 * 103)), atol=1e-3
+    )
+
+    # Draws are different across chains
+    assert (np.diff(idata.posterior["p"].isel(draw=0).values) != 0).all()
+
+    # Check draws respect random_seed
+    with m:
+        new_idata = opt_sample(
+            **sample_kwargs,
+            random_seed=0,
+        )
+    np.testing.assert_allclose(
+        idata.posterior["p"].isel(draw=0), new_idata.posterior["p"].isel(draw=0)
+    )
+
+    with m:
+        new_idata = opt_sample(
+            **sample_kwargs,
+            random_seed=1,
+        )
+    assert not np.allclose(idata.posterior["p"].isel(draw=0), new_idata.posterior["p"].isel(draw=0))
