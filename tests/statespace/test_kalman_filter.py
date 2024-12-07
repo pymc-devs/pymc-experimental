@@ -6,11 +6,9 @@ import pytest
 from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_experimental.statespace.filters import (
-    CholeskyFilter,
     KalmanSmoother,
-    SingleTimeseriesFilter,
+    SquareRootFilter,
     StandardFilter,
-    SteadyStateFilter,
     UnivariateFilter,
 )
 from pymc_experimental.statespace.filters.kalman_filter import BaseFilter
@@ -33,25 +31,19 @@ ATOL = 1e-6 if floatX.endswith("64") else 1e-3
 RTOL = 1e-6 if floatX.endswith("64") else 1e-3
 
 standard_inout = initialize_filter(StandardFilter())
-cholesky_inout = initialize_filter(CholeskyFilter())
+cholesky_inout = initialize_filter(SquareRootFilter())
 univariate_inout = initialize_filter(UnivariateFilter())
-single_inout = initialize_filter(SingleTimeseriesFilter())
-steadystate_inout = initialize_filter(SteadyStateFilter())
 
 f_standard = pytensor.function(*standard_inout, on_unused_input="ignore")
 f_cholesky = pytensor.function(*cholesky_inout, on_unused_input="ignore")
 f_univariate = pytensor.function(*univariate_inout, on_unused_input="ignore")
-f_single_ts = pytensor.function(*single_inout, on_unused_input="ignore")
-f_steady = pytensor.function(*steadystate_inout, on_unused_input="ignore")
 
-filter_funcs = [f_standard, f_cholesky, f_univariate, f_single_ts, f_steady]
+filter_funcs = [f_standard, f_cholesky, f_univariate]
 
 filter_names = [
     "StandardFilter",
     "CholeskyFilter",
     "UnivariateFilter",
-    "SingleTimeSeriesFilter",
-    "SteadyStateFilter",
 ]
 
 output_names = [
@@ -68,7 +60,7 @@ output_names = [
 
 def test_base_class_update_raises():
     filter = BaseFilter()
-    inputs = [None] * 8
+    inputs = [None] * 7
     with pytest.raises(NotImplementedError):
         filter.update(*inputs)
 
@@ -195,20 +187,12 @@ def test_output_with_multiple_observed(filter_func, filter_name, rng):
     p, m, r, n = 5, 5, 1, 10
     inputs = make_test_inputs(p, m, r, n, rng)
 
-    if filter_name == "SingleTimeSeriesFilter":
-        with pytest.raises(
-            AssertionError,
-            match="UnivariateTimeSeries filter requires data be at most 1-dimensional",
-        ):
-            filter_func(*inputs)
-
-    else:
-        outputs = filter_func(*inputs)
-        for output_idx, name in enumerate(output_names):
-            expected_output = get_expected_shape(name, p, m, r, n)
-            assert (
-                outputs[output_idx].shape == expected_output
-            ), f"Shape of {name} does not match expected"
+    outputs = filter_func(*inputs)
+    for output_idx, name in enumerate(output_names):
+        expected_output = get_expected_shape(name, p, m, r, n)
+        assert (
+            outputs[output_idx].shape == expected_output
+        ), f"Shape of {name} does not match expected"
 
 
 @pytest.mark.parametrize(
@@ -218,20 +202,13 @@ def test_output_with_multiple_observed(filter_func, filter_name, rng):
 def test_missing_data(filter_func, filter_name, p, rng):
     m, r, n = 5, 1, 10
     inputs = make_test_inputs(p, m, r, n, rng, missing_data=1)
-    if p > 1 and filter_name == "SingleTimeSeriesFilter":
-        with pytest.raises(
-            AssertionError,
-            match="UnivariateTimeSeries filter requires data be at most 1-dimensional",
-        ):
-            filter_func(*inputs)
 
-    else:
-        outputs = filter_func(*inputs)
-        for output_idx, name in enumerate(output_names):
-            expected_output = get_expected_shape(name, p, m, r, n)
-            assert (
-                outputs[output_idx].shape == expected_output
-            ), f"Shape of {name} does not match expected"
+    outputs = filter_func(*inputs)
+    for output_idx, name in enumerate(output_names):
+        expected_output = get_expected_shape(name, p, m, r, n)
+        assert (
+            outputs[output_idx].shape == expected_output
+        ), f"Shape of {name} does not match expected"
 
 
 @pytest.mark.parametrize("filter_func", filter_funcs, ids=filter_names)
@@ -247,12 +224,16 @@ def test_last_smoother_is_last_filtered(filter_func, output_idx, rng):
     assert_allclose(filtered[-1], smoothed[-1])
 
 
-# TODO: These tests omit the SteadyStateFilter, because it gives different results to StatsModels (reason to dump it?)
-@pytest.mark.parametrize("filter_func", filter_funcs[:-1], ids=filter_names[:-1])
+@pytest.mark.parametrize(
+    "filter_func, filter_name", zip(filter_funcs, filter_names), ids=filter_names
+)
 @pytest.mark.parametrize("n_missing", [0, 5], ids=["n_missing=0", "n_missing=5"])
 @pytest.mark.skipif(floatX == "float32", reason="Tests are too sensitive for float32")
-def test_filters_match_statsmodel_output(filter_func, n_missing, rng):
-    fit_sm_mod, inputs = nile_test_test_helper(rng, n_missing)
+def test_filters_match_statsmodel_output(filter_func, filter_name, n_missing, rng):
+    fit_sm_mod, [data, a0, P0, c, d, T, Z, R, H, Q] = nile_test_test_helper(rng, n_missing)
+    if filter_name == "CholeskyFilter":
+        P0 = np.linalg.cholesky(P0)
+    inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
     outputs = filter_func(*inputs)
 
     for output_idx, name in enumerate(output_names):
@@ -299,6 +280,8 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
         pytest.skip("Univariate filter not stable at half precision without measurement error")
 
     fit_sm_mod, [data, a0, P0, c, d, T, Z, R, H, Q] = nile_test_test_helper(rng, n_missing)
+    if filter_name == "CholeskyFilter":
+        P0 = np.linalg.cholesky(P0)
 
     H *= int(obs_noise)
     inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
@@ -320,8 +303,8 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
 
 @pytest.mark.parametrize(
     "filter",
-    [StandardFilter, SingleTimeseriesFilter, CholeskyFilter],
-    ids=["standard", "single_ts", "cholesky"],
+    [StandardFilter, SquareRootFilter],
+    ids=["standard", "cholesky"],
 )
 def test_kalman_filter_jax(filter):
     pytest.importorskip("jax")
@@ -330,16 +313,7 @@ def test_kalman_filter_jax(filter):
     # TODO: Add UnivariateFilter to test; need to figure out the broadcasting issue when 2nd data dim is defined
 
     p, m, r, n = 1, 5, 1, 10
-    inputs, outputs = initialize_filter(filter(), mode="JAX")
-
-    # Shape of the data must be static for jax to know how long the scan is
-    data = inputs.pop(0)
-    data_specified = pt.specify_shape(data, (n, None))
-    data_specified.name = "data"
-    inputs = [data, *inputs]
-
-    outputs = pytensor.graph.clone_replace(outputs, {data: data_specified})
-
+    inputs, outputs = initialize_filter(filter(), mode="JAX", p=p, m=m, r=r, n=n)
     inputs_np = make_test_inputs(p, m, r, n, rng)
 
     f_jax = get_jaxified_graph(inputs, outputs)
