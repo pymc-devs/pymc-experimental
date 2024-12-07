@@ -13,10 +13,8 @@
 #   limitations under the License.
 
 import collections
-import functools
 import logging
-import multiprocessing
-import platform
+import time
 
 from collections.abc import Callable
 from importlib.util import find_spec
@@ -24,6 +22,7 @@ from typing import Literal
 
 import arviz as az
 import blackjax
+import filelock
 import jax
 import numpy as np
 import pymc as pm
@@ -37,7 +36,7 @@ from pymc.blocking import DictToArrayBijection, RaveledVars
 from pymc.initial_point import make_initial_point_fn
 from pymc.model import modelcontext
 from pymc.model.core import Point
-from pymc.pytensorf import compile_pymc, find_rng_nodes, reseed_rngs
+from pymc.pytensorf import compile_pymc
 from pymc.sampling.jax import get_jaxified_graph
 from pymc.util import (
     CustomProgress,
@@ -46,11 +45,14 @@ from pymc.util import (
     default_progress_theme,
     get_default_varnames,
 )
-from pytensor.compile.mode import FAST_COMPILE, FAST_RUN
+from pytensor.compile.io import In
+from pytensor.compile.mode import FAST_COMPILE
 from pytensor.graph import Apply, Op, vectorize_graph
 from rich.console import Console
 
-from pymc_experimental.inference.pathfinder.importance_sampling import psir
+from pymc_experimental.inference.pathfinder.importance_sampling import (
+    importance_sampling as _importance_sampling,
+)
 from pymc_experimental.inference.pathfinder.lbfgs import LBFGSInitFailed, LBFGSOp
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,8 @@ def get_jaxified_logp_of_ravel_inputs(
         A tuple containing the jaxified logp function and the DictToArrayBijection.
     """
 
+    # TODO: set jacobian = True to avoid very high values for pareto k.
+
     new_logprob, new_input = pm.pytensorf.join_nonshared_inputs(
         model.initial_point(), (model.logp(),), model.value_vars, ()
     )
@@ -87,17 +91,22 @@ def get_jaxified_logp_of_ravel_inputs(
     return logp_func
 
 
-def get_logp_dlogp_of_ravel_inputs(model: Model, jacobian: bool = False):
+def get_logp_dlogp_of_ravel_inputs(model: Model, jacobian: bool = True):
+    # setting jacobian = True, otherwise get very high values for pareto k.
     outputs, inputs = pm.pytensorf.join_nonshared_inputs(
         model.initial_point(),
         [model.logp(jacobian=jacobian), model.dlogp(jacobian=jacobian)],
         model.value_vars,
     )
 
-    logp_func = compile_pymc([inputs], outputs[0], mode=FAST_RUN)
+    logp_func = compile_pymc(
+        [inputs], outputs[0], mode=pytensor.compile.mode.Mode(linker="cvm_nogc")
+    )
     logp_func.trust_input = True
 
-    dlogp_func = compile_pymc([inputs], outputs[1], mode=FAST_RUN)
+    dlogp_func = compile_pymc(
+        [inputs], outputs[1], mode=pytensor.compile.mode.Mode(linker="cvm_nogc")
+    )
     dlogp_func.trust_input = True
 
     return logp_func, dlogp_func
@@ -193,7 +202,9 @@ def alpha_recover(x, g, epsilon):
     z = pt.diff(g, axis=0)
     alpha_l_init = pt.ones(N)
     sz = (s * z).sum(axis=-1)
-    update_mask = sz > epsilon * pt.linalg.norm(z, axis=-1)
+    # update_mask = sz > epsilon * pt.linalg.norm(z, axis=-1)
+    # pt.linalg.norm does not work with JAX!!
+    update_mask = sz > epsilon * pt.sqrt(pt.sum(z**2, axis=-1))
 
     alpha, _ = pytensor.scan(
         fn=scan_body,
@@ -392,6 +403,7 @@ def bfgs_sample_sparse(
 
 
 def bfgs_sample(
+    rng,
     num_samples: int,
     x,  # position
     g,  # grad
@@ -429,7 +441,7 @@ def bfgs_sample(
         allow_gc=False,
     )
 
-    u = pt.random.normal(size=(L, num_samples, N))
+    u = pt.random.normal(size=(L, num_samples, N), rng=rng)
 
     sample_inputs = (
         x,
@@ -462,54 +474,8 @@ def bfgs_sample(
     return phi, logQ_phi
 
 
-# TODO: remove make_initial_points function when feature request is implemented: https://github.com/pymc-devs/pymc/issues/7555
-def make_initial_points(
-    random_seed: RandomSeed | None = None,
-    model=None,
-    jitter: float = 2.0,
-) -> DictToArrayBijection:
-    """
-    create jittered initial point for pathfinder
-
-    Parameters
-    ----------
-    model : Model
-        pymc model
-    jitter : float
-        initial values in the unconstrained space are jittered by the uniform distribution, U(-jitter, jitter). Set jitter to 0 for no jitter.
-    random_seed : RandomSeed | None
-        random seed for reproducibility
-
-    Returns
-    -------
-    ndarray
-        jittered initial point
-    """
-
-    ipfn = make_initial_point_fn(
-        model=model,
-    )
-    ip = Point(ipfn(random_seed), model=model)
-    ip_map = DictToArrayBijection.map(ip)
-
-    rng = np.random.default_rng(random_seed)
-    jitter_value = rng.uniform(-jitter, jitter, size=ip_map.data.shape)
-    ip_map = ip_map._replace(data=ip_map.data + jitter_value)
-    return ip_map.data
-
-
-def compute_logp(logp_func, arr):
-    # .vectorize is slower than apply_along_axis
-    logP = np.apply_along_axis(logp_func, axis=-1, arr=arr)
-    # replace nan with -inf since np.argmax will return the first index at nan
-    mask = np.isnan(logP) | np.isinf(logP)
-    if np.all(mask):
-        raise PathFailure
-    return np.where(mask, -np.inf, logP)
-
-
 class LogLike(Op):
-    __props__ = ()
+    __props__ = ("logp_func",)
 
     def __init__(self, logp_func):
         self.logp_func = logp_func
@@ -523,18 +489,12 @@ class LogLike(Op):
 
     def perform(self, node: Apply, inputs, outputs) -> None:
         phi = inputs[0]
-        logp = compute_logp(self.logp_func, arr=phi)
-        outputs[0][0] = logp
-
-
-def make_initial_points_fn(model, jitter):
-    return functools.partial(make_initial_points, model=model, jitter=jitter)
-
-
-def make_lbfgs_fn(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls):
-    x0 = pt.dvector("x0")
-    lbfgs_op = LBFGSOp(fn, grad_fn, maxcor, maxiter, ftol, gtol, maxls)
-    return pytensor.function([x0], lbfgs_op(x0), mode=FAST_RUN)
+        logP = np.apply_along_axis(self.logp_func, axis=-1, arr=phi)
+        # replace nan with -inf since np.argmax will return the first index at nan
+        mask = np.isnan(logP) | np.isinf(logP)
+        if np.all(mask):
+            raise PathFailure
+        outputs[0][0] = np.where(mask, -np.inf, logP)
 
 
 class PathFailure(Exception):
@@ -546,7 +506,9 @@ class PathFailure(Exception):
         super().__init__(message)
 
 
-def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
+def make_pathfinder_body(
+    rng, x_full, g_full, logp_func, num_draws, maxcor, num_elbo_draws, epsilon
+):
     """Returns a compiled function f where:
     f-inputs:
         seeds:list[int, int],
@@ -559,8 +521,8 @@ def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
     """
 
     # x_full, g_full: (L+1, N)
-    x_full = pt.matrix("x", dtype="float64")
-    g_full = pt.matrix("g", dtype="float64")
+    # x_full = pt.matrix("x", dtype="float64")
+    # g_full = pt.matrix("g", dtype="float64")
 
     num_draws = pt.constant(num_draws, "num_draws", dtype="int32")
     num_elbo_draws = pt.constant(num_elbo_draws, "num_elbo_draws", dtype="int32")
@@ -575,15 +537,16 @@ def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
     g = g_full[1:]
 
     phi, logQ_phi = bfgs_sample(
-        num_samples=num_elbo_draws, x=x, g=g, alpha=alpha, beta=beta, gamma=gamma
+        rng=rng, num_samples=num_elbo_draws, x=x, g=g, alpha=alpha, beta=beta, gamma=gamma
     )
 
     loglike = LogLike(logp_func)
     logP_phi = loglike(phi)
     elbo = pt.mean(logP_phi - logQ_phi, axis=-1)
-    lstar = pt.argmax(elbo)
+    lstar = pt.argmax(elbo, axis=0)
 
     psi, logQ_psi = bfgs_sample(
+        rng=rng,
         num_samples=num_draws,
         x=x,
         g=g,
@@ -594,22 +557,7 @@ def make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon):
     )
     logP_psi = loglike(psi)
 
-    unseeded_fn = pytensor.function(
-        inputs=[x_full, g_full],
-        outputs=[psi, logP_psi, logQ_psi],
-        on_unused_input="ignore",
-        mode=FAST_RUN,
-    )
-
-    rngs = find_rng_nodes(unseeded_fn.maker.fgraph.outputs)
-
-    @functools.wraps(unseeded_fn)
-    def seeded_fn(random_seed=None, *args, **kwargs):
-        if random_seed is not None:
-            reseed_rngs(rngs, random_seed)
-        return unseeded_fn(*args, **kwargs)
-
-    return seeded_fn
+    return psi, logP_psi, logQ_psi
 
 
 def make_single_pathfinder_fn(
@@ -624,6 +572,8 @@ def make_single_pathfinder_fn(
     jitter: float,
     epsilon: float,
 ):
+    rng = pt.random.type.RandomGeneratorType()("rng")
+
     logp_func, dlogp_func = get_logp_dlogp_of_ravel_inputs(model)
 
     def neg_logp_func(x):
@@ -632,35 +582,75 @@ def make_single_pathfinder_fn(
     def neg_dlogp_func(x):
         return -dlogp_func(x)
 
-    # initial_point_fn: (jitter_seed) -> x0
-    initial_point_fn = make_initial_points_fn(model=model, jitter=jitter)
+    # initial point
+    # TODO: remove make_initial_points function when feature request is implemented: https://github.com/pymc-devs/pymc/issues/7555
+    ipfn = make_initial_point_fn(model=model)
+    ip = Point(ipfn(None), model=model)
+    ip_map = DictToArrayBijection.map(ip)
 
-    # lbfgs_fn: (x0) -> (x, g)
-    lbfgs_fn = make_lbfgs_fn(neg_logp_func, neg_dlogp_func, maxcor, maxiter, ftol, gtol, maxls)
-    lbfgs_fn.trust_input = True
+    x_base = pt.constant(ip_map.data, name="x_base")
+    jitter = pt.constant(jitter, name="jitter")
+    jitter_value = pt.random.uniform(-jitter, jitter, size=x_base.shape, rng=rng)
+    x0 = x_base + jitter_value
 
-    # pathfinder_body_fn: (tuple[elbo_draw_seed, num_draws_seed], x, g) -> (psi, logP_psi, logQ_psi)
-    pathfinder_body_fn = make_pathfinder_body(logp_func, num_draws, maxcor, num_elbo_draws, epsilon)
-    pathfinder_body_fn.trust_input = True
+    # lbfgs
+    lbfgs_op = LBFGSOp(neg_logp_func, neg_dlogp_func, maxcor, maxiter, ftol, gtol, maxls)
+    x, g = lbfgs_op(x0)
 
-    def single_pathfinder_fn(random_seed):
-        # pathfinder_body_fn has 2 shared variable RNGs in the graph as bfgs_sample gets called twice.
-        jitter_seed, *pathfinder_seed = _get_seeds_per_chain(random_seed, 3)
-        x0 = initial_point_fn(jitter_seed)
-        x, g = lbfgs_fn(x0)
-        psi, logP_psi, logQ_psi = pathfinder_body_fn(pathfinder_seed, x, g)
-        # psi: (1, M, N)
-        # logP_psi: (1, M)
-        # logQ_psi: (1, M)
-        return psi, logP_psi, logQ_psi
+    # pathfinder body
+    psi, logP_psi, logQ_psi = make_pathfinder_body(
+        rng, x, g, logp_func, num_draws, maxcor, num_elbo_draws, epsilon
+    )
 
-    # single_pathfinder_fn: (random_seed) -> (psi, logP_psi, logQ_psi)
+    # single_pathfinder_fn: () -> (psi, logP_psi, logQ_psi)
+    single_pathfinder_fn = pytensor.function(
+        [In(rng, mutable=True)],
+        [psi, logP_psi, logQ_psi],
+        mode=pytensor.compile.mode.Mode(linker="cvm_nogc"),
+    )
+    single_pathfinder_fn.trust_input = True
     return single_pathfinder_fn
+    # return rng, (psi, logP_psi, logQ_psi)
 
 
-# keep this in case we need it for multiprocessing
+def _calculate_max_workers():
+    import multiprocessing
+
+    total_cpus = multiprocessing.cpu_count() or 1
+    processes = max(2, int(total_cpus * 0.3))
+    if processes % 2 != 0:
+        processes += 1
+    return processes
+
+
+def _thread(compiled_fn, seed):
+    # kernel crashes without lock_ctx
+    from pytensor.compile.compilelock import lock_ctx
+
+    with lock_ctx():
+        rng = np.random.default_rng(seed)
+        result = compiled_fn(rng)
+    return result
+
+
+def _process(compiled_fn, seed):
+    import cloudpickle
+
+    from pytensor.compile.compilelock import lock_ctx
+
+    with lock_ctx():
+        in_out_pickled = isinstance(compiled_fn, bytes)
+        fn = cloudpickle.loads(compiled_fn)
+        rng = np.random.default_rng(seed)
+        result = fn(rng) if not in_out_pickled else cloudpickle.dumps(fn(rng))
+    return result
+
+
 def _get_mp_context(mp_ctx=None):
     """code snippet taken from ParallelSampler in pymc/pymc/sampling/parallel.py"""
+    import multiprocessing
+    import platform
+
     if mp_ctx is None or isinstance(mp_ctx, str):
         if mp_ctx is None and platform.system() == "Darwin":
             if platform.processor() == "arm":
@@ -676,12 +666,49 @@ def _get_mp_context(mp_ctx=None):
     return mp_ctx
 
 
-def calculate_processes():
-    total_cpus = multiprocessing.cpu_count() or 1
-    processes = max(2, int(total_cpus * 0.3))
-    if processes % 2 != 0:
-        processes += 1
-    return processes
+def _execute_concurrently(compiled_fn, seeds, concurrent, max_workers):
+    if concurrent == "thread":
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+    elif concurrent == "process":
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        import cloudpickle
+    else:
+        raise ValueError(f"Invalid concurrent value: {concurrent}")
+
+    executor_cls = ThreadPoolExecutor if concurrent == "thread" else ProcessPoolExecutor
+
+    fn = _thread if concurrent == "thread" else _process
+
+    executor_kwargs = {} if concurrent == "thread" else {"mp_context": _get_mp_context()}
+
+    max_workers = max_workers or (None if concurrent == "thread" else _calculate_max_workers())
+
+    compiled_fn = compiled_fn if concurrent == "thread" else cloudpickle.dumps(compiled_fn)
+
+    with executor_cls(max_workers=max_workers, **executor_kwargs) as executor:
+        futures = [executor.submit(fn, compiled_fn, seed) for seed in seeds]
+        for f in as_completed(futures):
+            try:
+                yield (f.result() if concurrent == "thread" else cloudpickle.loads(f.result()))
+            except Exception as e:
+                yield e
+
+
+def _execute_serially(compiled_fn, seeds):
+    for seed in seeds:
+        try:
+            rng = np.random.default_rng(seed)
+            yield compiled_fn(rng)
+        except Exception as e:
+            yield e
+
+
+def make_generator(concurrent, compiled_fn, seeds, max_workers=None):
+    if concurrent is not None:
+        yield from _execute_concurrently(compiled_fn, seeds, concurrent, max_workers)
+    else:
+        yield from _execute_serially(compiled_fn, seeds)
 
 
 def multipath_pathfinder(
@@ -697,14 +724,13 @@ def multipath_pathfinder(
     num_elbo_draws: int,
     jitter: float,
     epsilon: float,
-    psis_resample: bool,
+    importance_sampling: Literal["psis", "psir", "identity", "none"],
     progressbar: bool,
+    concurrent: Literal["thread", "process"] | None,
     random_seed: RandomSeed,
     **pathfinder_kwargs,
 ):
-    seeds = _get_seeds_per_chain(random_seed, num_paths + 1)
-    path_seeds = seeds[:-1]
-    choice_seed = seeds[-1]
+    *path_seeds, choice_seed = _get_seeds_per_chain(random_seed, num_paths + 1)
     N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
 
     single_pathfinder_fn = make_single_pathfinder_fn(
@@ -720,6 +746,13 @@ def multipath_pathfinder(
         epsilon,
     )
 
+    # NOTE: from limited tests, no concurrency is faster than thread, and thread is faster than process. But I suspect this also depends on the model size and maxcor setting.
+    generator = make_generator(
+        concurrent=concurrent,
+        compiled_fn=single_pathfinder_fn,
+        seeds=path_seeds,
+    )
+
     results = []
     num_init_failed = 0
     num_path_failed = 0
@@ -730,15 +763,30 @@ def multipath_pathfinder(
             disable=not progressbar,
         ) as progress:
             task = progress.add_task("Fitting", total=num_paths)
-            for seed in path_seeds:
+            for result in generator:
                 try:
-                    results.append(single_pathfinder_fn(seed))
+                    if isinstance(result, Exception):
+                        raise result
+                    else:
+                        results.append(result)
                 except LBFGSInitFailed:
                     num_init_failed += 1
                     continue
                 except PathFailure:
                     num_path_failed += 1
                     continue
+                except filelock.Timeout:
+                    logger.warning("Lock timeout. Retrying...")
+                    num_attempts = 0
+                    while num_attempts < 10:
+                        try:
+                            results.append(result)
+                            logger.info("Lock acquired. Continuing...")
+                            break
+                        except filelock.Timeout:
+                            num_attempts += 1
+                            time.sleep(0.5)
+                            logger.warning(f"Lock timeout. Retrying... ({num_attempts}/10)")
                 progress.update(task, advance=1)
     except (KeyboardInterrupt, StopIteration) as e:
         if isinstance(e, StopIteration):
@@ -769,18 +817,19 @@ def multipath_pathfinder(
     logP -= log_I
     logQ -= log_I
     logiw = logP - logQ
-    if psis_resample:
-        return psir(samples, logiw=logiw, num_draws=num_draws, random_seed=choice_seed)
-    else:
-        logger.warning(
-            "PSIS resampling is disabled. The samples are returned as is which may include samples from failed paths with non-finite logP or logQ values."
-        )
-        return samples
+
+    return _importance_sampling(
+        samples=samples,
+        logiw=logiw,
+        num_draws=num_draws,
+        method=importance_sampling,
+        random_seed=choice_seed,
+    )
 
 
 def fit_pathfinder(
     model=None,
-    num_paths: int = 8,  # I
+    num_paths: int = 4,  # I
     num_draws: int = 1000,  # R
     num_draws_per_path: int = 1000,  # M
     maxcor: int | None = None,  # J
@@ -789,10 +838,11 @@ def fit_pathfinder(
     gtol: float = 1e-8,
     maxls=1000,
     num_elbo_draws: int = 10,  # K
-    jitter: float = 1.0,
+    jitter: float = 2.0,
     epsilon: float = 1e-8,
-    psis_resample: bool = True,
+    importance_sampling: Literal["psis", "psir", "identity", "none"] = "psis",
     progressbar: bool = False,
+    concurrent: Literal["thread", "process"] | None = None,
     random_seed: RandomSeed | None = None,
     postprocessing_backend: Literal["cpu", "gpu"] = "cpu",
     inference_backend: Literal["pymc", "blackjax"] = "pymc",
@@ -809,29 +859,29 @@ def fit_pathfinder(
     model : pymc.Model
         The PyMC model to fit the Pathfinder algorithm to.
     num_paths : int
-        Number of independent paths to run in the Pathfinder algorithm. (default is 8)
+        Number of independent paths to run in the Pathfinder algorithm. (default is 4) It is recommended to increase num_paths when increasing the jitter value.
     num_draws : int, optional
         Total number of samples to draw from the fitted approximation (default is 1000).
     num_draws_per_path : int, optional
         Number of samples to draw per path (default is 1000).
     maxcor : int, optional
-        Maximum number of variable metric corrections used to define the limited memory matrix (default is None). If None, maxcor is set to int(floor(N / 1.9)) or 5 whichever is greater.
+        Maximum number of variable metric corrections used to define the limited memory matrix (default is None). If None, maxcor is set to ceil(3 * log(N)) or 5 whichever is greater, where N is the number of model parameters.
     maxiter : int, optional
         Maximum number of iterations for the L-BFGS optimisation (default is 1000).
     ftol : float, optional
-        Tolerance for the decrease in the objective function (default is 1e-10).
+        Tolerance for the decrease in the objective function (default is 1e-5).
     gtol : float, optional
-        Tolerance for the norm of the gradient (default is 1e-16).
+        Tolerance for the norm of the gradient (default is 1e-8).
     maxls : int, optional
         Maximum number of line search steps for the L-BFGS algorithm (default is 1000).
     num_elbo_draws : int, optional
         Number of draws for the Evidence Lower Bound (ELBO) estimation (default is 10).
     jitter : float, optional
-        Amount of jitter to apply to initial points (default is 1.0). Note that Pathfinder may be highly sensitive to the jitter value.
+        Amount of jitter to apply to initial points (default is 2.0). Note that Pathfinder may be highly sensitive to the jitter value. It is recommended to increase num_paths when increasing the jitter value.
     epsilon: float
-        value used to filter out large changes in the direction of the update gradient at each iteration l in L. iteration l are only accepted if delta_theta[l] * delta_grad[l] > epsilon * L2_norm(delta_grad[l]) for each l in L. (default is 1e-11).
-    psis_resample : bool, optional
-        Whether to apply Pareto Smoothed Importance Sampling Resampling (default is True). If false, the samples are returned as is (i.e. no resampling is applied) of the size num_draws_per_path * num_paths.
+        value used to filter out large changes in the direction of the update gradient at each iteration l in L. Iteration l is only accepted if delta_theta[l] * delta_grad[l] > epsilon * L2_norm(delta_grad[l]) for each l in L. (default is 1e-8).
+    importance_sampling : str, optional
+        importance sampling method to use. Options are "psis" (default), "psir", "identity", "none. Pareto Smoothed Importance Sampling (psis) is recommended in many cases for more stable results than Pareto Smoothed Importance Resampling (psir). identity applies the log importance weights directly without resampling. none applies no importance sampling weights and returns the samples as is of size num_draws_per_path * num_paths.
     progressbar : bool, optional
         Whether to display a progress bar (default is False). Setting this to True will likely increase the computation time.
     random_seed : RandomSeed, optional
@@ -840,6 +890,8 @@ def fit_pathfinder(
         Backend for postprocessing transformations, either "cpu" or "gpu" (default is "cpu"). This is only relevant if inference_backend is "blackjax".
     inference_backend : str, optional
         Backend for inference, either "pymc" or "blackjax" (default is "pymc").
+    concurrent : str, optional
+        Whether to run paths concurrently, either "thread" or "process" or None (default is None). Setting concurrent to None runs paths serially and is generally faster with smaller models because of the overhead that comes with concurrency. For larger models or maxcor values, thread or process is expected to be faster than None.
     **pathfinder_kwargs
         Additional keyword arguments for the Pathfinder algorithm.
 
@@ -855,9 +907,13 @@ def fit_pathfinder(
 
     model = modelcontext(model)
     N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
+    logger.warning(f"Number of parameters: {N}")
+
     if maxcor is None:
-        maxcor = np.floor(N / 1.9).astype(np.int32)
+        # Based on tests, this seems to be a good default value. Higher maxcor values do not necessarily lead to better results and can slow down the algorithm. Also, if results do benefit from a higher maxcor value, the improvement may be diminishing w.r.t. the increase in maxcor.
+        maxcor = np.ceil(3 * np.log(N)).astype(np.int32)
         maxcor = max(maxcor, 5)
+        logger.warning(f"Setting maxcor to {maxcor}")
 
     if inference_backend == "pymc":
         pathfinder_samples = multipath_pathfinder(
@@ -873,8 +929,9 @@ def fit_pathfinder(
             num_elbo_draws=num_elbo_draws,
             jitter=jitter,
             epsilon=epsilon,
-            psis_resample=psis_resample,
+            importance_sampling=importance_sampling,
             progressbar=progressbar,
+            concurrent=concurrent,
             random_seed=random_seed,
             **pathfinder_kwargs,
         )
@@ -887,7 +944,8 @@ def fit_pathfinder(
         jitter_seed, pathfinder_seed, sample_seed = _get_seeds_per_chain(random_seed, 3)
         # TODO: extend initial points initialisation to blackjax
         # TODO: extend blackjax pathfinder to multiple paths
-        x0 = make_initial_points(jitter_seed, model, jitter=jitter)
+        # TODO: make jitter in blackjax package
+        x0, _ = DictToArrayBijection.map(model.initial_point())
         logp_func = get_jaxified_logp_of_ravel_inputs(model)
         pathfinder_state, pathfinder_info = blackjax.vi.pathfinder.approximate(
             rng_key=jax.random.key(pathfinder_seed),

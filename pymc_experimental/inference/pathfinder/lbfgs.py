@@ -69,6 +69,8 @@ class LBFGSInitFailed(Exception):
 
 
 class LBFGSOp(Op):
+    __props__ = ("fn", "grad_fn", "maxcor", "maxiter", "ftol", "gtol", "maxls")
+
     def __init__(self, fn, grad_fn, maxcor, maxiter=1000, ftol=1e-5, gtol=1e-8, maxls=1000):
         self.fn = fn
         self.grad_fn = grad_fn
