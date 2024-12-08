@@ -45,7 +45,8 @@ def test_pathfinder(inference_backend):
     with model:
         idata = pmx.fit(
             method="pathfinder",
-            num_paths=20,
+            num_paths=50,
+            jitter=10.0,
             random_seed=41,
             inference_backend=inference_backend,
         )
@@ -53,13 +54,13 @@ def test_pathfinder(inference_backend):
     assert idata.posterior["mu"].shape == (1, 1000)
     assert idata.posterior["tau"].shape == (1, 1000)
     assert idata.posterior["theta"].shape == (1, 1000, 8)
-    # NOTE: Pathfinder tends to return means around 7 and tau around 0.58. So need to increase atol by a large amount.
     if inference_backend == "pymc":
-        np.testing.assert_allclose(idata.posterior["mu"].mean(), 5.0, atol=2.5)
-        np.testing.assert_allclose(idata.posterior["tau"].mean(), 4.15, atol=3.8)
+        np.testing.assert_allclose(idata.posterior["mu"].mean(), 5.0, atol=1.6)
+        np.testing.assert_allclose(idata.posterior["tau"].mean(), 4.15, atol=1.5)
 
 
 def test_bfgs_sample():
+    import pytensor
     import pytensor.tensor as pt
 
     from pymc_experimental.inference.pathfinder.pathfinder import (
@@ -73,6 +74,7 @@ def test_bfgs_sample():
     L = Lp1 - 1
     J = 6
     num_samples = 1000
+    rng = pytensor.shared(np.random.default_rng(42), name="rng")
 
     # mock data
     x_data = np.random.randn(Lp1, N)
@@ -90,6 +92,7 @@ def test_bfgs_sample():
 
     # sample
     phi, logq = bfgs_sample(
+        rng=rng,
         num_samples=num_samples,
         x=x,
         g=g,

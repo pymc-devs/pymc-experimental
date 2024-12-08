@@ -118,7 +118,13 @@ def convert_flat_trace_to_idata(
     postprocessing_backend="cpu",
     inference_backend="pymc",
     model=None,
+    importance_sampling: Literal["psis", "psir", "identity", "none"] = "psis",
 ):
+    if importance_sampling == "none":
+        # samples.ndim == 3 in this case, otherwise ndim == 2
+        num_paths, num_pdraws, N = samples.shape
+        samples = samples.reshape(-1, N)
+
     model = modelcontext(model)
     ip = model.initial_point()
     ip_point_map_info = DictToArrayBijection.map(ip).point_map_info
@@ -152,6 +158,10 @@ def convert_flat_trace_to_idata(
         )
         fn.trust_input = True
         result = fn(*list(trace.values()))
+
+        if importance_sampling == "none":
+            result = [res.reshape(num_paths, num_pdraws, *res.shape[2:]) for res in result]
+
     elif inference_backend == "blackjax":
         jax_fn = get_jaxified_graph(inputs=model.value_vars, outputs=vars_to_sample)
         result = jax.vmap(jax.vmap(jax_fn))(
@@ -731,7 +741,6 @@ def multipath_pathfinder(
     **pathfinder_kwargs,
 ):
     *path_seeds, choice_seed = _get_seeds_per_chain(random_seed, num_paths + 1)
-    N = DictToArrayBijection.map(model.initial_point()).data.shape[0]
 
     single_pathfinder_fn = make_single_pathfinder_fn(
         model,
@@ -808,19 +817,11 @@ def multipath_pathfinder(
     logP = np.concatenate(logP)
     logQ = np.concatenate(logQ)
 
-    samples = samples.reshape(-1, N)
-    logP = logP.ravel()
-    logQ = logQ.ravel()
-
-    # adjust log densities
-    log_I = np.log(num_paths)
-    logP -= log_I
-    logQ -= log_I
-    logiw = logP - logQ
-
     return _importance_sampling(
         samples=samples,
-        logiw=logiw,
+        logP=logP,
+        logQ=logQ,
+        # logiw=logiw,
         num_draws=num_draws,
         method=importance_sampling,
         random_seed=choice_seed,
@@ -881,7 +882,7 @@ def fit_pathfinder(
     epsilon: float
         value used to filter out large changes in the direction of the update gradient at each iteration l in L. Iteration l is only accepted if delta_theta[l] * delta_grad[l] > epsilon * L2_norm(delta_grad[l]) for each l in L. (default is 1e-8).
     importance_sampling : str, optional
-        importance sampling method to use. Options are "psis" (default), "psir", "identity", "none. Pareto Smoothed Importance Sampling (psis) is recommended in many cases for more stable results than Pareto Smoothed Importance Resampling (psir). identity applies the log importance weights directly without resampling. none applies no importance sampling weights and returns the samples as is of size num_draws_per_path * num_paths.
+        importance sampling method to use which applies sampling based on the log importance weights equal to logP - logQ. Options are "psis" (default), "psir", "identity", "none". Pareto Smoothed Importance Sampling (psis) is recommended in many cases for more stable results than Pareto Smoothed Importance Resampling (psir). identity applies the log importance weights directly without resampling. none applies no importance sampling weights and returns the samples as is of size (num_paths, num_draws_per_path, N) where N is the number of model parameters, otherwise sample size is (num_draws, N).
     progressbar : bool, optional
         Whether to display a progress bar (default is False). Setting this to True will likely increase the computation time.
     random_seed : RandomSeed, optional
@@ -974,5 +975,6 @@ def fit_pathfinder(
         postprocessing_backend=postprocessing_backend,
         inference_backend=inference_backend,
         model=model,
+        importance_sampling=importance_sampling,
     )
     return idata

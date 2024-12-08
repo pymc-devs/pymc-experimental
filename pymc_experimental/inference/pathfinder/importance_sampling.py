@@ -8,7 +8,6 @@ import numpy as np
 import pytensor.tensor as pt
 
 from pytensor.graph import Apply, Op
-from pytensor.tensor.variable import TensorVariable
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +33,12 @@ class PSIS(Op):
 
 
 def importance_sampling(
-    samples: TensorVariable,
-    # logP: TensorVariable,
-    # logQ: TensorVariable,
-    logiw: TensorVariable,
+    samples: np.ndarray,
+    logP: np.ndarray,
+    logQ: np.ndarray,
     num_draws: int,
     method: Literal["psis", "psir", "identity", "none"],
+    logiw: np.ndarray | None = None,
     random_seed: int | None = None,
 ) -> np.ndarray:
     """Pareto Smoothed Importance Resampling (PSIR)
@@ -79,21 +78,36 @@ def importance_sampling(
     Zhang, L., Carpenter, B., Gelman, A., & Vehtari, A. (2022). Pathfinder: Parallel quasi-Newton variational inference. Journal of Machine Learning Research, 23(306), 1-49.
     """
 
-    if method == "psis":
-        replace = False
-        logiw, pareto_k = PSIS()(logiw)
-    elif method == "psir":
-        replace = True
-        logiw, pareto_k = PSIS()(logiw)
-    elif method == "identity":
-        replace = False
-        logiw = logiw
-        pareto_k = None
-    elif method == "none":
+    num_paths, num_pdraws, N = samples.shape
+
+    if method == "none":
         logger.warning(
             "importance sampling is disabled. The samples are returned as is which may include samples from failed paths with non-finite logP or logQ values. It is recommended to use importance_sampling='psis' for better stability."
         )
         return samples
+    else:
+        samples = samples.reshape(-1, N)
+        logP = logP.ravel()
+        logQ = logQ.ravel()
+
+        # adjust log densities
+        log_I = np.log(num_paths)
+        logP -= log_I
+        logQ -= log_I
+        logiw = logP - logQ
+
+        if method == "psis":
+            replace = False
+            logiw, pareto_k = PSIS()(logiw)
+        elif method == "psir":
+            replace = True
+            logiw, pareto_k = PSIS()(logiw)
+        elif method == "identity":
+            replace = False
+            logiw = logiw
+            pareto_k = None
+        else:
+            raise ValueError(f"Invalid importance sampling method: {method}")
 
     # NOTE: Pareto k is normally bad for Pathfinder even when the posterior is close to the NUTS posterior or closer to NUTS than ADVI.
     # Pareto k may not be a good diagnostic for Pathfinder.
@@ -121,7 +135,7 @@ def importance_sampling(
                 "Consider reparametrising the model all together or ensure the input data are correct."
             )
 
-    logger.warning(f"Pareto k value: {pareto_k:.2f}")
+        logger.warning(f"Pareto k value: {pareto_k:.2f}")
 
     p = pt.exp(logiw - pt.logsumexp(logiw)).eval()
     rng = np.random.default_rng(random_seed)
