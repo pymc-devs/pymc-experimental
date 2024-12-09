@@ -214,8 +214,8 @@ class DiscreteMarkovChain(Distribution):
         discrete_mc_op = DiscreteMarkovChainRV(
             inputs=[P_, steps_, init_dist_, state_rng],
             outputs=[state_next_rng, discrete_mc_],
-            ndim_supp=1,
             n_lags=n_lags,
+            extended_signature="(p,p),(),(p),[rng]->[rng],(t)",
         )
 
         discrete_mc = discrete_mc_op(P, steps, init_dist, state_rng)
