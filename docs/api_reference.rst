@@ -39,6 +39,8 @@ Distributions
    GeneralizedPoisson
    BetaNegativeBinomial
    GenExtreme
+   MvAsymmetricLaplace
+   MvLaplace
    R2D2M2CP
    Skellam
    histogram_approximation
