@@ -281,10 +281,20 @@ def discrete_mc_logp(op, values, P, steps, init_dist, state_rng, **kwargs):
 class DiscreteMarkovChainGibbsMetropolis(CategoricalGibbsMetropolis):
     name = "discrete_markov_chain_gibbs_metropolis"
 
-    def __init__(self, vars, proposal="uniform", order="random", model=None):
+    def __init__(
+        self,
+        vars,
+        proposal="uniform",
+        order="random",
+        model=None,
+        initial_point=None,
+        compile_kwargs: dict | None = None,
+        **kwargs,
+    ):
         model = pm.modelcontext(model)
         vars = get_value_vars_from_user_vars(vars, model)
-        initial_point = model.initial_point()
+        if initial_point is None:
+            initial_point = model.initial_point()
 
         dimcats = []
         # The above variable is a list of pairs (aggregate dimension, number
@@ -332,7 +342,9 @@ class DiscreteMarkovChainGibbsMetropolis(CategoricalGibbsMetropolis):
         self.tune = True
 
         # We bypass CategoryGibbsMetropolis's __init__ to avoid it's specialiazed initialization logic
-        ArrayStep.__init__(self, vars, [model.compile_logp()])
+        if compile_kwargs is None:
+            compile_kwargs = {}
+        ArrayStep.__init__(self, vars, [model.compile_logp(**compile_kwargs)], **kwargs)
 
     @staticmethod
     def competence(var):
