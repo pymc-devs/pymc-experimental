@@ -391,14 +391,14 @@ def sample_laplace_posterior(
 
     else:
         info = mu.point_map_info
-        flat_shapes = [np.prod(shape).astype(int) for _, shape, _ in info]
+        flat_shapes = [size for _, _, size, _ in info]
         slices = [
             slice(sum(flat_shapes[:i]), sum(flat_shapes[: i + 1])) for i in range(len(flat_shapes))
         ]
 
         posterior_draws = [
             posterior_draws[..., idx].reshape((chains, draws, *shape)).astype(dtype)
-            for idx, (name, shape, dtype) in zip(slices, info)
+            for idx, (name, shape, _, dtype) in zip(slices, info)
         ]
 
     idata = laplace_draws_to_inferencedata(posterior_draws, model)
