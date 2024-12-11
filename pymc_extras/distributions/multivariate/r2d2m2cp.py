@@ -405,9 +405,9 @@ def R2D2M2CP(
 
     .. code-block::
 
-        @misc{pymc-experimental-r2d2m2cp,
-            title = {pymc-devs/pymc-experimental: {P}ull {R}equest 137, {R2D2M2CP}},
-            url = {https://github.com/pymc-devs/pymc-experimental/pull/137},
+        @misc{pymc-extras-r2d2m2cp,
+            title = {pymc-devs/pymc-extras: {P}ull {R}equest 137, {R2D2M2CP}},
+            url = {https://github.com/pymc-devs/pymc-extras/pull/137},
             author = {Max Kochurov},
             howpublished = {GitHub},
             year = {2023}
