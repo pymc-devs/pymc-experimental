@@ -16,12 +16,12 @@ from pymc.util import RandomState
 from pytensor import Variable, graph_replace
 from pytensor.compile import get_mode
 
-from pymc_extras.statespace.core.filters import KalmanSmoother
 from pymc_extras.statespace.core.representation import PytensorRepresentation
 from pymc_extras.statespace.distributions.normal import MvNormalSVD
 from pymc_extras.statespace.distributions.sequence import SequenceMvNormal
 from pymc_extras.statespace.filters import (
     CholeskyFilter,
+    KalmanSmoother,
     StandardFilter,
     SteadyStateFilter,
     UnivariateFilter,
