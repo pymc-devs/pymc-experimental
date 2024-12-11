@@ -15,6 +15,7 @@
 
 import numpy as np
 import pymc as pm
+import pymc_extras as pmx
 
 from numpy.typing import ArrayLike
 
@@ -115,7 +116,7 @@ def histogram_approximation(name, dist, *, observed, **h_kwargs):
     Discrete variables are reduced to unique repetitions (up to min_count)
 
     >>> import pymc as pm
-    >>> import pymc_experimental as pmx
+    >>> import pymc_extras as pmx
     >>> production = np.random.poisson([1, 2, 5], size=(1000, 3))
     >>> with pm.Model(coords=dict(plant=range(3))):
     ...     lam = pm.Exponential("lam", 1.0, dims="plant")

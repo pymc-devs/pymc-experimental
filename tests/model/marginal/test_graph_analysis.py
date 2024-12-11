@@ -4,7 +4,9 @@ import pytest
 from pymc.distributions import CustomDist
 from pytensor.tensor.type_other import NoneTypeT
 
-from pymc_experimental.model.marginal.graph_analysis import (
+from pymc_extras.model.marginal.graph_analysis import (
+    find_conditional_dependent_rvs,
+    find_conditional_input_rvs,
     is_conditional_dependent,
     subgraph_batch_dim_connection,
 )

@@ -9,13 +9,14 @@ import pytest
 
 from numpy.testing import assert_allclose
 
-from pymc_experimental.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
-from pymc_experimental.statespace.models import structural as st
-from pymc_experimental.statespace.models.utilities import make_default_coords
-from pymc_experimental.statespace.utils.constants import (
-    FILTER_OUTPUT_NAMES,
-    MATRIX_NAMES,
-    SMOOTHER_OUTPUT_NAMES,
+from pymc_extras.statespace.core.statespace import FILTER_FACTORY, PyMCStateSpace
+from pymc_extras.statespace.models import structural as st
+from pymc_extras.statespace.models.utilities import make_default_coords
+from pymc_extras.statespace.utils.constants import (
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
+    SHORT_NAME_TO_LONG,
 )
 from tests.statespace.utilities.shared_fixtures import (
     rng,

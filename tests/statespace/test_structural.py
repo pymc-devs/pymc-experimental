@@ -15,15 +15,11 @@ import statsmodels.api as sm
 from numpy.testing import assert_allclose
 from scipy import linalg
 
-from pymc_experimental.statespace import structural as st
-from pymc_experimental.statespace.utils.constants import (
-    ALL_STATE_AUX_DIM,
-    ALL_STATE_DIM,
-    AR_PARAM_DIM,
-    OBS_STATE_AUX_DIM,
-    OBS_STATE_DIM,
-    SHOCK_AUX_DIM,
-    SHOCK_DIM,
+from pymc_extras.statespace import structural as st
+from pymc_extras.statespace.utils.constants import (
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
     SHORT_NAME_TO_LONG,
 )
 from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import

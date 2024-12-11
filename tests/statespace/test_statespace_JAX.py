@@ -8,10 +8,11 @@ import pytest
 
 from pymc.model.transform.optimization import freeze_dims_and_data
 
-from pymc_experimental.statespace.utils.constants import (
-    FILTER_OUTPUT_NAMES,
-    MATRIX_NAMES,
-    SMOOTHER_OUTPUT_NAMES,
+from pymc_extras.statespace.utils.constants import (
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
+    SHORT_NAME_TO_LONG,
 )
 from tests.statespace.test_statespace import (  # pylint: disable=unused-import
     exog_ss_mod,

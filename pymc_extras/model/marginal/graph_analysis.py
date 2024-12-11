@@ -16,7 +16,7 @@ from pytensor.tensor.shape import Shape
 from pytensor.tensor.subtensor import AdvancedSubtensor, Subtensor, get_idx_list
 from pytensor.tensor.type_other import NoneTypeT
 
-from pymc_experimental.model.marginal.distributions import MarginalRV
+from pymc_extras.model.marginal.distributions import MarginalRV
 
 
 def static_shape_ancestors(vars):

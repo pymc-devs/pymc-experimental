@@ -4,12 +4,12 @@ import pytensor.tensor as pt
 from pytensor.compile import get_mode
 from pytensor.tensor.nlinalg import matrix_dot
 
-from pymc_experimental.statespace.filters.utilities import (
-    quad_form_sym,
-    split_vars_into_seq_and_nonseq,
+from pymc_extras.statespace.filters.utilities import (
+    compute_predicted_state,
+    compute_predicted_state_cov,
     stabilize,
 )
-from pymc_experimental.statespace.utils.constants import JITTER_DEFAULT
+from pymc_extras.statespace.utils.constants import JITTER_DEFAULT
 
 
 class KalmanSmoother:

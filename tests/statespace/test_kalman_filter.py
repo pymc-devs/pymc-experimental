@@ -5,13 +5,14 @@ import pytest
 
 from numpy.testing import assert_allclose, assert_array_less
 
-from pymc_experimental.statespace.filters import (
-    KalmanSmoother,
-    SquareRootFilter,
+from pymc_extras.statespace.filters import (
+    CholeskyFilter,
+    SingleTimeseriesFilter,
     StandardFilter,
+    SteadyStateFilter,
     UnivariateFilter,
 )
-from pymc_experimental.statespace.filters.kalman_filter import BaseFilter
+from pymc_extras.statespace.filters.kalman_filter import BaseFilter
 from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
     rng,
 )
@@ -31,7 +32,7 @@ ATOL = 1e-6 if floatX.endswith("64") else 1e-3
 RTOL = 1e-6 if floatX.endswith("64") else 1e-3
 
 standard_inout = initialize_filter(StandardFilter())
-cholesky_inout = initialize_filter(SquareRootFilter())
+cholesky_inout = initialize_filter(CholeskyFilter())
 univariate_inout = initialize_filter(UnivariateFilter())
 
 f_standard = pytensor.function(*standard_inout, on_unused_input="ignore")
@@ -303,7 +304,7 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
 
 @pytest.mark.parametrize(
     "filter",
-    [StandardFilter, SquareRootFilter],
+    [StandardFilter, CholeskyFilter],
     ids=["standard", "cholesky"],
 )
 def test_kalman_filter_jax(filter):

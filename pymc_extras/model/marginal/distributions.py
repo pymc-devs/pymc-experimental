@@ -16,7 +16,8 @@ from pytensor.scan import map as scan_map
 from pytensor.scan import scan
 from pytensor.tensor import TensorVariable
 
-from pymc_experimental.distributions import DiscreteMarkovChain
+from pymc_extras.distributions import DiscreteMarkovChain
+from pymc_extras.model.marginal.graph_analysis import get_support_axes
 
 
 class MarginalRV(OpFromGraph, MeasurableOp):
@@ -91,7 +92,7 @@ def reduce_batch_dependent_logps(
        as well as transpose the remaining axis of dep1 logp before adding the two element-wise.
 
     """
-    from pymc_experimental.model.marginal.graph_analysis import get_support_axes
+    from pymc_extras.model.marginal.graph_analysis import get_support_axes
 
     reduced_logps = []
     for dependent_op, dependent_logp, dependent_dims_connection in zip(
