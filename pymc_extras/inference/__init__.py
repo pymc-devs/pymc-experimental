@@ -13,6 +13,6 @@
 #   limitations under the License.
 
 
-from pymc_experimental.inference.fit import fit
+from pymc_extras.inference.fit import fit
 
 __all__ = ["fit"]

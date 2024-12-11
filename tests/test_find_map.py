@@ -3,10 +3,10 @@ import pymc as pm
 import pytensor.tensor as pt
 import pytest
 
-from pymc_experimental.inference.find_map import (
-    GradientBackend,
+from pymc_extras.inference.find_map import (
     find_MAP,
-    scipy_optimize_funcs_from_loss,
+    find_MAP_scipy,
+    find_MAP_pytensor,
 )
 
 pytest.importorskip("jax")

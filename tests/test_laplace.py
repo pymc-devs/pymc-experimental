@@ -17,13 +17,13 @@ import numpy as np
 import pymc as pm
 import pytest
 
-import pymc_experimental as pmx
+import pymc_extras as pmx
 
-from pymc_experimental.inference.find_map import find_MAP
-from pymc_experimental.inference.laplace import (
+from pymc_extras.inference.find_map import find_MAP
+from pymc_extras.inference.laplace import (
     fit_laplace,
-    fit_mvn_to_MAP,
-    sample_laplace_posterior,
+    laplace_approximation,
+    sample_laplace,
 )
 
 
@@ -137,13 +137,13 @@ def test_fit_laplace_coords(rng, transform_samples, mode):
         for value in optimized_point.values():
             assert value.shape == (3,)
 
-        mu, H_inv = fit_mvn_to_MAP(
+        mu, H_inv = laplace_approximation(
             optimized_point=optimized_point,
             model=model,
             transform_samples=transform_samples,
         )
 
-        idata = sample_laplace_posterior(
+        idata = sample_laplace(
             mu=mu, H_inv=H_inv, model=model, transform_samples=transform_samples
         )
 

@@ -13,12 +13,12 @@
 #   limitations under the License.
 import logging
 
-from pymc_experimental import gp, statespace, utils
-from pymc_experimental.distributions import *
-from pymc_experimental.inference.fit import fit
-from pymc_experimental.model.marginal.marginal_model import MarginalModel, marginalize
-from pymc_experimental.model.model_api import as_model
-from pymc_experimental.version import __version__
+from pymc_extras import gp, statespace, utils
+from pymc_extras.distributions import *
+from pymc_extras.inference.fit import fit
+from pymc_extras.model.marginal.marginal_model import MarginalModel, marginalize
+from pymc_extras.model.model_api import as_model
+from pymc_extras.version import __version__
 
 _log = logging.getLogger("pmx")
 
@@ -27,3 +27,5 @@ if not logging.root.handlers:
     if len(_log.handlers) == 0:
         handler = logging.StreamHandler()
         _log.addHandler(handler)
+
+__all__ = ["fit", "MarginalModel", "marginalize", "as_model"]

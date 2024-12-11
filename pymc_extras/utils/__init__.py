@@ -13,8 +13,8 @@
 #   limitations under the License.
 
 
-from pymc_experimental.utils import prior, spline
-from pymc_experimental.utils.linear_cg import linear_cg
+from pymc_extras.utils import prior, spline
+from pymc_extras.utils.linear_cg import linear_cg
 
 __all__ = (
     "linear_cg",
