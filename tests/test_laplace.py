@@ -22,7 +22,7 @@ import pymc_extras as pmx
 from pymc_extras.inference.find_map import find_MAP
 from pymc_extras.inference.laplace import (
     fit_laplace,
-    laplace_approximation,
+    fit_mvn_to_MAP,
     sample_laplace,
 )
 
@@ -137,7 +137,7 @@ def test_fit_laplace_coords(rng, transform_samples, mode):
         for value in optimized_point.values():
             assert value.shape == (3,)
 
-        mu, H_inv = laplace_approximation(
+        mu, H_inv = fit_mvn_to_MAP(
             optimized_point=optimized_point,
             model=model,
             transform_samples=transform_samples,
