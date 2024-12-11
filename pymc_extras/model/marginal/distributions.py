@@ -17,7 +17,14 @@ from pytensor.scan import scan
 from pytensor.tensor import TensorVariable
 
 from pymc_extras.distributions import DiscreteMarkovChain
-from pymc_extras.model.marginal.graph_analysis import get_support_axes
+
+
+def get_support_axes(op) -> tuple[tuple[int, ...], ...]:
+    if hasattr(op, "support_axes"):
+        return op.support_axes
+    else:
+        # For vanilla RVs, the support axes are the last ndim_supp
+        return (tuple(range(-op.ndim_supp, 0)),)
 
 
 class MarginalRV(OpFromGraph, MeasurableOp):
