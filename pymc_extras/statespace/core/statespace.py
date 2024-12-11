@@ -17,8 +17,6 @@ from pytensor import Variable, graph_replace
 from pytensor.compile import get_mode
 
 from pymc_extras.statespace.core.representation import PytensorRepresentation
-from pymc_extras.statespace.distributions.normal import MvNormalSVD
-from pymc_extras.statespace.distributions.sequence import SequenceMvNormal
 from pymc_extras.statespace.filters import (
     CholeskyFilter,
     KalmanSmoother,
@@ -28,6 +26,8 @@ from pymc_extras.statespace.filters import (
 )
 from pymc_extras.statespace.filters.distributions import (
     LinearGaussianStateSpace,
+    MvNormalSVD,
+    SequenceMvNormal,
 )
 from pymc_extras.statespace.filters.utilities import stabilize
 from pymc_extras.statespace.utils.constants import (
