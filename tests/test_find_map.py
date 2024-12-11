@@ -5,10 +5,7 @@ import pymc as pm
 import pytensor.tensor as pt
 import pytest
 
-from pymc_extras.find_map import scipy_optimize_funcs_from_loss
-from pymc_extras.inference.find_map import (
-    find_MAP,
-)
+from pymc_extras.inference.find_map import find_MAP, scipy_optimize_funcs_from_loss
 
 pytest.importorskip("jax")
 
