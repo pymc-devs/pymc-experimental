@@ -12,7 +12,7 @@ from pymc.sampling.mcmc import assign_step_methods
 
 from pymc_extras.distributions.timeseries import (
     DiscreteMarkovChain,
-    DiscreteMarkovChainRV,
+    DiscreteMarkovChainGibbsMetropolis,
 )
 
 

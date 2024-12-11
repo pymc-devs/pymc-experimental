@@ -7,6 +7,7 @@ from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_extras.statespace.filters import (
     CholeskyFilter,
+    KalmanSmoother,
     SingleTimeseriesFilter,
     StandardFilter,
     SteadyStateFilter,

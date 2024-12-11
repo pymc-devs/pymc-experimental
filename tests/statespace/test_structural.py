@@ -17,9 +17,16 @@ from scipy import linalg
 
 from pymc_extras.statespace import structural as st
 from pymc_extras.statespace.utils.constants import (
+    ALL_STATE_AUX_DIM,
+    ALL_STATE_DIM,
+    AR_PARAM_DIM,
     JITTER_DEFAULT,
     LONG_MATRIX_NAMES,
     MISSING_FILL,
+    OBS_STATE_AUX_DIM,
+    OBS_STATE_DIM,
+    SHOCK_AUX_DIM,
+    SHOCK_DIM,
     SHORT_NAME_TO_LONG,
 )
 from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
