@@ -8,6 +8,5 @@ Kalman Filters
 
     StandardFilter
     UnivariateFilter
-    SteadyStateFilter
     KalmanSmoother
     LinearGaussianStateSpace

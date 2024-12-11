@@ -20,7 +20,6 @@ from pymc_extras.statespace.core.representation import PytensorRepresentation
 from pymc_extras.statespace.filters import (
     KalmanSmoother,
     StandardFilter,
-    SteadyStateFilter,
     UnivariateFilter,
 )
 from pymc_extras.statespace.filters.distributions import (
@@ -51,7 +50,6 @@ floatX = pytensor.config.floatX
 FILTER_FACTORY = {
     "standard": StandardFilter,
     "univariate": UnivariateFilter,
-    "steady_state": SteadyStateFilter,
 }
 
 
