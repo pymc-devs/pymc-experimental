@@ -1,6 +1,5 @@
 from pymc_extras.statespace.filters.distributions import LinearGaussianStateSpace
 from pymc_extras.statespace.filters.kalman_filter import (
-    CholeskyFilter,
     SingleTimeseriesFilter,
     StandardFilter,
     SteadyStateFilter,
@@ -14,6 +13,5 @@ __all__ = [
     "SteadyStateFilter",
     "KalmanSmoother",
     "SingleTimeseriesFilter",
-    "CholeskyFilter",
     "LinearGaussianStateSpace",
 ]

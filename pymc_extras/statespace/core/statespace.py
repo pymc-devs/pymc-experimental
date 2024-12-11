@@ -18,7 +18,6 @@ from pytensor.compile import get_mode
 
 from pymc_extras.statespace.core.representation import PytensorRepresentation
 from pymc_extras.statespace.filters import (
-    CholeskyFilter,
     KalmanSmoother,
     StandardFilter,
     SteadyStateFilter,
@@ -52,7 +51,6 @@ floatX = pytensor.config.floatX
 FILTER_FACTORY = {
     "standard": StandardFilter,
     "univariate": UnivariateFilter,
-    "cholesky": CholeskyFilter,
     "steady_state": SteadyStateFilter,
 }
 

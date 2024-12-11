@@ -11,5 +11,4 @@ Kalman Filters
     SteadyStateFilter
     KalmanSmoother
     SingleTimeseriesFilter
-    CholeskyFilter
     LinearGaussianStateSpace
