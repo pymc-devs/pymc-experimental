@@ -16,24 +16,33 @@ from pymc.util import RandomState
 from pytensor import Variable, graph_replace
 from pytensor.compile import get_mode
 
+from pymc_extras.statespace.core.filters import KalmanSmoother
 from pymc_extras.statespace.core.representation import PytensorRepresentation
+from pymc_extras.statespace.distributions.normal import MvNormalSVD
+from pymc_extras.statespace.distributions.sequence import SequenceMvNormal
 from pymc_extras.statespace.filters import (
     CholeskyFilter,
-    SingleTimeseriesFilter,
     StandardFilter,
     SteadyStateFilter,
     UnivariateFilter,
 )
 from pymc_extras.statespace.filters.distributions import (
     LinearGaussianStateSpace,
-    LinearGaussianStateSpaceRV,
 )
 from pymc_extras.statespace.filters.utilities import stabilize
 from pymc_extras.statespace.utils.constants import (
+    ALL_STATE_AUX_DIM,
+    ALL_STATE_DIM,
+    FILTER_OUTPUT_DIMS,
+    FILTER_OUTPUT_TYPES,
     JITTER_DEFAULT,
     LONG_MATRIX_NAMES,
-    MISSING_FILL,
+    MATRIX_DIMS,
+    OBS_STATE_DIM,
+    SHOCK_DIM,
     SHORT_NAME_TO_LONG,
+    TIME_DIM,
+    VECTOR_VALUED,
 )
 from pymc_extras.statespace.utils.data_tools import register_data_with_pymc
 
@@ -2033,7 +2042,10 @@ class PyMCStateSpace:
                 }
 
                 matrices = graph_replace(matrices, replace=sub_dict, strict=True)
-                [setattr(matrix, "name", name) for name, matrix in zip(LONG_MATRIX_NAMES[2:], matrices)]
+                [
+                    setattr(matrix, "name", name)
+                    for name, matrix in zip(LONG_MATRIX_NAMES[2:], matrices)
+                ]
 
             _ = LinearGaussianStateSpace(
                 "forecast",
