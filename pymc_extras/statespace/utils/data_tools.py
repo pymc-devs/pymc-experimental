@@ -9,7 +9,7 @@ import pytensor.tensor as pt
 from pymc import ImputationWarning, modelcontext
 from pytensor.tensor.sharedvar import TensorSharedVariable
 
-from pymc_experimental.statespace.utils.constants import (
+from pymc_extras.statespace.utils.constants import (
     MISSING_FILL,
     OBS_STATE_DIM,
     TIME_DIM,

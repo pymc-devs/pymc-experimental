@@ -24,6 +24,7 @@ from pymc.model.fgraph import (
 from pymc.pytensorf import toposort_replace
 from pytensor.graph.basic import Apply, Variable
 from pytensor.tensor.random.op import RandomVariable
+from pymc_extras.model.transforms.autoreparam import vip_reparametrize
 
 _log = logging.getLogger("pmx")
 
@@ -342,7 +343,7 @@ def vip_reparametrize(
 
     .. code-block:: python
 
-        from pymc_experimental.model.transforms.autoreparam import vip_reparametrize
+        from pymc_extras.model.transforms.autoreparam import vip_reparametrize
         Reparam_eight, vip = vip_reparametrize(Centered_eight, ["theta"])
 
         with Reparam_eight:

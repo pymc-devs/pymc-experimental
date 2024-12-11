@@ -109,7 +109,7 @@ class DiscreteMarkovChain(Distribution):
     .. code-block:: python
 
         import pymc as pm
-        import pymc_experimental as pmx
+        import pymc_extras as pmx
 
         with pm.Model() as markov_chain:
             P = pm.Dirichlet("P", a=[1, 1, 1], size=(3,))

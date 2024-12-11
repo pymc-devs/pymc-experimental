@@ -94,7 +94,7 @@ def model_table(
         import numpy as np
         import pymc as pm
 
-        from pymc_experimental.printing import model_table
+        from pymc_extras.printing import model_table
 
         coords = {"subject": range(20), "param": ["a", "b"]}
         with pm.Model(coords=coords) as m:

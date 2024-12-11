@@ -123,7 +123,7 @@ class PytensorRepresentation:
     --------
     .. code:: python
 
-        from pymc_experimental.statespace.core.representation import PytensorRepresentation
+        from pymc_extras.statespace.core.representation import PytensorRepresentation
         ssm = PytensorRepresentation(k_endog=1, k_states=3, k_posdef=1)
 
         # Access matrices by their names

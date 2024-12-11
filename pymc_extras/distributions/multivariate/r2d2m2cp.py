@@ -302,7 +302,7 @@ def R2D2M2CP(
 
     .. code-block:: python
 
-        import pymc_experimental as pmx
+        import pymc_extras as pmx
         import pymc as pm
         import numpy as np
         X = np.random.randn(10, 3)

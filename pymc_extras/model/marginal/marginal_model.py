@@ -73,7 +73,7 @@ class MarginalModel(Model):
     .. code-block:: python
 
         import pymc as pm
-        from pymc_experimental import MarginalModel
+        from pymc_extras import MarginalModel
 
         with MarginalModel() as m:
             p = pm.Beta("p", 1, 1)
@@ -364,7 +364,7 @@ class MarginalModel(Model):
         .. code-block:: python
 
             import pymc as pm
-            from pymc_experimental import MarginalModel
+            from pymc_extras import MarginalModel
 
             with MarginalModel() as m:
                 p = pm.Beta("p", 1, 1)

@@ -894,7 +894,7 @@ class MeasurementError(Component):
 
     .. code:: python
 
-        from pymc_experimental.statespace import structural as st
+        from pymc_extras.statespace import structural as st
         import pymc as pm
         import pytensor.tensor as pt
 
@@ -976,7 +976,7 @@ class AutoregressiveComponent(Component):
 
     .. code:: python
 
-        from pymc_experimental.statespace import structural as st
+        from pymc_extras.statespace import structural as st
         import pymc as pm
         import pytensor.tensor as pt
 
@@ -1127,7 +1127,7 @@ class TimeSeasonality(Component):
 
     .. code:: python
 
-        from pymc_experimental.statespace import structural as st
+        from pymc_extras.statespace import structural as st
         import pymc as pm
         import pytensor.tensor as pt
         import pandas as pd
@@ -1412,7 +1412,7 @@ class CycleComponent(Component):
 
     .. code:: python
 
-        from pymc_experimental.statespace import structural as st
+        from pymc_extras.statespace import structural as st
         import pymc as pm
         import pytensor.tensor as pt
         import pandas as pd

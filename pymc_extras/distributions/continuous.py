@@ -261,7 +261,7 @@ class Chi:
     --------
     .. code-block:: python
         import pymc as pm
-        from pymc_experimental.distributions import Chi
+        from pymc_extras.distributions import Chi
 
         with pm.Model():
             x = Chi('x', nu=1)

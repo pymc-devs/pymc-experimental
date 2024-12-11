@@ -143,7 +143,7 @@ class PyMCStateSpace:
 
     .. code:: python
 
-        from pymc_experimental.statespace.core import PyMCStateSpace
+        from pymc_extras.statespace.core import PyMCStateSpace
         import numpy as np
 
         class LocalLevel(PyMCStateSpace):

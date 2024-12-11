@@ -40,7 +40,7 @@ from pymc.model.transform.optimization import freeze_dims_and_data
 from pymc.util import get_default_varnames
 from scipy import stats
 
-from pymc_experimental.inference.find_map import (
+from pymc_extras.inference.find_map import (
     GradientBackend,
     _unconstrained_vector_to_constrained_rvs,
     find_MAP,
@@ -505,7 +505,7 @@ def fit_laplace(
 
     Examples
     --------
-    >>> from pymc_experimental.inference.laplace import fit_laplace
+    >>> from pymc_extras.inference.laplace import fit_laplace
     >>> import numpy as np
     >>> import pymc as pm
     >>> import arviz as az

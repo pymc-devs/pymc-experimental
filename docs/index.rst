@@ -1,4 +1,4 @@
-PyMC experimental
+PyMC Extras
 ===================================================
 |Tests|
 |Coverage|
@@ -35,7 +35,7 @@ For the development version, you can install directly from GitHub:
 
 Contributing
 ============
-We welcome contributions from interested individuals or groups! For information about contributing to PyMC experimental check out our instructions, policies, and guidelines `here <https://github.com/pymc-devs/pymc-extras/blob/main/CONTRIBUTING.md>`_.
+We welcome contributions from interested individuals or groups! For information about contributing to PyMC Extras check out our instructions, policies, and guidelines `here <https://github.com/pymc-devs/pymc-extras/blob/main/CONTRIBUTING.md>`_.
 
 Contributors
 ============
