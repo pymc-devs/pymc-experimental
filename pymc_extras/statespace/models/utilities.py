@@ -11,9 +11,6 @@ from pymc_extras.statespace.utils.constants import (
     SHOCK_AUX_DIM,
     SHOCK_DIM,
     VECTOR_VALUED,
-    JITTER_DEFAULT,
-    MISSING_FILL,
-    SHORT_NAME_TO_LONG,
 )
 
 

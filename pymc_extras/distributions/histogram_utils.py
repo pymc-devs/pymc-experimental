@@ -15,7 +15,6 @@
 
 import numpy as np
 import pymc as pm
-import pymc_extras as pmx
 
 from numpy.typing import ArrayLike
 

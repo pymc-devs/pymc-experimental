@@ -1,7 +1,6 @@
 from functools import wraps
 
 from pymc import Model
-import pymc_extras as pmx
 
 
 def as_model(*model_args, **model_kwargs):

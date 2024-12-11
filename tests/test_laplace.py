@@ -143,9 +143,7 @@ def test_fit_laplace_coords(rng, transform_samples, mode):
             transform_samples=transform_samples,
         )
 
-        idata = sample_laplace(
-            mu=mu, H_inv=H_inv, model=model, transform_samples=transform_samples
-        )
+        idata = sample_laplace(mu=mu, H_inv=H_inv, model=model, transform_samples=transform_samples)
 
     np.testing.assert_allclose(np.mean(idata.posterior.mu, axis=1), np.full((2, 3), 3), atol=0.5)
     np.testing.assert_allclose(

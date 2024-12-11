@@ -18,12 +18,7 @@ from pymc_extras.statespace.utils.constants import (
     OBS_STATE_DIM,
     SHOCK_AUX_DIM,
     SHOCK_DIM,
-    JITTER_DEFAULT,
-    LONG_MATRIX_NAMES,
-    MISSING_FILL,
-    SHORT_NAME_TO_LONG,
 )
-import pymc_extras.statespace as pmss
 
 floatX = pytensor.config.floatX
 
