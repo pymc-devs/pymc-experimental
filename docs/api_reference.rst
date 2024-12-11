@@ -7,7 +7,7 @@ Model
 This reference provides detailed documentation for all modules, classes, and
 methods in the current release of PyMC experimental.
 
-.. currentmodule:: pymc_experimental
+.. currentmodule:: pymc_extras
 .. autosummary::
    :toctree: generated/
 
@@ -19,7 +19,7 @@ methods in the current release of PyMC experimental.
 Inference
 =========
 
-.. currentmodule:: pymc_experimental.inference
+.. currentmodule:: pymc_extras.inference
 .. autosummary::
    :toctree: generated/
 
@@ -29,7 +29,7 @@ Inference
 Distributions
 =============
 
-.. currentmodule:: pymc_experimental.distributions
+.. currentmodule:: pymc_extras.distributions
 .. autosummary::
    :toctree: generated/
 
@@ -47,7 +47,7 @@ Distributions
 Utils
 =====
 
-.. currentmodule:: pymc_experimental.utils
+.. currentmodule:: pymc_extras.utils
 .. autosummary::
    :toctree: generated/
 
@@ -57,7 +57,7 @@ Utils
 
 Statespace Models
 =================
-.. automodule:: pymc_experimental.statespace
+.. automodule:: pymc_extras.statespace
 .. toctree::
    :maxdepth: 1
 
@@ -68,7 +68,7 @@ Statespace Models
 
 Model Transforms
 ================
-.. automodule:: pymc_experimental.model.transforms
+.. automodule:: pymc_extras.model.transforms
 .. autosummary::
    :toctree: generated/
 
@@ -78,7 +78,7 @@ Model Transforms
 
 Printing
 ========
-.. currentmodule:: pymc_experimental.printing
+.. currentmodule:: pymc_extras.printing
 .. autosummary::
    :toctree: generated/
 

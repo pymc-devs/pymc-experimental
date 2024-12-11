@@ -10,7 +10,7 @@ from pymc.distributions.shape_utils import change_dist_size
 from pymc.logprob.utils import ParameterValueError
 from pymc.sampling.mcmc import assign_step_methods
 
-from pymc_experimental.distributions.timeseries import (
+from pymc_extras.distributions.timeseries import (
     DiscreteMarkovChain,
     DiscreteMarkovChainGibbsMetropolis,
 )

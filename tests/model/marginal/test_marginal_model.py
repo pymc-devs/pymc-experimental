@@ -17,7 +17,7 @@ from pymc.util import UNSET
 from scipy.special import log_softmax, logsumexp
 from scipy.stats import halfnorm, norm
 
-from pymc_experimental.model.marginal.marginal_model import (
+from pymc_extras.model.marginal.marginal_model import (
     MarginalModel,
     marginalize,
 )

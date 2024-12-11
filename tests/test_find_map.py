@@ -1,13 +1,11 @@
+from typing import Literal
+
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 import pytest
 
-from pymc_experimental.inference.find_map import (
-    GradientBackend,
-    find_MAP,
-    scipy_optimize_funcs_from_loss,
-)
+from pymc_extras.inference.find_map import find_MAP, scipy_optimize_funcs_from_loss
 
 pytest.importorskip("jax")
 
@@ -16,6 +14,10 @@ pytest.importorskip("jax")
 def rng():
     seed = sum(map(ord, "test_fit_map"))
     return np.random.default_rng(seed)
+
+
+# Define GradientBackend type alias
+GradientBackend = Literal["jax", "pytensor"]
 
 
 @pytest.mark.parametrize("gradient_backend", ["jax", "pytensor"], ids=str)

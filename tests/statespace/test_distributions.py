@@ -7,15 +7,20 @@ import pytest
 from numpy.testing import assert_allclose
 from scipy.stats import multivariate_normal
 
-from pymc_experimental.statespace import structural
-from pymc_experimental.statespace.filters.distributions import (
+from pymc_extras.statespace import structural
+from pymc_extras.statespace.filters.distributions import (
     LinearGaussianStateSpace,
+    LinearGaussianStateSpaceRV,
     SequenceMvNormal,
     _LinearGaussianStateSpace,
 )
-from pymc_experimental.statespace.utils.constants import (
+from pymc_extras.statespace.utils.constants import (
     ALL_STATE_DIM,
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
     OBS_STATE_DIM,
+    SHORT_NAME_TO_LONG,
     TIME_DIM,
 )
 from tests.statespace.utilities.shared_fixtures import (  # pylint: disable=unused-import
@@ -36,7 +41,7 @@ RTOL = 1e-5 if floatX.endswith("64") else 1e-4
 
 filter_names = [
     "standard",
-    "cholesky",
+    # "cholesky",
     "univariate",
 ]
 

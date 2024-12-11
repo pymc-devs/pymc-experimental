@@ -6,9 +6,9 @@ from pymc.logprob.abstract import _logprob
 from pytensor import tensor as pt
 from scipy.stats import norm
 
-from pymc_experimental import MarginalModel
-from pymc_experimental.distributions import DiscreteMarkovChain
-from pymc_experimental.model.marginal.distributions import MarginalFiniteDiscreteRV
+from pymc_extras import MarginalModel
+from pymc_extras.distributions import DiscreteMarkovChain
+from pymc_extras.model.marginal.distributions import MarginalFiniteDiscreteRV
 
 
 def test_marginalized_bernoulli_logp():
