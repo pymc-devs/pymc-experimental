@@ -34,11 +34,11 @@ def fit(method, **kwargs):
         if find_spec("blackjax") is None:
             raise RuntimeError("Need BlackJAX to use `pathfinder`")
 
-        from pymc_experimental.inference.pathfinder import fit_pathfinder
+        from pymc_extras.inference.pathfinder import fit_pathfinder
 
         return fit_pathfinder(**kwargs)
 
     if method == "laplace":
-        from pymc_experimental.inference.laplace import fit_laplace
+        from pymc_extras.inference.laplace import fit_laplace
 
         return fit_laplace(**kwargs)

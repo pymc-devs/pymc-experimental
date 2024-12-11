@@ -1,6 +1,7 @@
 from functools import wraps
 
 from pymc import Model
+import pymc_extras as pmx
 
 
 def as_model(*model_args, **model_kwargs):
@@ -16,7 +17,7 @@ def as_model(*model_args, **model_kwargs):
     .. code:: python
 
         import pymc as pm
-        import pymc_experimental as pmx
+        import pymc_extras as pmx
 
         # The following are equivalent
 
