@@ -9,15 +9,19 @@ from pytensor.tensor.slinalg import solve_discrete_lyapunov
 from pymc_extras.statespace.core.statespace import PyMCStateSpace, floatX
 from pymc_extras.statespace.models.utilities import (
     make_default_coords,
-    make_seasonal_harmonics,
+    make_harvey_state_names,
+    make_SARIMA_transition_matrix,
 )
 from pymc_extras.statespace.utils.constants import (
-    JITTER_DEFAULT,
-    LONG_MATRIX_NAMES,
-    MISSING_FILL,
-    SHORT_NAME_TO_LONG,
+    ALL_STATE_AUX_DIM,
+    ALL_STATE_DIM,
+    AR_PARAM_DIM,
+    MA_PARAM_DIM,
+    OBS_STATE_DIM,
+    SARIMAX_STATE_STRUCTURES,
+    SEASONAL_AR_PARAM_DIM,
+    SEASONAL_MA_PARAM_DIM,
 )
-import pymc_extras.statespace as pmss
 
 
 def _verify_order(p, d, q, P, D, Q, S):

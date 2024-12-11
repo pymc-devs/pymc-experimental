@@ -2,11 +2,7 @@ import pytensor.tensor as pt
 
 from pytensor.tensor.nlinalg import matrix_dot
 
-from pymc_extras.statespace.core.representation import (
-    PytensorRepresentation,
-    quad_form_sym,
-)
-from pymc_extras.statespace.utils.constants import JITTER_DEFAULT
+from pymc_extras.statespace.utils.constants import JITTER_DEFAULT, NEVER_TIME_VARYING, VECTOR_VALUED
 
 
 def decide_if_x_time_varies(x, name):
