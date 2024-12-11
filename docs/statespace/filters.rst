@@ -10,5 +10,4 @@ Kalman Filters
     UnivariateFilter
     SteadyStateFilter
     KalmanSmoother
-    SingleTimeseriesFilter
     LinearGaussianStateSpace
