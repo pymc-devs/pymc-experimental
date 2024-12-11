@@ -22,7 +22,6 @@ from pymc_extras.statespace.utils.data_tools import (
     NO_FREQ_INFO_WARNING,
     NO_TIME_INDEX_WARNING,
     register_data_with_pymc,
-    register_data_with_pytensor,
 )
 from tests.statespace.utilities.test_helpers import load_nile_test_data
 

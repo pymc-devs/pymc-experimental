@@ -8,7 +8,6 @@ from numpy.testing import assert_allclose, assert_array_less
 from pymc_extras.statespace.filters import (
     KalmanSmoother,
     StandardFilter,
-    SteadyStateFilter,
     UnivariateFilter,
 )
 from pymc_extras.statespace.filters.kalman_filter import BaseFilter
