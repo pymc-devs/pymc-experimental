@@ -24,7 +24,6 @@ from pymc.model.fgraph import (
 from pymc.pytensorf import toposort_replace
 from pytensor.graph.basic import Apply, Variable
 from pytensor.tensor.random.op import RandomVariable
-from pymc_extras.model.transforms.autoreparam import vip_reparametrize
 
 _log = logging.getLogger("pmx")
 

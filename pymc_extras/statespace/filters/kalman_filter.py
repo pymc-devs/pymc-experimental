@@ -12,12 +12,8 @@ from pytensor.tensor import TensorVariable
 from pytensor.tensor.slinalg import solve_triangular
 
 from pymc_extras.statespace.filters.utilities import (
-    compute_forecast_error_cov,
-    compute_kalman_gain,
-    compute_predicted_state,
-    compute_predicted_state_cov,
-    compute_updated_state,
-    compute_updated_state_cov,
+    quad_form_sym,
+    split_vars_into_seq_and_nonseq,
     stabilize,
 )
 from pymc_extras.statespace.utils.constants import JITTER_DEFAULT, MISSING_FILL

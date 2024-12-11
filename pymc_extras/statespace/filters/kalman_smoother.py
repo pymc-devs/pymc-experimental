@@ -5,8 +5,8 @@ from pytensor.compile import get_mode
 from pytensor.tensor.nlinalg import matrix_dot
 
 from pymc_extras.statespace.filters.utilities import (
-    compute_predicted_state,
-    compute_predicted_state_cov,
+    quad_form_sym,
+    split_vars_into_seq_and_nonseq,
     stabilize,
 )
 from pymc_extras.statespace.utils.constants import JITTER_DEFAULT

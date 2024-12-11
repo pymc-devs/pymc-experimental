@@ -5,10 +5,8 @@ import pytensor
 import pytensor.tensor as pt
 
 from pymc_extras.statespace.utils.constants import (
-    JITTER_DEFAULT,
-    LONG_MATRIX_NAMES,
-    MISSING_FILL,
-    SHORT_NAME_TO_LONG,
+    NEVER_TIME_VARYING,
+    VECTOR_VALUED,
 )
 
 floatX = pytensor.config.floatX
