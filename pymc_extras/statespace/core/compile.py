@@ -3,9 +3,9 @@ import pymc as pm
 import pytensor
 import pytensor.tensor as pt
 
-from pymc_experimental.statespace.core import PyMCStateSpace
-from pymc_experimental.statespace.filters.distributions import LinearGaussianStateSpace
-from pymc_experimental.statespace.utils.constants import SHORT_NAME_TO_LONG
+from pymc_extras.statespace.core import PyMCStateSpace
+from pymc_extras.statespace.filters.distributions import LinearGaussianStateSpace
+from pymc_extras.statespace.utils.constants import SHORT_NAME_TO_LONG
 
 
 def compile_statespace(

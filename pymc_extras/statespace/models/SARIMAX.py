@@ -6,22 +6,18 @@ import pytensor.tensor as pt
 
 from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
-from pymc_experimental.statespace.core.statespace import PyMCStateSpace, floatX
-from pymc_experimental.statespace.models.utilities import (
+from pymc_extras.statespace.core.statespace import PyMCStateSpace, floatX
+from pymc_extras.statespace.models.utilities import (
     make_default_coords,
-    make_harvey_state_names,
-    make_SARIMA_transition_matrix,
+    make_seasonal_harmonics,
 )
-from pymc_experimental.statespace.utils.constants import (
-    ALL_STATE_AUX_DIM,
-    ALL_STATE_DIM,
-    AR_PARAM_DIM,
-    MA_PARAM_DIM,
-    OBS_STATE_DIM,
-    SARIMAX_STATE_STRUCTURES,
-    SEASONAL_AR_PARAM_DIM,
-    SEASONAL_MA_PARAM_DIM,
+from pymc_extras.statespace.utils.constants import (
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
+    SHORT_NAME_TO_LONG,
 )
+import pymc_extras.statespace as pmss
 
 
 def _verify_order(p, d, q, P, D, Q, S):
@@ -147,7 +143,7 @@ class BayesianSARIMA(PyMCStateSpace):
 
     .. code:: python
 
-        import pymc_experimental.statespace as pmss
+        import pymc_extras.statespace as pmss
         import pymc as pm
 
         ss_mod = pmss.BayesianSARIMA(order=(1, 0, 1), verbose=True)

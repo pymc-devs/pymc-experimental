@@ -7,9 +7,13 @@ import pytensor.tensor as pt
 from pytensor import graph_replace
 from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
-from pymc_experimental.statespace.core.statespace import PyMCStateSpace, floatX
-from pymc_experimental.statespace.models.utilities import make_default_coords
-from pymc_experimental.statespace.utils.constants import (
+from pymc_extras.statespace.core.statespace import PyMCStateSpace, floatX
+from pymc_extras.statespace.models.utilities import make_default_coords
+from pymc_extras.statespace.utils.constants import (
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
+    SHORT_NAME_TO_LONG,
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
     ETS_SEASONAL_DIM,

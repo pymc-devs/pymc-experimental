@@ -13,20 +13,19 @@ import xarray as xr
 
 from pytensor import Variable
 
-from pymc_experimental.statespace.core import PytensorRepresentation
-from pymc_experimental.statespace.core.statespace import PyMCStateSpace
-from pymc_experimental.statespace.models.utilities import (
-    conform_time_varying_and_time_invariant_matrices,
+from pymc_extras.statespace.core import PytensorRepresentation
+from pymc_extras.statespace.core.statespace import PyMCStateSpace
+from pymc_extras.statespace.models.utilities import (
     make_default_coords,
+    make_seasonal_harmonics,
 )
-from pymc_experimental.statespace.utils.constants import (
-    ALL_STATE_AUX_DIM,
-    ALL_STATE_DIM,
-    AR_PARAM_DIM,
+from pymc_extras.statespace.utils.constants import (
+    JITTER_DEFAULT,
     LONG_MATRIX_NAMES,
-    POSITION_DERIVATIVE_NAMES,
-    TIME_DIM,
+    MISSING_FILL,
+    SHORT_NAME_TO_LONG,
 )
+from pymc_extras.statespace import structural as st
 
 _log = logging.getLogger("pymc.experimental.statespace")
 
@@ -1481,9 +1480,11 @@ class CycleComponent(Component):
             k_endog=k_endog,
             k_states=k_states,
             k_posdef=k_posdef,
+            state_names=self.state_names,
             measurement_error=False,
             combine_hidden_states=True,
-            obs_state_idxs=obs_state_idx,
+            exog_names=[f"data_{name}"],
+            obs_state_idxs=np.ones(k_states),
         )
 
     def make_symbolic_graph(self) -> None:

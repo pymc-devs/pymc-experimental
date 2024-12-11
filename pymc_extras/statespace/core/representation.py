@@ -4,9 +4,11 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 
-from pymc_experimental.statespace.utils.constants import (
-    NEVER_TIME_VARYING,
-    VECTOR_VALUED,
+from pymc_extras.statespace.utils.constants import (
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
+    SHORT_NAME_TO_LONG,
 )
 
 floatX = pytensor.config.floatX

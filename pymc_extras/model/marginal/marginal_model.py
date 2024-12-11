@@ -25,16 +25,16 @@ __all__ = ["MarginalModel", "marginalize"]
 
 from pymc_extras.distributions import DiscreteMarkovChain
 from pymc_extras.model.marginal.distributions import (
-    FiniteDiscreteMarginalRV,
-    MarginalRV,
-    MarginalizedRV,
+    MarginalDiscreteMarkovChainRV,
+    MarginalFiniteDiscreteRV,
+    get_domain_of_finite_discrete_rv,
+    reduce_batch_dependent_logps,
 )
 from pymc_extras.model.marginal.graph_analysis import (
-    get_support_axes,
-    get_support_shape,
-    get_support_size,
-    get_support_values,
-    get_variable_support,
+    find_conditional_dependent_rvs,
+    find_conditional_input_rvs,
+    is_conditional_dependent,
+    subgraph_batch_dim_connection,
 )
 
 ModelRVs = TensorVariable | Sequence[TensorVariable] | str | Sequence[str]

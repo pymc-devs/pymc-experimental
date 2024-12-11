@@ -7,9 +7,9 @@ import pytensor.tensor as pt
 
 from pytensor.tensor.slinalg import solve_discrete_lyapunov
 
-from pymc_experimental.statespace.core.statespace import PyMCStateSpace
-from pymc_experimental.statespace.models.utilities import make_default_coords
-from pymc_experimental.statespace.utils.constants import (
+from pymc_extras.statespace.core.statespace import PyMCStateSpace
+from pymc_extras.statespace.models.utilities import make_default_coords
+from pymc_extras.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
     AR_PARAM_DIM,
@@ -18,7 +18,12 @@ from pymc_experimental.statespace.utils.constants import (
     OBS_STATE_DIM,
     SHOCK_AUX_DIM,
     SHOCK_DIM,
+    JITTER_DEFAULT,
+    LONG_MATRIX_NAMES,
+    MISSING_FILL,
+    SHORT_NAME_TO_LONG,
 )
+import pymc_extras.statespace as pmss
 
 floatX = pytensor.config.floatX
 
@@ -110,7 +115,7 @@ class BayesianVARMAX(PyMCStateSpace):
 
     .. code:: python
 
-        import pymc_experimental.statespace as pmss
+        import pymc_extras.statespace as pmss
         import pymc as pm
 
         # Create VAR Statespace Model
