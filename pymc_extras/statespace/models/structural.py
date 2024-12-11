@@ -16,16 +16,17 @@ from pytensor import Variable
 from pymc_extras.statespace.core import PytensorRepresentation
 from pymc_extras.statespace.core.statespace import PyMCStateSpace
 from pymc_extras.statespace.models.utilities import (
+    conform_time_varying_and_time_invariant_matrices,
     make_default_coords,
-    make_seasonal_harmonics,
 )
 from pymc_extras.statespace.utils.constants import (
-    JITTER_DEFAULT,
+    ALL_STATE_AUX_DIM,
+    ALL_STATE_DIM,
+    AR_PARAM_DIM,
     LONG_MATRIX_NAMES,
-    MISSING_FILL,
-    SHORT_NAME_TO_LONG,
+    POSITION_DERIVATIVE_NAMES,
+    TIME_DIM,
 )
-from pymc_extras.statespace import structural as st
 
 _log = logging.getLogger("pymc.experimental.statespace")
 
