@@ -1481,11 +1481,9 @@ class CycleComponent(Component):
             k_endog=k_endog,
             k_states=k_states,
             k_posdef=k_posdef,
-            state_names=self.state_names,
             measurement_error=False,
             combine_hidden_states=True,
-            exog_names=[f"data_{name}"],
-            obs_state_idxs=np.ones(k_states),
+            obs_state_idxs=obs_state_idx,
         )
 
     def make_symbolic_graph(self) -> None:

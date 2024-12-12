@@ -10,7 +10,7 @@ from pymc import modelcontext
 from pymc_extras.statespace.filters.kalman_smoother import KalmanSmoother
 from pymc_extras.statespace.utils.constants import (
     JITTER_DEFAULT,
-    LONG_MATRIX_NAMES,
+    MATRIX_NAMES,
     MISSING_FILL,
     SHORT_NAME_TO_LONG,
 )
@@ -210,7 +210,7 @@ def delete_rvs_from_model(rv_names: list[str]) -> None:
 
 
 def unpack_statespace(ssm):
-    return [ssm[SHORT_NAME_TO_LONG[x]] for x in LONG_MATRIX_NAMES]
+    return [ssm[SHORT_NAME_TO_LONG[x]] for x in MATRIX_NAMES]
 
 
 def unpack_symbolic_matrices_with_params(mod, param_dict, data_dict=None, mode="FAST_COMPILE"):
