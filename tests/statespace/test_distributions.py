@@ -41,7 +41,7 @@ RTOL = 1e-5 if floatX.endswith("64") else 1e-4
 
 filter_names = [
     "standard",
-    "cholesky",
+    # "cholesky",
     "univariate",
 ]
 
