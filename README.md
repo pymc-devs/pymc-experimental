@@ -13,7 +13,7 @@
 As PyMC continues to mature and expand its functionality to accommodate more domains of application, we increasingly see cutting-edge methodologies, highly specialized statistical distributions, and complex models appear.
 While this adds to the functionality and relevance of the project, it can also introduce instability and impose a burden on testing and quality control.
 To reduce the burden on the main `pymc` repository, this `pymc-extras` repository can become the aggregator and testing ground for new additions to PyMC.
-This may include unusual probability distributions, advanced model fitting algorithms, innovative yet not fully tested methods or any code that may be inappropriate to include in the `pymc` repository, but may want to be made available to users.
+This may include unusual probability distributions, advanced model fitting algorithms, innovative yet not fully tested methods, or niche functionality that might not fit in the main PyMC repository, but still may be of interest to users.
 
 The `pymc-extras` repository can be understood as the first step in the PyMC development pipeline, where all novel code is introduced until it is obvious that it belongs in the main repository.
 We hope that this organization improves the stability and streamlines the testing overhead of the `pymc` repository, while allowing users and developers to test and evaluate cutting-edge methods and not yet fully mature features.
