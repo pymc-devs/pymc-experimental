@@ -15,8 +15,8 @@ import statsmodels.api as sm
 from numpy.testing import assert_allclose
 from scipy import linalg
 
-from pymc_experimental.statespace import structural as st
-from pymc_experimental.statespace.utils.constants import (
+from pymc_extras.statespace import structural as st
+from pymc_extras.statespace.utils.constants import (
     ALL_STATE_AUX_DIM,
     ALL_STATE_DIM,
     AR_PARAM_DIM,

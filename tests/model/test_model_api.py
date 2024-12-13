@@ -1,7 +1,7 @@
 import numpy as np
 import pymc as pm
 
-import pymc_experimental as pmx
+import pymc_extras as pmx
 
 
 def test_logp():
