@@ -10,11 +10,7 @@ from pymc.model.transform.optimization import freeze_dims_and_data
 
 from pymc_extras.statespace.utils.constants import (
     FILTER_OUTPUT_NAMES,
-    JITTER_DEFAULT,
-    LONG_MATRIX_NAMES,
     MATRIX_NAMES,
-    MISSING_FILL,
-    SHORT_NAME_TO_LONG,
     SMOOTHER_OUTPUT_NAMES,
 )
 from tests.statespace.test_statespace import (  # pylint: disable=unused-import

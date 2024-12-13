@@ -5,7 +5,6 @@ from itertools import zip_longest
 
 from pymc import SymbolicRandomVariable
 from pytensor.compile import SharedVariable
-from pytensor.compile.builders import OpFromGraph
 from pytensor.graph import Constant, Variable, ancestors
 from pytensor.graph.basic import io_toposort
 from pytensor.tensor import TensorType, TensorVariable
@@ -16,6 +15,8 @@ from pytensor.tensor.rewriting.subtensor import is_full_slice
 from pytensor.tensor.shape import Shape
 from pytensor.tensor.subtensor import AdvancedSubtensor, Subtensor, get_idx_list
 from pytensor.tensor.type_other import NoneTypeT
+
+from pymc_extras.model.marginal.distributions import MarginalRV
 
 
 def static_shape_ancestors(vars):
@@ -62,7 +63,7 @@ def find_conditional_dependent_rvs(dependable_rv, all_rvs):
 
 
 def get_support_axes(op) -> tuple[tuple[int, ...], ...]:
-    if hasattr(op, "support_axes"):
+    if isinstance(op, MarginalRV):
         return op.support_axes
     else:
         # For vanilla RVs, the support axes are the last ndim_supp
@@ -145,7 +146,7 @@ def _subgraph_batch_dim_connection(var_dims: VAR_DIMS, input_vars, output_vars) 
             output_dims = tuple(None if i == "x" else input_dims[i] for i in node.op.new_order)
             var_dims[node.outputs[0]] = output_dims
 
-        elif (isinstance(node.op, OpFromGraph) and hasattr(node.op, "support_axes")) or (
+        elif isinstance(node.op, MarginalRV) or (
             isinstance(node.op, SymbolicRandomVariable) and node.op.extended_signature is None
         ):
             # MarginalRV and SymbolicRandomVariables without signature are a wild-card,
@@ -159,7 +160,7 @@ def _subgraph_batch_dim_connection(var_dims: VAR_DIMS, input_vars, output_vars) 
             )
 
             support_axes = iter(get_support_axes(op))
-            if hasattr(op, "support_axes"):
+            if isinstance(op, MarginalRV):
                 # The first output is the marginalized variable for which we don't compute support axes
                 support_axes = itertools.chain(((),), support_axes)
             for i, (out, inner_out) in enumerate(zip(node.outputs, inner_outputs)):

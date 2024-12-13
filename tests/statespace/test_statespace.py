@@ -14,14 +14,8 @@ from pymc_extras.statespace.models import structural as st
 from pymc_extras.statespace.models.utilities import make_default_coords
 from pymc_extras.statespace.utils.constants import (
     FILTER_OUTPUT_NAMES,
-    JITTER_DEFAULT,
-    LONG_MATRIX_NAMES,
     MATRIX_NAMES,
-    MISSING_FILL,
-    NEVER_TIME_VARYING,
-    SHORT_NAME_TO_LONG,
     SMOOTHER_OUTPUT_NAMES,
-    VECTOR_VALUED,
 )
 from tests.statespace.utilities.shared_fixtures import (
     rng,

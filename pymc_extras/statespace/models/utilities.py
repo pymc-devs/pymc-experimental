@@ -233,8 +233,8 @@ def make_SARIMA_transition_matrix(
                         0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \end{bmatrix}
 
     When ARIMA differences and seasonal differences are mixed, the seasonal differences will be written in terms of the
-    highest ARIMA difference order, and recovery of the level state will require the use of all the ARIMA
-    differences, as well as the seasonal differences. In addition, the seasonal differences are needed to back out the ARIMA
+    highest ARIMA difference order, and recovery of the level state will require the use of all the ARIMA differences,
+    as well as the seasonal differences. In addition, the seasonal differences are needed to back out the ARIMA
     differences from :math:`x_t^\star`. Here is the differencing block for a SARIMA(0,2,0)x(0,2,0,4) -- the identites
     of the states is left an exercise for the motivated reader:
 

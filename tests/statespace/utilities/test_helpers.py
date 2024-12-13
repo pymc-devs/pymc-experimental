@@ -9,9 +9,7 @@ from pymc import modelcontext
 
 from pymc_extras.statespace.filters.kalman_smoother import KalmanSmoother
 from pymc_extras.statespace.utils.constants import (
-    JITTER_DEFAULT,
     MATRIX_NAMES,
-    MISSING_FILL,
     SHORT_NAME_TO_LONG,
 )
 from tests.statespace.utilities.statsmodel_local_level import LocalLinearTrend

@@ -11,17 +11,12 @@ from pymc_extras.statespace.models import structural
 from pymc_extras.statespace.utils.constants import (
     FILTER_OUTPUT_DIMS,
     FILTER_OUTPUT_NAMES,
-    JITTER_DEFAULT,
-    LONG_MATRIX_NAMES,
-    MISSING_FILL,
-    SHORT_NAME_TO_LONG,
     SMOOTHER_OUTPUT_NAMES,
     TIME_DIM,
 )
 from pymc_extras.statespace.utils.data_tools import (
     NO_FREQ_INFO_WARNING,
     NO_TIME_INDEX_WARNING,
-    register_data_with_pymc,
 )
 from tests.statespace.utilities.test_helpers import load_nile_test_data
 

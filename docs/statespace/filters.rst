@@ -9,4 +9,5 @@ Kalman Filters
     StandardFilter
     UnivariateFilter
     KalmanSmoother
+    SquareRootFilter
     LinearGaussianStateSpace

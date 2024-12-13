@@ -20,6 +20,9 @@ import scipy
 from numpy import dtype
 from xarray.core.utils import Frozen
 
+jax = pytest.importorskip("jax")
+pytest.importorskip("blackjax")
+
 from pymc_extras.inference.smc.sampling import (
     arviz_from_particles,
     blackjax_particles_from_pymc_population,
@@ -27,9 +30,6 @@ from pymc_extras.inference.smc.sampling import (
     get_jaxified_logprior,
     sample_smc_blackjax,
 )
-
-jax = pytest.importorskip("jax")
-pytest.importorskip("blackjax")
 
 
 def two_gaussians_model():

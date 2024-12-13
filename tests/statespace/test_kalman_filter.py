@@ -7,6 +7,7 @@ from numpy.testing import assert_allclose, assert_array_less
 
 from pymc_extras.statespace.filters import (
     KalmanSmoother,
+    SquareRootFilter,
     StandardFilter,
     UnivariateFilter,
 )
@@ -30,17 +31,18 @@ ATOL = 1e-6 if floatX.endswith("64") else 1e-3
 RTOL = 1e-6 if floatX.endswith("64") else 1e-3
 
 standard_inout = initialize_filter(StandardFilter())
-# cholesky_inout = initialize_filter(CholeskyFilter())
+cholesky_inout = initialize_filter(SquareRootFilter())
 univariate_inout = initialize_filter(UnivariateFilter())
 
 f_standard = pytensor.function(*standard_inout, on_unused_input="ignore")
-# f_cholesky = pytensor.function(*cholesky_inout, on_unused_input="ignore")
+f_cholesky = pytensor.function(*cholesky_inout, on_unused_input="ignore")
 f_univariate = pytensor.function(*univariate_inout, on_unused_input="ignore")
 
-filter_funcs = [f_standard, f_univariate]
+filter_funcs = [f_standard, f_cholesky, f_univariate]
 
 filter_names = [
     "StandardFilter",
+    "CholeskyFilter",
     "UnivariateFilter",
 ]
 
@@ -229,8 +231,8 @@ def test_last_smoother_is_last_filtered(filter_func, output_idx, rng):
 @pytest.mark.skipif(floatX == "float32", reason="Tests are too sensitive for float32")
 def test_filters_match_statsmodel_output(filter_func, filter_name, n_missing, rng):
     fit_sm_mod, [data, a0, P0, c, d, T, Z, R, H, Q] = nile_test_test_helper(rng, n_missing)
-    # if filter_name == "CholeskyFilter":
-    #     P0 = np.linalg.cholesky(P0)
+    if filter_name == "CholeskyFilter":
+        P0 = np.linalg.cholesky(P0)
     inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
     outputs = filter_func(*inputs)
 
@@ -278,8 +280,8 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
         pytest.skip("Univariate filter not stable at half precision without measurement error")
 
     fit_sm_mod, [data, a0, P0, c, d, T, Z, R, H, Q] = nile_test_test_helper(rng, n_missing)
-    # if filter_name == "CholeskyFilter":
-    #     P0 = np.linalg.cholesky(P0)
+    if filter_name == "CholeskyFilter":
+        P0 = np.linalg.cholesky(P0)
 
     H *= int(obs_noise)
     inputs = [data, a0, P0, c, d, T, Z, R, H, Q]
@@ -301,8 +303,8 @@ def test_all_covariance_matrices_are_PSD(filter_func, filter_name, n_missing, ob
 
 @pytest.mark.parametrize(
     "filter",
-    [StandardFilter],
-    ids=["standard"],
+    [StandardFilter, SquareRootFilter],
+    ids=["standard", "cholesky"],
 )
 def test_kalman_filter_jax(filter):
     pytest.importorskip("jax")

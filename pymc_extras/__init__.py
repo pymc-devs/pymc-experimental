@@ -27,5 +27,3 @@ if not logging.root.handlers:
     if len(_log.handlers) == 0:
         handler = logging.StreamHandler()
         _log.addHandler(handler)
-
-__all__ = ["fit", "MarginalModel", "marginalize", "as_model"]
