@@ -15,6 +15,7 @@ from pymc.backends.arviz import coords_and_dims_for_inferencedata
 from pymc.progress_bar import CustomProgress, default_progress_theme
 from pymc.pytensorf import resolve_backend_compile_kwargs
 from pymc.variational.minibatch_rv import MinibatchRandomVariable
+from pytensor import config as pytensor_config
 from pytensor.compile.sharedvalue import SharedVariable
 from pytensor.graph import ancestors
 from pytensor.tensor import TensorVariable
@@ -54,14 +55,25 @@ DEFAULT_LEARNING_RATE = 0.01
 DEFAULT_CLIP_NORM = 10.0
 
 
-def _default_optimizer() -> Transform:
+def _default_optimizer() -> tuple[Transform, SharedVariable]:
     """Build the gradient-clipped Adam used when no optimizer is given.
 
-    The clip goes ahead of the rule so it bounds the gradients, as optax, torch, pyro
-    and numpyro all do; behind the rule it would see a step Adam had already computed
-    from the spike it was meant to stop.
+    Returns
+    -------
+    optimizer : Transform
+        Adam at :data:`DEFAULT_LEARNING_RATE`, behind a global-norm gradient clip at
+        :data:`DEFAULT_CLIP_NORM`.
+    shared_learning_rate : SharedVariable
+        The rate the rule reads, writable so :meth:`Trainer.fit` can change it.
     """
-    return chain(clip_by_global_norm(DEFAULT_CLIP_NORM), adam(DEFAULT_LEARNING_RATE))
+    shared_learning_rate = pytensor.shared(
+        np.asarray(DEFAULT_LEARNING_RATE, dtype=pytensor_config.floatX), name="learning_rate"
+    )
+    # The clip goes ahead of the rule so it bounds the gradients, as optax, torch, pyro
+    # and numpyro all do; behind the rule it would see a step Adam had already computed
+    # from the spike it was meant to stop.
+    optimizer = chain(clip_by_global_norm(DEFAULT_CLIP_NORM), adam(shared_learning_rate))
+    return optimizer, shared_learning_rate
 
 
 def linear_onecycle_shape(
@@ -209,7 +221,9 @@ class Trainer:
     :meth:`sample_posterior` picks it up.
 
     Configuration splits along the same line: the optimizer, the guide and the remaining
-    compile-time settings are fixed at construction and exposed read-only.
+    compile-time settings are fixed at construction and exposed read-only. The default
+    rule's learning rate is the exception, staying a single shared value :meth:`fit` can
+    change; a rule built by the caller keeps its rate wherever the caller put it.
 
     There is no convergence-based early stopping. ``fit(n)`` runs ``n`` steps. To spend
     less, ask for fewer steps. To decide as you go, fit in chunks and look at
@@ -224,7 +238,7 @@ class Trainer:
     optimizer : Transform, optional
         The rule driving the updates: any :mod:`pytensor_ml.optim` transform, carrying
         its own rate, schedule and clipping. By default Adam at 0.01 behind a global-norm
-        gradient clip at 10.
+        gradient clip at 10, whose rate :meth:`fit` can change.
     n_particles : int, optional
         Number of guide draws per step used to estimate the ELBO gradient, by
         default 1.
@@ -254,7 +268,7 @@ class Trainer:
             trainer.fit(10_000)
             idata = trainer.sample_posterior(1_000)
 
-    Fit in chunks, inspecting the loss between them:
+    Fit in chunks, inspecting the loss between them, then continue at a rate you pick:
 
     .. code-block:: python
 
@@ -263,6 +277,8 @@ class Trainer:
             for _ in range(5):
                 state = trainer.fit(2_000)
                 print(state.loss_history[-1])
+
+            trainer.fit(1_000, learning_rate=1e-4)
 
     Drive it with any :mod:`pytensor_ml.optim` rule instead of the default, composing the
     rate, the schedule and the clipping yourself. A clip placed ahead of the rule bounds
@@ -296,7 +312,12 @@ class Trainer:
         compile_kwargs: dict | None = None,
         random_seed=None,
     ):
-        self._optimizer = optimizer if optimizer is not None else _default_optimizer()
+        self._shared_learning_rate: SharedVariable | None
+        if optimizer is None:
+            self._optimizer, self._shared_learning_rate = _default_optimizer()
+        else:
+            self._optimizer = optimizer
+            self._shared_learning_rate = None
 
         self.compile_kwargs = resolve_backend_compile_kwargs(backend, compile_kwargs)
         self.random_seed = random_seed
@@ -323,6 +344,13 @@ class Trainer:
     def guide(self) -> AutoGuideModel | None:
         """The guide being fit. Resolved against the model on the first fit, then fixed."""
         return self._guide
+
+    @property
+    def learning_rate(self) -> float | None:
+        """The current base rate, or None when the optimizer carries its own."""
+        if self._shared_learning_rate is None:
+            return None
+        return float(self._shared_learning_rate.get_value())
 
     @property
     def optimizer(self) -> Transform:
@@ -507,6 +535,7 @@ class Trainer:
         state: SVIState | None = None,
         model: Model | None = None,
         observeds: list | None = None,
+        learning_rate: float | None = None,
         random_seed=None,
     ) -> SVIState:
         """
@@ -549,6 +578,10 @@ class Trainer:
             of the full-data one; without it batches are treated as the full
             dataset and the posterior will be too wide. Variables that already
             carry a ``total_size`` in the model are left alone.
+        learning_rate : float, optional
+            Change the default rule's base rate before running, leaving it there for
+            later calls too. A rule given to the constructor carries its own rate, so
+            there is nothing here to change in that case.
         random_seed : optional
             Seed for the guide draws used to estimate the gradients.
 
@@ -559,6 +592,14 @@ class Trainer:
         """
         if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
             raise ValueError(f"n must be a positive integer (the number of fit steps), got {n!r}")
+        if learning_rate is not None:
+            if learning_rate < 0:
+                raise ValueError(f"learning_rate must be non-negative, got {learning_rate!r}")
+            if self._shared_learning_rate is None:
+                raise ValueError(
+                    "This trainer's rate belongs to the optimizer given to its constructor, "
+                    "so there is nothing here to change. Give the rate to the optimizer."
+                )
 
         model = modelcontext(model)
 
@@ -603,6 +644,12 @@ class Trainer:
             self._step_fn, self._shared_params, self._shared_optimizer_state = (
                 self._compile_step_fn(model, self._guide, self._optimizer)
             )
+
+        if learning_rate is not None:
+            self._shared_learning_rate.set_value(
+                np.asarray(learning_rate, dtype=pytensor_config.floatX)
+            )
+
         if state is not None:
             self._restore(state)
 
