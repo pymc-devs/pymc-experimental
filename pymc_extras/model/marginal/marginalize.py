@@ -61,13 +61,6 @@ def _walk_marginal_ops(fgraph):
             yield from _walk_marginal_ops(node.op.fgraph)
 
 
-def _require_exact_marginalization(fgraph, approximate_api: str) -> None:
-    if any(op.is_approximate for op in _walk_marginal_ops(fgraph)):
-        raise ValueError(
-            f"Model contains approximate marginalizations. Use `{approximate_api}` instead."
-        )
-
-
 def _resolve_marginalized_names(var_names, marginalized_rv_names, arg_name: str) -> list[str]:
     """Resolve a user selection of marginalized variables to an ordered list of names.
 
@@ -285,13 +278,15 @@ def marginalize(
     model: Model,
     rvs_to_marginalize: ModelRVs = (),
     *,
+    laplace_approx: dict[TensorVariable | str, Variable] | None = None,
+    minimizer_kwargs: dict | None = None,
     rewrite_query=RewriteDatabaseQuery(include=["basic"]),
 ) -> Model:
-    """Marginalize a subset of variables exactly in a PyMC model.
+    """Marginalize a subset of variables in a PyMC model.
 
     This creates a new `Model`, with the specified variables marginalized.
-    Models containing approximate marginalizations are rejected; use
-    :func:`approximate_marginalize` for Laplace approximations.
+    Variables specified in ``laplace_approx`` use an approximate marginal
+    likelihood; their conditionals and recovered posteriors are also approximate.
 
     Notes
     -----
@@ -316,7 +311,12 @@ def marginalize(
     model : Model
         PyMC model to marginalize. Original variables will be cloned.
     rvs_to_marginalize : Sequence[TensorVariable]
-        Variables to marginalize exactly in the returned model.
+        Variables to marginalize in the returned model.
+    laplace_approx : dict, optional
+        Latent Gaussian variables or names mapped to their precision matrices
+        ``Q`` for Laplace approximation, as used by ``fit_INLA``.
+    minimizer_kwargs : dict, optional
+        Optimizer options used to locate each conditional posterior mode.
 
     Returns
     -------
@@ -338,69 +338,7 @@ def marginalize(
         marginal_m = marginalize(m, [x])
         idata = pm.sample(model=marginal_m)
     """
-    return _marginalize(model, rvs_to_marginalize, rewrite_query=rewrite_query, exact=True)
-
-
-def approximate_marginalize(
-    model: Model,
-    rvs_to_marginalize: ModelRVs = (),
-    *,
-    method: str = "laplace",
-    laplace_approx: dict[TensorVariable | str, Variable] | None = None,
-    minimizer_kwargs: dict | None = None,
-    rewrite_query=RewriteDatabaseQuery(include=["basic"]),
-) -> Model:
-    """Marginalize variables using an explicitly approximate likelihood.
-
-    Parameters
-    ----------
-    model : Model
-        PyMC model to marginalize. Original variables will be cloned.
-    rvs_to_marginalize : sequence of variables or names
-        Additional variables to marginalize exactly in the same model.
-    method : str, default "laplace"
-        Approximation method. Currently only ``"laplace"`` is supported.
-    laplace_approx : dict, optional
-        Latent Gaussian variables or names mapped to their precision matrices
-        ``Q``. These variables are integrated out using a Laplace approximation.
-        May be omitted when further marginalizing an already approximate model.
-    minimizer_kwargs : dict, optional
-        Optimizer options used to locate each conditional posterior mode.
-    rewrite_query
-        Logprob rewrites to apply, as in :func:`marginalize`.
-
-    Returns
-    -------
-    Model
-        Model with an approximate marginal likelihood. Use
-        :func:`approximate_conditional` or :func:`approximate_recover` to
-        reconstruct approximate conditional posteriors, not the exact APIs.
-    """
-    if method != "laplace":
-        raise ValueError("Only the 'laplace' approximation method is supported")
-    return _marginalize(
-        model,
-        rvs_to_marginalize,
-        laplace_approx=laplace_approx,
-        minimizer_kwargs=minimizer_kwargs,
-        rewrite_query=rewrite_query,
-        exact=False,
-    )
-
-
-def _marginalize(
-    model,
-    rvs_to_marginalize,
-    *,
-    laplace_approx=None,
-    minimizer_kwargs=None,
-    rewrite_query,
-    exact: bool,
-):
     fg, memo = fgraph_from_model(model)
-    if exact:
-        _require_exact_marginalization(fg, "approximate_marginalize")
-
     if isinstance(rvs_to_marginalize, str | Variable):
         rvs_to_marginalize = (rvs_to_marginalize,)
 
@@ -429,8 +367,6 @@ def _marginalize(
         minimizer_kwargs=minimizer_kwargs,
         rewrite_query=rewrite_query,
     )
-    if exact:
-        _require_exact_marginalization(fg, "approximate_marginalize")
     return model_from_fgraph(fg, mutate_fgraph=True)
 
 

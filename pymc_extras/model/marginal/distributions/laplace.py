@@ -34,8 +34,6 @@ class MarginalLaplaceRV(MarginalRV):
     last input of the node (a dummy input, unused by the inner graph).
     """
 
-    is_approximate = True
-
     def __init__(
         self,
         *args,
