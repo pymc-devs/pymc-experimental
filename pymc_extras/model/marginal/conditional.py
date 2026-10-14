@@ -276,8 +276,10 @@ def conditional(
     var_names_to_recover = _resolve_marginalized_names(
         rvs_to_recover, marginalized_rv_names, "rvs_to_recover"
     )
+
     if not var_names_to_recover:
         return model
+
     conditional_fgraph(fg, var_names_to_recover)
     return model_from_fgraph(fg, mutate_fgraph=True)
 

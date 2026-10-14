@@ -5,12 +5,7 @@ import pytest
 from arviz_base import from_dict
 from pymc.model.fgraph import fgraph_from_model
 
-from pymc_extras.marginal import (
-    conditional,
-    marginalize,
-    recover,
-    unmarginalize,
-)
+from pymc_extras.marginal import conditional, marginalize, recover, unmarginalize
 from pymc_extras.model.marginal.distributions.laplace import MarginalLaplaceRV
 
 # SciPy's optimizer runs through PyTensor's supported Numba object-mode fallback.

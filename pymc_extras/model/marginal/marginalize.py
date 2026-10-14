@@ -338,15 +338,16 @@ def marginalize(
         marginal_m = marginalize(m, [x])
         idata = pm.sample(model=marginal_m)
     """
-    fg, memo = fgraph_from_model(model)
     if isinstance(rvs_to_marginalize, str | Variable):
         rvs_to_marginalize = (rvs_to_marginalize,)
 
     rvs_to_marginalize = [model[rv] if isinstance(rv, str) else rv for rv in rvs_to_marginalize]
+
     laplace_approx = {
         (model[rv] if isinstance(rv, str) else rv): Q for rv, Q in (laplace_approx or {}).items()
     }
     rvs_to_marginalize += [rv for rv in laplace_approx if rv not in rvs_to_marginalize]
+
     if not rvs_to_marginalize:
         return model
 
@@ -354,12 +355,15 @@ def marginalize(
         if rv_to_marginalize not in model.free_RVs:
             raise ValueError(f"Marginalized RV {rv_to_marginalize} is not a free RV in the model")
 
-    # Remap rvs and Qs (which may reference model variables) to the fgraph clones.
+    fg, memo = fgraph_from_model(model)
+
+    # Remap rvs and Qs (which may reference model variables) to the fgraph clones
     laplace_approx_fg = {}
     for rv, Q in laplace_approx.items():
         if not isinstance(Q, Variable):
             Q = pt.as_tensor_variable(Q)
         laplace_approx_fg[memo[rv]] = memo.get(Q, Q).copy()
+
     marginalize_fgraph(
         fg,
         [memo[rv] for rv in rvs_to_marginalize],
@@ -367,6 +371,7 @@ def marginalize(
         minimizer_kwargs=minimizer_kwargs,
         rewrite_query=rewrite_query,
     )
+
     return model_from_fgraph(fg, mutate_fgraph=True)
 
 
