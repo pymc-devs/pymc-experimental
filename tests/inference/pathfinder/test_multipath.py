@@ -1,8 +1,9 @@
 import contextlib
-import sys
+import os
 
 import numpy as np
 import pymc as pm
+import pytensor
 import pytest
 
 import pymc_extras as pmx
@@ -54,13 +55,10 @@ def _per_path_means(posterior):
     return np.asarray(rows)
 
 
-def test_parallel_paths_match_serial_per_path():
+def test_parallel_paths_match_serial_per_path(monkeypatch):
     """Each chain gets the same per-path approximation under parallel and serial execution (same
     seed, within cross-process BLAS noise) -- guarding against state leaking across the shared
     compiled functions."""
-    if sys.platform == "win32":
-        pytest.skip("non-deterministic on Windows CI workers")
-
     model = make_ard_regression()
     kw = dict(
         method="pathfinder",
@@ -73,7 +71,12 @@ def test_parallel_paths_match_serial_per_path():
         importance_sampling=None,
         progressbar=False,
     )
-    with model:
+    # Spawned workers load the numba kernels from the disk cache, which with fastmath can differ
+    # from the parent's fresh compile in the last bit, and L-BFGS amplifies that. Workers read
+    # their config from the environment, so the flag is set there too.
+    flags = [f for f in (os.environ.get("PYTENSOR_FLAGS"), "numba__fastmath=False") if f]
+    monkeypatch.setenv("PYTENSOR_FLAGS", ",".join(flags))
+    with model, pytensor.config.change_flags(numba__fastmath=False):
         serial = pmx.fit(parallel=False, **kw).posterior
         parallel = pmx.fit(parallel=True, **kw).posterior
 
