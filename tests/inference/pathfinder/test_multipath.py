@@ -1,5 +1,4 @@
 import contextlib
-import sys
 
 import numpy as np
 import pymc as pm
@@ -13,7 +12,10 @@ from pymc_extras.inference.pathfinder.multipath import (
     _make_multipath_progress,
     _make_progress_callback,
 )
-from tests.inference.pathfinder.equivalence_models import make_ard_regression
+from tests.inference.pathfinder.equivalence_models import (
+    make_ard_regression,
+    make_logistic_regression,
+)
 
 
 def test_concurrent_results(eight_schools_model):
@@ -58,10 +60,7 @@ def test_parallel_paths_match_serial_per_path():
     """Each chain gets the same per-path approximation under parallel and serial execution (same
     seed, within cross-process BLAS noise) -- guarding against state leaking across the shared
     compiled functions."""
-    if sys.platform == "win32":
-        pytest.skip("non-deterministic on Windows CI workers")
-
-    model = make_ard_regression()
+    model = make_logistic_regression()
     kw = dict(
         method="pathfinder",
         num_paths=4,
