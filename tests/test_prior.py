@@ -623,6 +623,32 @@ def test_create_likelihood_variable_keeps_data_parameter(xdist) -> None:
     assert logp(point) != before
 
 
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda data: Prior("HalfNormal", sigma=data),
+        lambda data: Scaled(Prior("HalfNormal"), factor=data),
+    ],
+    ids=["nested_prior", "scaled_factor"],
+)
+def test_create_likelihood_variable_keeps_nested_data_parameter(wrap) -> None:
+    """A pm.Data inside a nested parameter has to stay wired as well."""
+    with pm.Model(coords={"T": range(3)}) as model:
+        data = pm.Data("data", 2.0)
+        Prior("Normal", sigma=wrap(data), dims="T").create_likelihood_variable(
+            "y", mu=np.zeros(3), observed=np.ones(3)
+        )
+
+    logp = model.compile_logp()
+    point = model.initial_point()
+
+    before = logp(point)
+    with model:
+        pm.set_data({"data": 50.0})
+
+    assert logp(point) != before
+
+
 def test_create_likelihood_variable_already_has_mu() -> None:
     distribution = Prior("Normal", mu=Prior("Normal"), sigma=Prior("HalfNormal"))
 
